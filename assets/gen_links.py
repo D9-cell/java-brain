@@ -15,6 +15,11 @@ def links_for(p, slugs):
     if m: out.append([f'CSES {m[1]}', f'https://cses.fi/problemset/task/{m[1]}'])
     for u in ([p['url']] if isinstance(p.get('url'), str) else p.get('url') or []):
         out.append(['GfG' if 'geeksforgeeks' in u else 'CodeChef' if 'codechef' in u else 'Problem', u])
+    twins = json.loads((BRAIN / 'assets' / 'data' / 'lc_to_gfg.json').read_text())
+    if not any(l == 'GfG' for l, _ in out):
+        for l, _ in list(out):
+            n = l.split()[-1] if l.startswith('LeetCode') else None
+            if n in twins: out.append(['GfG', twins[n]]); break
     return out
 
 
