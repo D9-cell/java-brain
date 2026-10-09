@@ -63,9 +63,9 @@ a.bmk { display: inline-block; margin: 4px 4px 0 0; padding: 6px 12px; border-ra
   <div class="profiles" id="profiles"></div>
   <details class="how" id="conn"><summary>Connect your profiles and sync the problems you already solved</summary>
     <div class="connect">
-      <label>LeetCode username <input id="u-leetcode" placeholder="e.g. john_doe"></label>
-      <label>GfG handle <input id="u-gfg" placeholder="e.g. johndoe123"></label>
-      <label>CodeChef handle <input id="u-codechef" placeholder="e.g. john_d"></label>
+      <label>LeetCode username or profile link <input id="u-leetcode" placeholder="e.g. john_doe"></label>
+      <label>GfG handle or profile link <input id="u-gfg" placeholder="e.g. johndoe123"></label>
+      <label>CodeChef handle or profile link <input id="u-codechef" placeholder="e.g. john_d"></label>
       <button class="chip on" id="savebtn">Save</button>
     </div>
     <div class="bm">
@@ -75,6 +75,7 @@ a.bmk { display: inline-block; margin: 4px 4px 0 0; padding: 6px 12px; border-ra
         <li>Open <a href="https://leetcode.com" target="_blank" rel="noopener">leetcode.com</a> while logged in and click <b>⟳ Java Brain · LeetCode</b>. You come straight back here with every problem you have solved ticked (your full history).</li>
         <li>Do the same on <a href="https://www.geeksforgeeks.org" target="_blank" rel="noopener">geeksforgeeks.org</a> with <b>⟳ Java Brain · GfG</b>.</li>
       </ol>
+      <p class="fine">Clicking the buttons here does nothing: they only work from the bookmarks bar while you are on those sites. Can't drag? Right-click a button, choose <i>Copy link address</i>, add a new bookmark and paste it as the URL.</p>
       <p class="fine">The bookmarks only read your own solved list on those sites and pass it back in the link. Nothing is uploaded anywhere: usernames, ticks and synced lists stay in this browser. CodeChef does not publish solved problems, so tick those by hand. Re-run a bookmark whenever you solve more.</p>
       <details><summary>The bookmark copied data instead of bringing me back?</summary>
         <textarea id="pastebox" rows="3" placeholder="Paste here"></textarea> <button class="tool" id="pastebtn">Import pasted data</button>
@@ -101,7 +102,9 @@ for (const h of pages) (groups[h.includes('/', h.indexOf('/') + 1) ? h.split('/'
 const total = pages.reduce((n, h) => n + BrainLinks[h].length, 0);
 let filter = 'all';
 document.getElementById('sub').textContent = `${pages.length} animated topics · ${total} problems. Click a problem to open its animation, a badge to solve it, the box to mark it solved.`;
-const prof = P.synced.profiles || {}, base = { leetcode: 'https://leetcode.com/u/', gfg: 'https://www.geeksforgeeks.org/profile/', codechef: 'https://www.codechef.com/users/' }, names = { leetcode: 'LeetCode', gfg: 'GfG', codechef: 'CodeChef' };
+// Pulls a bare username out of whatever was typed: a handle, a profile URL or "@handle"
+const handle = v => { v = String(v || '').trim(); const m = v.match(/(?:\/u\/|\/profile\/|\/user\/|\/users\/)([^/?#\s]+)/); return (m ? m[1] : v.replace(/^@/, '').replace(/\/+$/, '').split('/').pop()).trim(); };
+const prof = Object.fromEntries(Object.entries(P.synced.profiles || {}).map(([k, v]) => [k, handle(v)])), base = { leetcode: 'https://leetcode.com/u/', gfg: 'https://www.geeksforgeeks.org/profile/', codechef: 'https://www.codechef.com/users/' }, names = { leetcode: 'LeetCode', gfg: 'GfG', codechef: 'CodeChef' };
 const linked = Object.keys(base).filter(k => prof[k]);
 document.getElementById('profiles').innerHTML = linked.length ? 'My profiles: ' + linked.map(k => `<a href="${base[k]}${encodeURIComponent(prof[k])}/" target="_blank" rel="noopener">${names[k]}: ${esc(prof[k])}</a>`).join('') : 'No profiles connected yet. Open the panel below to add yours.';
 document.getElementById('synced').textContent = P.synced.updated ? 'synced ' + P.synced.updated : '';
@@ -163,8 +166,12 @@ function bookmarklet(body) {
 // Fills the form, wires the bookmarklets and imports data that a bookmarklet brought back
 (function connect() {
   const msg = document.getElementById('syncmsg'), keys = ['leetcode', 'gfg', 'codechef'];
-  const val = k => document.getElementById('u-' + k).value.trim();
+  const val = k => handle(document.getElementById('u-' + k).value);
   keys.forEach(k => { document.getElementById('u-' + k).value = prof[k] || ''; });
+  document.querySelectorAll('a.bmk').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    msg.textContent = 'Not here: drag this button onto your bookmarks bar (Ctrl+Shift+B shows it), then open ' + (a.id === 'bm-lc' ? 'leetcode.com' : 'geeksforgeeks.org') + ' and click the bookmark there.';
+  }));
   const wire = () => {
     document.getElementById('bm-lc').href = bookmarklet(`if(!/(^|\\.)leetcode\\.(com|cn)$/.test(location.hostname)){alert('Open leetcode.com (logged in) and click this bookmark there.');return}const d=await(await fetch('/api/problems/all/',{credentials:'include'})).json();if(!d.user_name){alert('Please log in to LeetCode first, then click again.');return}go({leetcode:d.stat_status_pairs.filter(p=>p.status==='ac').map(p=>p.stat.question__title_slug),lcUser:d.user_name});`);
     document.getElementById('bm-gfg').href = bookmarklet(`if(!/(^|\\.)geeksforgeeks\\.org$/.test(location.hostname)){alert('Open geeksforgeeks.org and click this bookmark there.');return}const h=${JSON.stringify(val('gfg'))}||prompt('Your GfG handle (from geeksforgeeks.org/profile/<handle>)');if(!h)return;const d=await(await fetch('https://practiceapi.geeksforgeeks.org/api/v1/user/problems/submissions/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({handle:h,requestType:'',year:'',month:''})})).json();if(d.status!=='success'){alert('GfG says: '+(d.message||'no data'));return}const g=[];for(const lv of Object.values(d.result||{}))for(const p of Object.values(lv))g.push(p.slug);go({gfg:g,gfgUser:h});`);
@@ -188,7 +195,7 @@ function bookmarklet(body) {
   if (location.hash.startsWith('#import=')) {
     const raw = decodeURIComponent(location.hash.slice(8));
     history.replaceState(null, '', location.pathname);
-    try { take(raw, raw.includes('"leetcode"') ? 'LeetCode' : 'GfG'); } catch (e) { msg.textContent = 'Could not read the synced data: ' + e; }
+    try { take(raw, raw.includes('"leetcode"') ? 'LeetCode' : 'GfG'); return; } catch (e) { msg.textContent = 'Could not read the synced data: ' + e; }
   }
   const note = sessionStorage.getItem('jb-msg');
   if (note) { sessionStorage.removeItem('jb-msg'); msg.textContent = note; document.getElementById('conn').open = true; }
