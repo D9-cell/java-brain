@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backtracking Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, tree, recorder, mount, ln } = BrainAnim;
+
+// Choice tree recorder: call() opens a node, ret() closes it with a mark (✓ success, ✗ pruned)
+class RT {
+  constructor() { this.P = {}; this.L = {}; this.B = {}; this.C = {}; this.n = 0; this.stack = []; }
+  call(label) { const id = 'c' + this.n++; this.P[id] = this.stack.length ? this.stack.at(-1) : -1; this.L[id] = label; this.stack.push(id); return id; }
+  ret(mark) { const id = this.stack.pop(); if (mark === '✓') this.C[id] = 'done'; else if (mark === '✗') this.C[id] = 'bad'; else this.C[id] = 'ghost'; if (mark) this.B[id] = mark; return id; }
+  view(name = 'Choice tree (✓ found, ✗ pruned)') { const cls = { ...this.C }; this.stack.forEach(id => cls[id] = 'warn'); if (this.stack.length) cls[this.stack.at(-1)] = 'active'; return tree(name, this.P, { labels: this.L, badge: this.B, cls, wide: true }); }
+}
+// Generic backtracking demo: children(state) → [{label, state, prune?}], isGoal(state)
+function btDemo(intro, rootLabel, root, children, isGoal, lines, extra = () => [], cap = 60) {
+  const r = recorder(), t = new RT(); let found = 0;
+  r.step(0, intro, [t.view(), ...extra(null)]);
+  const go = (label, st) => {
+    if (r.steps.length > cap) return;
+    t.call(label);
+    if (isGoal(st)) { found++; t.ret('✓'); r.step(lines.goal, `Reached a complete answer: <b>${label}</b>.`, [t.view(), ...extra(st)], { found }); return; }
+    r.step(lines.choose, `At "${label}": try each option.`, [t.view(), ...extra(st)], { found });
+    for (const c of children(st)) {
+      if (c.prune) { t.call(c.label); t.ret('✗'); r.step(lines.prune, `"${c.label}": ${c.prune} → prune.`, [t.view(), ...extra(st)], { found }); continue; }
+      go(c.label, c.state);
+    }
+    t.ret('');
+    r.step(lines.undo, `Back out of "${label}" (undo the choice).`, [t.view(), ...extra(st)], { found });
+  };
+  go(rootLabel, root);
+  r.step(0, `Done: <b>${found}</b> complete answer${found === 1 ? '' : 's'} (green ✓). Red ✗ branches were pruned before wasting work.`, [t.view(), ...extra(null)], { found });
+  return r.steps;
+}
+
+// ===== code snippets + sims =====
+const C_SUBSETS2 = `
+private void solve(int[] a, int idx, List<Integer> cur, List<List<Integer>> res) {
+    res.add(new ArrayList<>(cur));                       // every node is an answer
+    for (int i = idx; i < a.length; i++) {
+        if (i > idx && a[i] == a[i - 1]) continue;        // same value as previous sibling
+        cur.add(a[i]);
+        solve(a, i + 1, cur, res);
+        cur.remove(cur.size() - 1);
+    }
+}`;
+function subsets2() {
+  const a = [1, 2, 2];
+  return btDemo(`[1,2,2] sorted. Every node is a subset. Skip a value equal to the <b>previous sibling</b> so [1,2] is not produced twice.`, '[]', [], cur => { const start = cur.length ? cur.at(-1).i + 1 : 0, out = []; for (let i = start; i < a.length; i++) out.push(i > start && a[i] === a[i - 1] ? { label: `+${a[i]}(dup)`, prune: 'same value as previous sibling' } : { label: `[${[...cur.map(x => x.v), a[i]]}]`, state: [...cur, { i, v: a[i] }] }); return out; }, () => false, { goal: 0, choose: ln(C_SUBSETS2, 'res.add'), prune: ln(C_SUBSETS2, 'continue'), undo: ln(C_SUBSETS2, 'cur.remove') });
+}
+
+const C_PERM = `
+private void solve(int[] a, boolean[] used, List<Integer> cur, List<List<Integer>> res) {
+    if (cur.size() == a.length) { res.add(new ArrayList<>(cur)); return; }
+    for (int i = 0; i < a.length; i++) {
+        if (used[i]) continue;
+        used[i] = true;
+        cur.add(a[i]);
+        solve(a, used, cur, res);
+        cur.remove(cur.size() - 1);
+        used[i] = false;
+    }
+}`;
+function perms() {
+  const a = [1, 2, 3];
+  return btDemo(`Permutations of [1,2,3]: at each level pick any <b>unused</b> number. used[] is the undo-able state.`, '[]', [], cur => a.filter(x => !cur.includes(x)).map(x => ({ label: `[${[...cur, x]}]`, state: [...cur, x] })), cur => cur.length === 3, { goal: ln(C_PERM, 'res.add'), choose: ln(C_PERM, 'if (used[i]) continue'), prune: 0, undo: ln(C_PERM, 'used[i] = false') });
+}
+
+const C_PERM2 = `
+for (Map.Entry<Integer, Integer> e : cnt.entrySet()) {     // one branch per DISTINCT value
+    if (e.getValue() == 0) continue;
+    e.setValue(e.getValue() - 1);
+    cur.add(e.getKey());
+    solve(cnt, n, cur, res);
+    cur.remove(cur.size() - 1);
+    e.setValue(e.getValue() + 1);
+}`;
+function perms2() {
+  return btDemo(`[1,1,2]: branch on <b>distinct values</b> with counts, not on positions. Two 1's are one branch, so duplicates never appear.`, '[]', { cur: [], cnt: { 1: 2, 2: 1 } }, s => Object.keys(s.cnt).filter(k => s.cnt[k] > 0).map(k => ({ label: `[${[...s.cur, k]}]`, state: { cur: [...s.cur, +k], cnt: { ...s.cnt, [k]: s.cnt[k] - 1 } } })), s => s.cur.length === 3, { goal: 0, choose: ln(C_PERM2, 'one branch per DISTINCT'), prune: 0, undo: ln(C_PERM2, 'e.setValue(e.getValue() + 1)') });
+}
+
+const C_UNIQ = `
+for (int i = 0; i < a.length; i++) {
+    if (used[i] || (i > 0 && a[i] == a[i - 1] && !used[i - 1])) continue;   // twin rule
+    used[i] = true; cur.add(a[i]);
+    solve(a, used, cur, res);
+    cur.remove(cur.size() - 1); used[i] = false;
+}`;
+function uniqPerm() {
+  const a = [1, 1, 2];
+  return btDemo(`Sorted [1,1,2]. <b>Twin rule</b>: use the 2nd "1" only if the 1st "1" is already used, so the twins always appear in a fixed order.`, '[]', [], used => { const out = []; for (let i = 0; i < 3; i++) { if (used.includes(i)) continue; if (i > 0 && a[i] === a[i - 1] && !used.includes(i - 1)) { out.push({ label: `1′`, prune: 'twin before its sibling' }); continue; } out.push({ label: `[${[...used, i].map(j => a[j])}]`, state: [...used, i] }); } return out; }, u => u.length === 3, { goal: 0, choose: ln(C_UNIQ, 'twin rule'), prune: ln(C_UNIQ, 'twin rule'), undo: ln(C_UNIQ, 'used[i] = false') });
+}
+
+const C_COMB = `
+private void solve(int start, int n, int k, List<Integer> cur, List<List<Integer>> res) {
+    if (cur.size() == k) { res.add(new ArrayList<>(cur)); return; }
+    for (int i = start; i <= n - (k - cur.size()) + 1; i++) {   // leave room for the rest
+        cur.add(i);
+        solve(i + 1, n, k, cur, res);
+        cur.remove(cur.size() - 1);
+    }
+}`;
+function combos() {
+  const n = 4, k = 2;
+  return btDemo(`C(4, 2). Next number > last one (no reordering). Upper bound n − (k − size) + 1 leaves room for the remaining picks.`, '[]', [], cur => { const s = cur.length ? cur.at(-1) + 1 : 1, out = []; for (let i = s; i <= n; i++) out.push(i > n - (k - cur.length) + 1 ? { label: `+${i}`, prune: 'not enough numbers left after it' } : { label: `[${[...cur, i]}]`, state: [...cur, i] }); return out; }, c => c.length === k, { goal: ln(C_COMB, 'res.add'), choose: ln(C_COMB, 'leave room'), prune: ln(C_COMB, 'leave room'), undo: ln(C_COMB, 'cur.remove') });
+}
+
+const C_CS2 = `
+for (int i = idx; i < c.length && c[i] <= target; i++) {   // sorted → stop early
+    if (i > idx && c[i] == c[i - 1]) continue;              // same value at the same depth
+    cur.add(c[i]);
+    solve(c, i + 1, target - c[i], cur, res);
+    cur.remove(cur.size() - 1);
+}`;
+function cs2() {
+  const c = [1, 1, 2, 5, 6], T = 8;
+  return btDemo(`Candidates [1,1,2,5,6] sorted, target 8. Each number used once; skip equal siblings; stop when c[i] exceeds what is left.`, '8 left', { idx: 0, rem: T, cur: [] }, s => { const out = []; for (let i = s.idx; i < c.length; i++) { if (c[i] > s.rem) { out.push({ label: `+${c[i]}`, prune: `${c[i]} > ${s.rem} left (and everything after is bigger)` }); break; } if (i > s.idx && c[i] === c[i - 1]) { out.push({ label: `+${c[i]}′`, prune: 'same value as previous sibling' }); continue; } out.push({ label: `[${[...s.cur, c[i]]}]`, state: { idx: i + 1, rem: s.rem - c[i], cur: [...s.cur, c[i]] } }); } return out; }, s => s.rem === 0, { goal: 0, choose: ln(C_CS2, 'stop early'), prune: ln(C_CS2, 'same value'), undo: ln(C_CS2, 'cur.remove') }, () => [], 70);
+}
+
+const C_CS3 = `
+if (cur.size() == k && n == 0) { res.add(new ArrayList<>(cur)); return; }
+if (cur.size() == k || n <= 0) return;                       // prune
+for (int i = start; i <= 9; i++) { cur.add(i); solve(i + 1, k, n - i, cur, res); cur.remove(cur.size() - 1); }`;
+function cs3() {
+  return btDemo(`k = 3 numbers from 1..9 summing to 7. Prune as soon as the count is full or the sum overshoots.`, '7 left', { s: 1, n: 7, cur: [] }, st => { const out = []; for (let i = st.s; i <= 9; i++) { if (st.n - i < 0) { out.push({ label: `+${i}`, prune: 'overshoots' }); break; } if (st.cur.length === 2 && st.n - i !== 0) { if (st.n - i > 0) continue; } out.push({ label: `[${[...st.cur, i]}]`, state: { s: i + 1, n: st.n - i, cur: [...st.cur, i] } }); } return out.filter(o => o.prune || o.state.cur.length < 3 || o.state.n === 0); }, st => st.cur.length === 3 && st.n === 0, { goal: ln(C_CS3, 'res.add'), choose: ln(C_CS3, 'for (int i'), prune: ln(C_CS3, 'prune'), undo: ln(C_CS3, 'cur.remove') }, () => [], 50);
+}
+
+const C_CS4 = `
+private int f(int[] nums, int t, Integer[] memo) {
+    if (t == 0) return 1;
+    if (memo[t] != null) return memo[t];                   // order matters → f(t) depends only on t
+    int ways = 0;
+    for (int x : nums) if (x <= t) ways += f(nums, t - x, memo);
+    return memo[t] = ways;
+}`;
+function cs4() {
+  const memo = {}, r = recorder();
+  r.step(0, `nums [1,2,3], target 4. Sequences are <b>ordered</b> ((1,3) ≠ (3,1)), so the answer only depends on the remaining target → memoise f(t).`, [lane('f(t)', ['f(0)=1', '?', '?', '?', '?'])]);
+  const f = t => { if (t === 0) return 1; if (memo[t]) return memo[t]; let w = 0; for (const x of [1, 2, 3]) if (x <= t) w += f(t - x); memo[t] = w; r.step(ln(C_CS4, 'ways += f'), `f(${t}) = ${[1, 2, 3].filter(x => x <= t).map(x => `f(${t - x})`).join(' + ')} = <b>${w}</b>.`, [lane('f(t)', [0, 1, 2, 3, 4].map(k => (k === 0 ? 'f(0)=1' : memo[k] ? `f(${k})=${memo[k]}` : '?')), { done: [t] })]); return w; };
+  f(4);
+  return r.steps;
+}
+
+const C_LEXSEQ = `
+for (int x = n; x >= 1; x--) {                                // largest first → first fill is the answer
+    if (used[x]) continue;
+    if (x > 1 && (i + x >= res.length || res[i + x] != 0)) continue;   // its twin slot must be free
+    used[x] = true; res[i] = x; if (x > 1) res[i + x] = x;
+    if (solve(i + 1, n, res, used)) return true;
+    used[x] = false; res[i] = 0; if (x > 1) res[i + x] = 0;
+}`;
+function lexSeq() {
+  const n = 3, res = Array(5).fill(0), used = Array(4).fill(false), r = recorder();
+  const V = () => [lane('sequence', res.map(x => x || '·'), { showIdx: true })];
+  r.step(0, `n = 3: 1 appears once; every x > 1 appears twice, exactly x apart. Fill left to right with the <b>largest</b> number that fits.`, V());
+  const go = i => { if (i === 5) return true; if (res[i]) return go(i + 1); for (let x = n; x >= 1; x--) { if (used[x]) continue; if (x > 1 && (i + x >= 5 || res[i + x])) { r.step(ln(C_LEXSEQ, 'twin slot'), `slot ${i}: ${x} needs slot ${i + x} free → no.`, V()); continue; } used[x] = true; res[i] = x; if (x > 1) res[i + x] = x; r.step(ln(C_LEXSEQ, 'used[x] = true'), `slot ${i}: place ${x}${x > 1 ? ` (and at ${i + x})` : ''}.`, V()); if (go(i + 1)) return true; used[x] = false; res[i] = 0; if (x > 1) res[i + x] = 0; r.step(ln(C_LEXSEQ, 'used[x] = false'), `dead end → remove ${x}.`, V()); } return false; };
+  go(0);
+  r.step(ln(C_LEXSEQ, 'return true'), `First complete fill = lexicographically largest: <b>[${res}]</b>.`, V());
+  return r.steps;
+}
+
+const C_EAO = `
+for (int j = i; j < num.length(); j++) {
+    if (j > i && num.charAt(i) == '0') break;                  // no leading zeros
+    long cur = Long.parseLong(num.substring(i, j + 1));
+    solve(..., expr + "+" + part, val + cur, cur, res);
+    solve(..., expr + "-" + part, val - cur, -cur, res);
+    solve(..., expr + "*" + part, val - last + last * cur, last * cur, res);   // undo last, multiply it
+}`;
+function eao() {
+  const r = recorder();
+  r.step(0, `"123", target 6. Choose the next number (any length), then an operator. Track <b>val</b> and the <b>last term</b> so '*' can bind tighter.`, [lane('digits', [1, 2, 3])]);
+  r.step(ln(C_EAO, 'val + cur'), `"1+2": val 3, last 2. Then "+3" → val 6 ✓ → "1+2+3".`, [lane('expression', ['1', '+', '2', '+', '3'], { done: [0, 1, 2, 3, 4] })], { val: 6 });
+  r.step(ln(C_EAO, 'last * cur'), `"1+2*3": val = 3 − last(2) + 2·3 = 7 ✗. Precedence handled by undoing the last term.`, [lane('expression', ['1', '+', '2', '*', '3'], { bad: [3] })], { val: 7 });
+  r.step(ln(C_EAO, 'last * cur'), `"1*2*3": val 1 → 1−1+1·2 = 2 → 2−2+2·3 = 6 ✓.`, [lane('expression', ['1', '*', '2', '*', '3'], { done: [0, 1, 2, 3, 4] })], { val: 6 });
+  r.step(ln(C_EAO, 'leading zeros'), `"105": "05" is not a valid number → break. Answers: "1*0+5", "10-5".`, [lane('digits', [1, 0, 5], { bad: [1] })]);
+  return r.steps;
+}
+
+const C_COOK = `
+for (int c = 0; c < kids.length; c++) {
+    if (kids[c] + cookies[i] >= best) continue;      // cannot beat the best → prune
+    kids[c] += cookies[i];
+    solve(cookies, i + 1, kids);
+    kids[c] -= cookies[i];
+    if (kids[c] == 0) break;                          // empty kids are interchangeable
+}`;
+function cookies() {
+  const r = recorder();
+  r.step(0, `Bags [8,15,10,20,8], 2 kids. Unfairness = the max total any kid gets. Give each bag to each kid in turn.`, [lane('bags', [8, 15, 10, 20, 8])]);
+  r.step(ln(C_COOK, 'interchangeable'), `Symmetry prune: giving bag 0 to kid 1 or kid 2 is the same when both are empty → only try the first empty kid.`, [lane('kids', [8, 0])]);
+  r.step(ln(C_COOK, 'cannot beat'), `Bound prune: once some answer (say 31) is known, any branch where a kid reaches ≥ 31 is cut.`, [lane('kids', [8 + 15 + 10, 0], { bad: [0] })], { best: 31 });
+  r.step(0, `Best split: [8,15,8] = 31 vs [10,20] = 30 → answer <b>31</b>.`, [lane('kids', [31, 30], { done: [0, 1] })]);
+  return r.steps;
+}
+
+const C_MCP = `
+// Approach 2: dp[mask][last] = min cost to place the rest starting after 'last' (back to 0 at the end)
+for (int mask = full - 1; mask >= 1; mask--)
+    for (int last ...) for (int nx not in mask)
+        dp[mask][last] = min(|last - nums[nx]| + dp[mask | 1 << nx][nx]);
+// rebuild: from (mask = {0}, last = 0) pick the SMALLEST nx that achieves dp[mask][last]`;
+function mcp() {
+  const r = recorder();
+  r.step(0, `score = Σ |perm[i] − nums[perm[i+1]]| (cyclic). Rotating a cycle does not change the score, so <b>perm[0] = 0</b> gives the lexicographically smallest.`, [lane('nums', [1, 0, 2], { showIdx: true })]);
+  r.step(ln(C_MCP, 'dp[mask][last]'), `The C++ version backtracks over all orders with a "sum ≥ best → stop" prune. In Java, bitmask DP is the safe bet for n = 14.`, [lane('perm', [0, '?', '?'])]);
+  r.step(ln(C_MCP, 'SMALLEST nx'), `Rebuild greedily: at each step take the smallest next index that keeps the optimal total → <b>[0, 1, 2]</b>.`, [lane('perm', [0, 1, 2], { done: [0, 1, 2] })]);
+  return r.steps;
+}
+
+const C_GP = `
+if (open < n) { cur.append('('); solve(open + 1, close, n, cur, res); cur.deleteCharAt(cur.length() - 1); }
+if (close < open) { cur.append(')'); solve(open, close + 1, n, cur, res); cur.deleteCharAt(cur.length() - 1); }`;
+function gp() {
+  return btDemo(`n = 2. Add "(" while open < n; add ")" only while close < open. Every leaf is valid; no checking needed.`, '∅', '', s => { const o = [...s].filter(c => c === '(').length, c = s.length - o, out = []; if (o < 2) out.push({ label: s + '(', state: s + '(' }); if (c < o) out.push({ label: s + ')', state: s + ')' }); else out.push({ label: s + ')', prune: 'close would exceed open' }); return out; }, s => s.length === 4, { goal: 0, choose: ln(C_GP, "if (open < n)"), prune: ln(C_GP, 'close < open'), undo: ln(C_GP, "close < open") });
+}
+
+const C_PHONE = `
+for (char c : KEYS[digits.charAt(i) - '0'].toCharArray()) {
+    cur.append(c);
+    solve(digits, i + 1, cur, res);
+    cur.deleteCharAt(cur.length() - 1);
+}`;
+function phone() {
+  const K = { 2: 'abc', 3: 'def' };
+  return btDemo(`"23": level 0 chooses a letter of 2 (abc), level 1 a letter of 3 (def). 3 × 3 = 9 leaves.`, '∅', '', s => s.length < 2 ? [...K[s.length === 0 ? 2 : 3]].map(c => ({ label: s + c, state: s + c })) : [], s => s.length === 2, { goal: 0, choose: ln(C_PHONE, 'for (char c'), prune: 0, undo: ln(C_PHONE, 'deleteCharAt') });
+}
+
+const C_TILE = `
+private int count(int[] cnt) {
+    int total = 0;
+    for (int c = 0; c < 26; c++) {
+        if (cnt[c] == 0) continue;
+        cnt[c]--;
+        total += 1 + count(cnt);          // this sequence + all its extensions
+        cnt[c]++;
+    }
+    return total;
+}`;
+function tiles() {
+  return btDemo(`"AAB" as counts {A:2, B:1}. Each node is one non-empty sequence; branch on <b>distinct letters</b>, so duplicates never appear.`, '∅', { s: '', a: 2, b: 1 }, st => { const out = []; if (st.a) out.push({ label: st.s + 'A', state: { s: st.s + 'A', a: st.a - 1, b: st.b } }); if (st.b) out.push({ label: st.s + 'B', state: { s: st.s + 'B', a: st.a, b: st.b - 1 } }); return out; }, () => false, { goal: 0, choose: ln(C_TILE, 'total += 1'), prune: 0, undo: ln(C_TILE, 'cnt[c]++') });
+}
+
+const C_LSRK = `
+for (int c = 25; c >= 0; c--) if (cnt[c] >= k) letters.add(...);   // only letters with count >= k
+Deque<String> q = new ArrayDeque<>(List.of(""));
+while (!q.isEmpty()) {
+    String cur = q.poll();
+    for (char c : letters) {                                     // 'z' down → larger first
+        String nx = cur + c;
+        if (ok(s, nx, k)) { if (nx.length() > best.length()) best = nx; q.offer(nx); }
+    }
+}`;
+function lsrk() {
+  const r = recorder();
+  r.step(0, `"letsleetcode", k = 2. Answer length ≤ n/k, and only letters with count ≥ k can appear: e(4), t(2), l(2).`, [lane('letters with count ≥ 2', ['t', 'l', 'e'])]);
+  r.step(ln(C_LSRK, 'ok(s, nx, k)'), `Grow candidates one letter at a time (BFS). Keep only those whose k-fold repetition is a subsequence: "let" → "letlet" ✓.`, [lane('valid level 3', ['let', 'ete', 'tee'])]);
+  r.step(ln(C_LSRK, 'larger first'), `Longest valid; among equal length the lexicographically largest → <b>"let"</b>.`, [lane('answer', [...'let'], { done: [0, 1, 2] })]);
+  return r.steps;
+}
+
+const C_MATCH = `
+for (int s = 0; s < 4; s++) {
+    if (sides[s] + m[i] > target) continue;                  // would overflow the side
+    boolean seen = false;
+    for (int t = 0; t < s; t++) seen |= sides[t] == sides[s];
+    if (seen) continue;                                      // same as an earlier side → same subtree
+    sides[s] += m[i];
+    if (solve(m, i + 1, sides, target)) return true;
+    sides[s] -= m[i];
+}`;
+function match() {
+  const m = [2, 2, 2, 1, 1], T = 2, r = recorder(), sides = [0, 0, 0, 0];
+  const V = () => [lane('sides (target 2)', [...sides])];
+  r.step(0, `[1,1,2,2,2] → sorted descending [2,2,2,1,1], side = 8/4 = 2. Big sticks first fail fast.`, V());
+  const go = i => { if (i === m.length) return true; for (let s = 0; s < 4; s++) { if (sides[s] + m[i] > T) continue; if (sides.slice(0, s).includes(sides[s])) { r.step(ln(C_MATCH, 'same subtree'), `stick ${m[i]}: side ${s} has the same length as an earlier side → skip (symmetric).`, V()); continue; } sides[s] += m[i]; r.step(ln(C_MATCH, 'sides[s] += m[i]'), `stick ${m[i]} → side ${s}.`, V()); if (go(i + 1)) return true; sides[s] -= m[i]; } return false; };
+  const ok = go(0);
+  r.step(ln(C_MATCH, 'return true'), ok ? `All sides = 2 → <b>true</b>.` : 'false', V());
+  return r.steps;
+}
+
+const C_TRANS = `
+net[req[i][0]]--;               // take request i
+net[req[i][1]]++;
+solve(req, i + 1, taken + 1, net);
+net[req[i][0]]++;               // undo
+net[req[i][1]]--;
+solve(req, i + 1, taken, net);  // skip request i
+// at the end: valid only if every net[b] == 0`;
+function trans() {
+  const r = recorder();
+  r.step(0, `Each request moves one person. Take or skip each (2^16 at most). A set of requests is valid if every building's <b>net change is 0</b>.`, [lane('requests', ['0→1', '1→0', '0→1', '1→2', '2→0', '3→4'])]);
+  r.step(ln(C_TRANS, 'take request i'), `Taking 0→1, 1→0, 0→1, 1→2, 2→0 leaves net [0,0,0,0,0] ✓ (5 requests).`, [lane('net', [0, 0, 0, 0, 0], { done: [0, 1, 2, 3, 4] })], { taken: 5 });
+  r.step(ln(C_TRANS, 'every net'), `Adding 3→4 makes net[3] = −1 ✗. Answer <b>5</b>.`, [lane('net', [0, 0, 0, -1, 1], { bad: [3, 4] })]);
+  return r.steps;
+}
+
+const C_WORDS = `
+int best = solve(words, i + 1, cnt, score);                    // skip word i
+for (char c : words[i].toCharArray()) { if (--cnt[c - 'a'] < 0) ok = false; gain += score[c - 'a']; }
+if (ok) best = Math.max(best, gain + solve(words, i + 1, cnt, score));   // take it if letters allow
+for (char c : words[i].toCharArray()) cnt[c - 'a']++;          // undo`;
+function words() {
+  const r = recorder();
+  r.step(0, `Words [dog, cat, dad, good], letters a a c d d d d g g o o. Take or skip each word; take only if the remaining letters allow it.`, [lane('words', ['dog', 'cat', 'dad', 'good'])]);
+  r.step(ln(C_WORDS, 'take it if'), `dad (5+1+5=11) + good (3+2+2+5=12) = 23 uses d d d a g o o g ✓.`, [lane('chosen', ['dad', 'good'], { done: [0, 1] })], { score: 23 });
+  r.step(ln(C_WORDS, 'undo'), `Every branch subtracts, recurses, adds back. Best = <b>23</b>.`, [lane('chosen', ['dad', 'good'])]);
+  return r.steps;
+}
+
+const C_NDS = `
+if (cur.size() >= 2) res.add(new ArrayList<>(cur));
+Set<Integer> usedHere = new HashSet<>();                     // per depth, NOT global
+for (int i = idx; i < a.length; i++) {
+    if ((!cur.isEmpty() && a[i] < cur.get(cur.size() - 1)) || !usedHere.add(a[i])) continue;
+    cur.add(a[i]); solve(a, i + 1, cur, res); cur.remove(cur.size() - 1);
+}`;
+function nds() {
+  const a = [4, 6, 7, 7];
+  return btDemo(`[4,6,7,7]. Not sortable (order matters), so dedupe with a <b>per-level set</b>: the same value may start only one branch at each depth.`, '[]', { idx: 0, cur: [] }, st => { const out = [], seen = new Set(); for (let i = st.idx; i < 4; i++) { if (st.cur.length && a[i] < st.cur.at(-1)) continue; if (seen.has(a[i])) { out.push({ label: `+${a[i]}′`, prune: 'value already used at this depth' }); continue; } seen.add(a[i]); out.push({ label: `[${[...st.cur, a[i]]}]`, state: { idx: i + 1, cur: [...st.cur, a[i]] } }); } return out; }, () => false, { goal: 0, choose: ln(C_NDS, 'res.add'), prune: ln(C_NDS, 'usedHere.add'), undo: ln(C_NDS, 'cur.remove') }, () => [], 70);
+}
+
+const C_NQ = `
+for (int c = 0; c < n; c++) {
+    if (col[c] || d1[row + c] || d2[row - c + n - 1]) continue;   // attacked
+    col[c] = d1[row + c] = d2[row - c + n - 1] = true;
+    board[row][c] = 'Q';
+    solve(row + 1, n, board, col, d1, d2, res);
+    board[row][c] = '.';
+    col[c] = d1[row + c] = d2[row - c + n - 1] = false;
+}`;
+function nq() {
+  const n = 4, B = [...Array(n)].map(() => Array(n).fill('·')), col = [], d1 = [], d2 = [], r = recorder(); let sols = 0;
+  const V = () => [grid('board', B.map(x => [...x]), { cls: (i, j) => (B[i][j] === 'Q' ? 'done' : '') })];
+  r.step(0, `4 queens. One queen per row; a column and two diagonals (r+c and r−c) are marked as taken.`, V());
+  const go = row => { if (row === n) { sols++; r.step(ln(C_NQ, 'solve(row + 1'), `All 4 placed → solution #${sols}.`, V(), { solutions: sols }); return sols >= 1; } for (let c = 0; c < n; c++) { if (col[c] || d1[row + c] || d2[row - c + n]) continue; col[c] = d1[row + c] = d2[row - c + n] = true; B[row][c] = 'Q'; r.step(ln(C_NQ, "board[row][c] = 'Q'"), `row ${row}: queen at column ${c}.`, V()); if (go(row + 1)) return true; B[row][c] = '·'; col[c] = d1[row + c] = d2[row - c + n] = false; r.step(ln(C_NQ, "board[row][c] = '.'"), `row ${row + 1} had no safe column → remove the queen at (${row}, ${c}).`, V()); } return false; };
+  go(0);
+  return r.steps;
+}
+
+const C_NQ2 = `
+int free = ~(cols | d1 | d2) & ((1 << n) - 1);       // safe columns as bits
+while (free != 0) {
+    int bit = free & -free;                           // lowest safe column
+    free -= bit;
+    count += solve(n, row + 1, cols | bit, (d1 | bit) << 1, (d2 | bit) >> 1);   // diagonals shift
+}`;
+function nq2() {
+  const r = recorder();
+  r.step(0, `Counting only? Keep columns and diagonals as <b>bitmasks</b>. Moving down a row, the diagonals shift left/right by one.`, [lane('cols', ['0', '1', '0', '0']), lane('d1 << 1', ['0', '0', '1', '0']), lane('d2 >> 1', ['1', '0', '0', '0'])]);
+  r.step(ln(C_NQ2, 'safe columns'), `free = ~(cols | d1 | d2): only column 3 is safe in this row.`, [lane('free', ['0', '0', '0', '1'], { done: [3] })]);
+  r.step(ln(C_NQ2, 'lowest safe column'), `free & −free picks the lowest set bit. n = 4 → <b>2</b> solutions, n = 8 → 92.`, [lane('counts n=1..8', [1, 0, 0, 2, 10, 4, 40, 92])]);
+  return r.steps;
+}
+
+const C_PP = `
+for (int j = i; j < s.length(); j++) {
+    if (!pal[i][j]) continue;                       // only cut after a palindrome
+    cur.add(s.substring(i, j + 1));
+    solve(s, j + 1, pal, cur, res);
+    cur.remove(cur.size() - 1);
+}`;
+function pp() {
+  const s = 'aab', isP = x => x === [...x].reverse().join('');
+  return btDemo(`"aab": choose the first piece s[0..j]; continue only if it is a palindrome (precomputed table → O(1) check).`, '|aab', { i: 0, parts: [] }, st => { const out = []; for (let j = st.i; j < 3; j++) { const p = s.slice(st.i, j + 1); out.push(isP(p) ? { label: [...st.parts, p].join('|'), state: { i: j + 1, parts: [...st.parts, p] } } : { label: `${[...st.parts, p].join('|')}`, prune: `"${p}" is not a palindrome` }); } return out; }, st => st.i === 3, { goal: 0, choose: ln(C_PP, 'for (int j'), prune: ln(C_PP, 'only cut after'), undo: ln(C_PP, 'cur.remove') });
+}
+
+const C_PK = `
+if (k == 1) return true;                                    // last bucket fills itself
+if (cur == target) return fill(a, used, 0, k - 1, 0, target);   // bucket done → next one from index 0
+for (int i = start; i < a.length; i++) {
+    if (used[i] || cur + a[i] > target) continue;
+    if (i > 0 && a[i] == a[i - 1] && !used[i - 1]) continue;    // twin rule
+    used[i] = true;
+    if (fill(a, used, i + 1, k, cur + a[i], target)) return true;
+    used[i] = false;
+}`;
+function pk() {
+  const r = recorder();
+  r.step(0, `[4,3,2,3,5,2,1], k = 4 → each bucket 20/4 = 5. Sorted descending: [5,4,3,3,2,2,1]. Fill <b>one bucket at a time</b>.`, [lane('numbers', [5, 4, 3, 3, 2, 2, 1])]);
+  r.step(ln(C_PK, 'bucket done'), `Bucket 1: {5} = 5 ✓ → start bucket 2 from index 0.`, [lane('buckets', ['{5}', '', '', ''], { done: [0] })]);
+  r.step(ln(C_PK, 'used[i] = true'), `Bucket 2: {4, 1} ✓. Bucket 3: {3, 2} ✓.`, [lane('buckets', ['{5}', '{4,1}', '{3,2}', ''], { done: [0, 1, 2] })]);
+  r.step(ln(C_PK, 'last bucket fills itself'), `k = 1 left → the remaining numbers {3, 2} must sum to 5 → <b>true</b>.`, [lane('buckets', ['{5}', '{4,1}', '{3,2}', '{3,2}'], { done: [0, 1, 2, 3] })]);
+  return r.steps;
+}
+
+const C_GOLD = `
+private int dfs(int[][] g, int i, int j) {
+    if (out of grid || g[i][j] == 0) return 0;
+    int gold = g[i][j];
+    g[i][j] = 0;                                    // visited
+    int best = max of the 4 directions;
+    g[i][j] = gold;                                 // restore
+    return gold + best;
+}`;
+function gold() {
+  const G = [[0, 6, 0], [5, 8, 7], [0, 9, 0]], path = [[2, 1], [1, 1], [1, 2]], r = recorder();
+  const V = (k) => [grid('gold', G, { cls: (i, j) => (path.slice(0, k).some(([a, b]) => a === i && b === j) ? 'done' : G[i][j] === 0 ? 'ghost' : '') })];
+  r.step(0, `Start a DFS from every gold cell. Zero the cell while you stand on it (visited), restore it when you leave.`, V(0));
+  [1, 2, 3].forEach(k => r.step(ln(C_GOLD, 'g[i][j] = 0'), `step onto (${path[k - 1]}) → collected ${path.slice(0, k).reduce((s, [a, b]) => s + G[a][b], 0)}.`, V(k)));
+  r.step(ln(C_GOLD, 'return gold + best'), `Best path 9 → 8 → 7 = <b>24</b>.`, V(3));
+  return r.steps;
+}
+
+const C_PYR = `
+if (i == row.length() - 1) {                    // row above is complete → climb
+    String next = above.toString();
+    Boolean known = memo.get(next);
+    if (known != null) return known;
+    boolean res = build(next, 0, new StringBuilder());
+    memo.put(next, res);                       // NOT computeIfAbsent (recursive modification!)
+    return res;
+}
+for (char c : tops.getOrDefault(row.substring(i, i + 2), List.of())) { above.append(c); ... }`;
+function pyr() {
+  const r = recorder();
+  r.step(0, `bottom "BCD", allowed BCC, CDE, CEA, FFF → tops: BC→C, CD→E, CE→A.`, [lane('row 1', ['B', 'C', 'D'])]);
+  r.step(ln(C_PYR, 'for (char c'), `Build the row above block by block: BC → C, CD → E → "CE".`, [lane('row 2', ['C', 'E']), lane('row 1', ['B', 'C', 'D'])]);
+  r.step(ln(C_PYR, 'climb'), `Row complete → recurse: CE → A → "A" (single block) → <b>true</b>. Memoise rows that already failed.`, [lane('row 3', ['A'], { done: [0] }), lane('row 2', ['C', 'E']), lane('row 1', ['B', 'C', 'D'])]);
+  return r.steps;
+}
+
+const C_SEQ = `
+String s = "123456789";
+for (int len = digits(low); len <= digits(high); len++)
+    for (int st = 0; st + len <= 9; st++) {
+        int v = Integer.parseInt(s.substring(st, st + len));    // a window of 123456789
+        if (v >= low && v <= high) res.add(v);
+    }`;
+function seqd() {
+  const r = recorder();
+  r.step(0, `Every sequential-digit number is a <b>window</b> of "123456789".`, [lane('digits', [...'123456789'])]);
+  r.step(ln(C_SEQ, 'a window'), `low 100, high 300: length 3 windows: 123 ✓, 234 ✓, 345 (> 300) …`, [lane('digits', [...'123456789'], { done: [0, 1, 2] })]);
+  r.step(ln(C_SEQ, 'res.add'), `Answer <b>[123, 234]</b>. Only 36 such numbers exist in total.`, [lane('answer', [123, 234], { done: [0, 1] })]);
+  return r.steps;
+}
+
+const C_SPLIT = `
+for (int j = i + 1; j <= s.length(); j++) {
+    String part = s.substring(i, j);
+    if (!used.add(part)) continue;            // already used → not unique
+    best = Math.max(best, 1 + solve(s, j, used));
+    used.remove(part);                        // undo
+}`;
+function split() {
+  const s = 'aba';
+  return btDemo(`"aba": pick the next piece; it must be <b>new</b> (set of used pieces). Maximise the count.`, '|aba', { i: 0, parts: [] }, st => { const out = []; for (let j = st.i + 1; j <= 3; j++) { const p = s.slice(st.i, j); out.push(st.parts.includes(p) ? { label: [...st.parts, p].join('|'), prune: `"${p}" already used` } : { label: [...st.parts, p].join('|'), state: { i: j, parts: [...st.parts, p] } }); } return out; }, st => st.i === 3, { goal: 0, choose: ln(C_SPLIT, 'for (int j'), prune: ln(C_SPLIT, 'already used'), undo: ln(C_SPLIT, 'used.remove') });
+}
+
+const C_SUDO = `
+for (int r = 0; r < 9; r++) for (int c = 0; c < 9; c++) {
+    if (b[r][c] != '.') continue;
+    for (char d = '1'; d <= '9'; d++) {
+        if (!valid(b, r, c, d)) continue;       // row, column, 3x3 box
+        b[r][c] = d;
+        if (solve(b)) return true;
+        b[r][c] = '.';                          // undo
+    }
+    return false;                               // nothing fits here → backtrack
+}`;
+function sudoku() {
+  const r = recorder();
+  r.step(0, `Find the first empty cell, try 1..9 that are valid in its row, column and box, and recurse. If nothing fits, undo the previous guess.`, [grid('top-left box', [['5', '3', '·'], ['6', '·', '·'], ['·', '9', '8']])]);
+  r.step(ln(C_SUDO, 'row, column'), `Cell (0,2): row has 5,3,7; column has 8; box has 5,3,6,9,8 → 1 is valid, so the solver <b>tries 1 first</b>. It later leads to a dead end and is replaced; the final grid has 4 here.`, [grid('top-left box', [['5', '3', '1?'], ['6', '·', '·'], ['·', '9', '8']], { cls: (i, j) => (i === 0 && j === 2 ? 'warn' : '') })]);
+  r.step(ln(C_SUDO, 'nothing fits'), `If a later cell has no valid digit, return false → the caller erases its digit and tries the next one.`, [grid('top-left box', [['5', '3', '4'], ['6', '7', '2'], ['1', '9', '8']], { cls: () => 'done' })]);
+  return r.steps;
+}
+
+const C_HAPPY = `
+if (cur.length() == n) { if (++count == k) result = cur.toString(); return; }
+for (char c = 'a'; c <= 'c'; c++) {
+    if (cur.length() > 0 && cur.charAt(cur.length() - 1) == c) continue;   // no equal neighbours
+    cur.append(c); solve(n, k, cur); cur.deleteCharAt(cur.length() - 1);
+}`;
+function happyK() {
+  return btDemo(`n = 2, k = 3. DFS in a, b, c order produces happy strings in <b>lexicographic order</b>; count leaves and stop at the k-th.`, '∅', '', s => s.length < 2 ? [...'abc'].map(c => (s.endsWith(c) ? { label: s + c, prune: 'equal neighbours' } : { label: s + c, state: s + c })) : [], s => s.length === 2, { goal: ln(C_HAPPY, '++count == k'), choose: ln(C_HAPPY, "for (char c"), prune: ln(C_HAPPY, 'no equal neighbours'), undo: ln(C_HAPPY, 'deleteCharAt') }, () => [], 30);
+}
+
+const C_BEAU = `
+int ways = solve(a, i + 1, k, taken);                                  // skip
+if (taken.getOrDefault(a[i] - k, 0) == 0 && taken.getOrDefault(a[i] + k, 0) == 0) {
+    taken.merge(a[i], 1, Integer::sum);                                // take
+    ways += solve(a, i + 1, k, taken);
+    taken.merge(a[i], -1, Integer::sum);                               // undo
+}`;
+function beautiful() {
+  const a = [2, 4, 6], k = 2;
+  return btDemo(`[2,4,6], k = 2. Take x only if neither x−k nor x+k is already taken. Count the leaves (minus the empty set).`, '{}', { i: 0, t: [] }, st => { if (st.i === 3) return []; const x = a[st.i], out = [{ label: `{${st.t}} skip ${x}`, state: { i: st.i + 1, t: st.t } }]; if (st.t.includes(x - k) || st.t.includes(x + k)) out.push({ label: `+${x}`, prune: `${x - k} or ${x + k} taken` }); else out.push({ label: `{${[...st.t, x]}}`, state: { i: st.i + 1, t: [...st.t, x] } }); return out; }, st => st.i === 3, { goal: 0, choose: ln(C_BEAU, 'skip'), prune: ln(C_BEAU, 'getOrDefault(a[i] - k'), undo: ln(C_BEAU, 'undo') }, () => [], 50);
+}
+
+const C_TUG = `
+int n = a.length, cap1 = n / 2, cap2 = n - n / 2;
+if (i == n) { if (size1 == cap1 || size1 == cap2) best = Math.min(best, Math.abs(total - 2 * sum1)); return; }
+if (size1 < cap2) solve(a, i + 1, size1 + 1, sum1 + a[i], total);   // into set 1
+if (size2 < cap2) solve(a, i + 1, size1, sum1, total);              // into set 2`;
+function tug() {
+  const r = recorder();
+  r.step(0, `[1..6] into two teams of 3 with the closest sums. Each element goes to team 1 or team 2, as long as that team has room.`, [lane('values', [1, 2, 3, 4, 5, 6])]);
+  r.step(ln(C_TUG, 'into set 1'), `Size caps prune half of the 2^n tree. Team 1 = {1, 3, 6} = 10, team 2 = {2, 4, 5} = 11.`, [lane('team 1', [1, 3, 6], { done: [0, 1, 2] }), lane('team 2', [2, 4, 5])]);
+  r.step(ln(C_TUG, 'best = Math.min'), `Difference <b>1</b>. (For even n only, Meet in the Middle solves n = 30.)`, [lane('difference', [1], { done: [0] })]);
+  return r.steps;
+}
+
+const C_UP3 = `
+if (g[i][j] == 2) { if (steps == empty) paths++; return; }   // must have covered every free cell
+g[i][j] = -1;                                                 // visited
+dfs(g, i + 1, j, steps + 1); dfs(g, i - 1, j, steps + 1);
+dfs(g, i, j + 1, steps + 1); dfs(g, i, j - 1, steps + 1);
+g[i][j] = 0;                                                  // undo`;
+function up3() {
+  const r = recorder();
+  r.step(0, `Walk from 1 to 2 visiting <b>every</b> empty cell exactly once. Count the cells to cover first.`, [grid('grid', [['S', '·', '·', '·'], ['·', '·', '·', '·'], ['·', '·', 'E', '#']])]);
+  r.step(ln(C_UP3, 'visited'), `Mark cells as you go; arriving at E only counts if steps == empty + 1.`, [grid('one valid path (step numbers, 11 = E)', [[1, 6, 7, 8], [2, 5, 10, 9], [3, 4, 11, '#']], { cls: () => 'done' })]);
+  r.step(ln(C_UP3, 'undo'), `Unmark on return so other paths can use the cells. Answer <b>2</b>.`, [lane('paths', [2], { done: [0] })]);
+  return r.steps;
+}
+
+const C_WB2 = `
+private List<String> solve(String s, int i, Set<String> dict, Map<Integer, List<String>> memo) {
+    if (i == s.length()) return List.of("");
+    if (memo.containsKey(i)) return memo.get(i);
+    for (int j = i + 1; j <= s.length(); j++) {
+        String w = s.substring(i, j);
+        if (!dict.contains(w)) continue;
+        for (String rest : solve(s, j, dict, memo)) res.add(rest.isEmpty() ? w : w + " " + rest);
+    }
+    memo.put(i, res);
+    return res;
+}`;
+function wb2() {
+  const s = 'catsanddog', D = new Set(['cat', 'cats', 'and', 'sand', 'dog']);
+  return btDemo(`"catsanddog": cut a dictionary word off the front, recurse on the rest. Memoise by start index.`, 'catsanddog', { i: 0, parts: [] }, st => { const out = []; for (let j = st.i + 1; j <= s.length; j++) { const w = s.slice(st.i, j); if (D.has(w)) out.push({ label: [...st.parts, w].join(' '), state: { i: j, parts: [...st.parts, w] } }); } return out; }, st => st.i === s.length, { goal: ln(C_WB2, 'return List.of("")'), choose: ln(C_WB2, 'for (int j'), prune: 0, undo: ln(C_WB2, 'memo.put') });
+}
+
+const C_WS = `
+private boolean dfs(char[][] b, String w, int k, int i, int j) {
+    if (k == w.length()) return true;
+    if (out of grid || b[i][j] != w.charAt(k)) return false;
+    char saved = b[i][j];
+    b[i][j] = '$';                                  // visited
+    boolean found = dfs(down) || dfs(up) || dfs(right) || dfs(left);
+    b[i][j] = saved;                                // undo
+    return found;
+}`;
+function ws() {
+  const B = ['ABCE', 'SFCS', 'ADEE'].map(x => [...x]), path = [[0, 0], [0, 1], [0, 2], [1, 2], [2, 2], [2, 1]], r = recorder();
+  const V = k => [grid('board', B, { cls: (i, j) => (path.slice(0, k).some(([a, b]) => a === i && b === j) ? (k === 6 ? 'done' : 'active') : '') })];
+  r.step(0, `Find "ABCCED". Start at every cell; follow neighbours whose letter matches the next character; never reuse a cell.`, V(0));
+  for (let k = 1; k <= 6; k++) r.step(ln(C_WS, k === 6 ? 'return found' : "b[i][j] = '$'"), `match "${'ABCCED'[k - 1]}" at (${path[k - 1]}).`, V(k));
+  return r.steps;
+}
+
+const C_24 = `
+for (int i ...) for (int j ...) {                    // pick an ordered pair
+    double a = nums.get(i), b = nums.get(j);
+    List<Double> rest = all except i and j;
+    for (double v : {a + b, a - b, a * b, a / b}) {  // every operator
+        rest.add(v);
+        if (solve(rest)) return true;
+        rest.remove(rest.size() - 1);                // undo
+    }
+}
+// one number left → is it 24 (with an epsilon)?`;
+function g24() {
+  const r = recorder();
+  r.step(0, `[4,1,8,7]: repeatedly <b>merge two numbers</b> with an operator until one number is left. 4 → 3 → 2 → 1 numbers.`, [lane('numbers', [4, 1, 8, 7])]);
+  r.step(ln(C_24, 'every operator'), `8 − 4 = 4 → [4, 1, 7].`, [lane('numbers', [4, 1, 7], { active: [0] })]);
+  r.step(ln(C_24, 'every operator'), `7 − 1 = 6 → [4, 6].`, [lane('numbers', [4, 6], { active: [1] })]);
+  r.step(ln(C_24, 'is it 24'), `4 × 6 = 24 ✓. Use doubles + epsilon so 8/(3 − 8/3) also works.`, [lane('numbers', [24], { done: [0] })]);
+  return r.steps;
+}
+
+const T = (name, hook, mantra, statement, code, steps, recall, links = []) => ({ name, hook, mantra, statement, anims: [{ name: 'Choice tree', code, steps }], recall, links });
+mount({
+  title: 'Backtracking Animations',
+  sub: 'The "khandani" template: <b>choose → explore → un-choose</b>. Draw the choice tree; prune branches that cannot succeed (bounds, duplicates, symmetry). Duplicates: sort + skip equal siblings, or branch on counts.',
+  problems: [
+    T('24 Game (679)', 'A <b>blender</b>: throw any two numbers in with an operator; keep blending until one number is left.', 'MERGE TWO, ALL OPS, RECURSE, UNDO', 'Can 4 cards make 24 with + − × ÷ and parentheses?', C_24, g24(), [['Why doubles?', 'Division creates fractions (8/(3−8/3)).'], ['Why ordered pairs?', '− and ÷ are not commutative.']]),
+    T('Unique Permutations (GFG)', 'Identical twins must always stand in the <b>same order</b>.', 'SORT, TWIN RULE: !used[i−1] → SKIP', 'All unique permutations, sorted.', C_UNIQ, uniqPerm(), [['Twin rule?', 'Skip a[i] if a[i] == a[i−1] and a[i−1] is not used.']], [['Permutations II', 24]]),
+    T('Combinations (77)', 'Pick a team in <b>jersey-number order</b>, so each team is listed once.', 'NEXT > LAST, LEAVE ROOM', 'All k-subsets of 1..n.', C_COMB, combos(), [['Upper bound for i?', 'n − (k − size) + 1.']], [['Combination Sum III', 4]]),
+    T('Combination Sum II (40)', 'Coins in a jar, each usable <b>once</b>; equal coins are interchangeable.', 'SORT, SKIP EQUAL SIBLINGS, BREAK ON OVERSHOOT', 'Unique combinations summing to target, each candidate used once.', C_CS2, cs2(), [['Why break, not continue?', 'Sorted: everything after is even bigger.'], ['Skip rule?', 'i > idx && c[i] == c[i−1].']], [['Subsets II', 28]]),
+    T('Combination Sum III (216)', 'Pick k <b>different digits</b> from 1..9 hitting a sum.', 'DIGITS 1..9 ONCE, PRUNE ON COUNT OR SUM', 'All k-digit combinations summing to n.', C_CS3, cs3(), [['Prune?', 'Stop when size == k or the sum is exceeded.']], [['Combinations', 2]]),
+    T('Combination Sum IV (377)', 'Order matters, so it is a <b>staircase</b> count: f(t) = Σ f(t − x).', 'MEMO f(t)', 'Number of ordered sequences summing to target.', C_CS4, cs4(), [['Why not backtracking alone?', 'Exponential; the memo on t makes it O(n·target).']]),
+    T('Lex Largest Sequence (1718)', 'Seat the <b>biggest</b> guest first; a guest x>1 needs two seats exactly x apart.', 'FILL LEFT→RIGHT, LARGEST FIRST, FIRST HIT WINS', 'Lexicographically largest valid distanced sequence.', C_LEXSEQ, lexSeq(), [['Why is the first full fill the answer?', 'Choices were made largest-first at every position.']]),
+    T('Expression Add Operators (282)', 'Write <b>+, −, ×</b> between digits; × must undo the last term and multiply it.', 'TRACK val AND last; × → val − last + last·cur', 'All expressions of num evaluating to target.', C_EAO, eao(), [['Leading zeros?', 'Break if the piece starts with 0 and has length > 1.'], ['Overflow?', 'Use long.']]),
+    T('Fair Cookies (2305)', '<b>Dealing cards</b> to children: prune hands that are already too big, and treat empty-handed kids as identical.', 'GIVE BAG TO EACH KID, BOUND + SYMMETRY PRUNES', 'Minimise the maximum total any child receives.', C_COOK, cookies(), [['Symmetry prune?', 'After trying an empty kid, break.']], [['Partition K Equal', 21]]),
+    T('Min Cost Permutation (3149)', 'A <b>round table</b>: you can always start the seating at guest 0.', 'perm[0] = 0, PRUNE (or bitmask DP), SMALLEST FIRST', 'Permutation minimising Σ|perm[i] − nums[perm[i+1]]| (cyclic), lexicographically smallest.', C_MCP, mcp(), [['Why perm[0] = 0?', 'The cyclic score is rotation-invariant; starting with 0 is lexicographically smallest.']]),
+    T('Generate Parentheses (22)', 'A <b>bouncer</b>: you may open a door while doors remain, and close only an open one.', 'OPEN < n → "(", CLOSE < OPEN → ")"', 'All valid parentheses strings of n pairs.', C_GP, gp(), [['Count?', 'Catalan(n).']]),
+    T('Phone Letters (17)', 'An <b>odometer</b>: each dial turns through its letters.', 'ONE DIGIT PER LEVEL, EACH LETTER A BRANCH', 'All letter combinations of a digit string.', C_PHONE, phone(), [['Empty input?', 'Return an empty list.']]),
+    T('Letter Tiles (1079)', 'Shuffle a <b>bag of Scrabble tiles</b>; equal tiles are one choice.', 'COUNTS, EACH NODE = 1 SEQUENCE', 'Number of distinct non-empty tile sequences.', C_TILE, tiles(), [['Why counts?', 'Branching on distinct letters avoids duplicates without a set.']]),
+    T('Subsequence Repeated k (2014)', 'Only <b>popular letters</b> (count ≥ k) can be in the chant; grow chants letter by letter.', 'FILTER LETTERS, BFS BY LENGTH, Z→A', 'Longest (then lexicographically largest) seq with seq×k a subsequence.', C_LSRK, lsrk(), [['Length bound?', 'n / k (≤ 7 here).']]),
+    T('Matchsticks to Square (473)', 'Packing <b>4 suitcases</b>: big items first; identical suitcases are the same choice.', 'SORT DESC, SKIP EQUAL SIDES', 'Can the sticks form a square?', C_MATCH, match(), [['Prunes?', 'Side overflow, equal-side symmetry, longest stick > side.']], [['Partition K Equal', 21]]),
+    T('Transfer Requests (1601)', 'A <b>moving company</b>: accept a set of moves where every building ends with the same headcount.', 'TAKE/SKIP, NET[] == 0 AT THE END', 'Maximum number of achievable requests.', C_TRANS, trans(), [['Size?', 'requests ≤ 16 → 2^16.']]),
+    T('Max Score Words (1255)', 'Spell words from a <b>bag of letter tiles</b>; each word uses tiles up.', 'SKIP OR TAKE IF LETTERS ALLOW, UNDO', 'Maximum score of a set of words buildable from the letters.', C_WORDS, words(), [['Undo?', 'Add the letters back after the take-branch.']]),
+    T('Non-decreasing Subsequences (491)', 'A <b>per-floor guest list</b>: the same value may enter each floor only once.', 'PER-DEPTH SET, NON-DECREASING CHECK', 'All distinct non-decreasing subsequences of length ≥ 2.', C_NDS, nds(), [['Why not sort?', 'Subsequence order must be kept.']], [['Subsets II', 28]]),
+    T('N-Queens (51)', '<b>Rooks and bishops in one</b>: a queen claims her column and both diagonals.', 'ROW BY ROW, col/d1/d2 FLAGS', 'All boards with n non-attacking queens.', C_NQ, nq(), [['Diagonal indices?', 'r + c and r − c + n − 1.']], [['N-Queens II', 19]]),
+    T('N-Queens II (52)', 'The same board, counted with <b>bit tricks</b>.', 'BITMASKS, free & −free, SHIFT DIAGONALS', 'Number of N-Queens solutions.', C_NQ2, nq2(), [['Lowest set bit?', 'x & −x.']], [['N-Queens', 18]]),
+    T('Palindrome Partitioning (131)', 'Cut a ribbon only where the <b>cut-off piece reads the same both ways</b>.', 'PAL TABLE, CUT ONLY AFTER PALINDROMES', 'All partitions into palindromes.', C_PP, pp(), [['Table?', 'pal[i][j] = s[i]==s[j] && pal[i+1][j−1].']]),
+    T('Partition K Equal (698)', 'Fill <b>one jar at a time</b>; when it is full, start the next jar from the beginning.', 'BUCKET BY BUCKET, k==1 → TRUE, TWIN RULE', 'Can nums be split into k equal-sum subsets?', C_PK, pk(), [['Why can k == 1 return true?', 'The remaining numbers must sum to the target.']], [['Matchsticks', 14]]),
+    T('Max Gold Path (1219)', 'A <b>miner</b> who never revisits a cell, starting from any gold cell.', 'DFS FROM EVERY GOLD, ZERO → RESTORE', 'Maximum gold on a simple path.', C_GOLD, gold(), [['Visited marking?', 'Temporarily set the cell to 0.']], [['Word Search', 35]]),
+    T('Permutations (46)', 'Seat n guests: at each seat choose any <b>unseated</b> guest.', 'USED[], CHOOSE, RECURSE, UNCHOOSE', 'All permutations of distinct numbers.', C_PERM, perms(), [['Swap version?', 'Swap i with j ≥ i, recurse on i+1, swap back.']], [['Permutations II', 24]]),
+    T('Permutations II (47)', 'Seat <b>families</b>: choose a family, not a specific twin.', 'COUNT MAP, BRANCH ON DISTINCT VALUES', 'All unique permutations with duplicates.', C_PERM2, perms2(), [['Alternative?', 'Sort + twin rule, or swap with a per-level set.']], [['Permutations', 23]]),
+    T('Pyramid Transition (756)', 'Stack <b>Lego bricks</b>: each pair below allows certain bricks on top.', 'BUILD ROW ABOVE, RECURSE, MEMO FAILED ROWS', 'Can the pyramid be built to the top?', C_PYR, pyr(), [['Java trap?', 'Recursive computeIfAbsent → ConcurrentModificationException. Use get/put.']]),
+    T('Sequential Digits (1291)', 'Slide a <b>window over 123456789</b>.', 'WINDOWS OF "123456789"', 'All sequential-digit numbers in [low, high].', C_SEQ, seqd(), [['How many exist?', '36.']]),
+    T('Max Unique Split (1593)', 'Cut a ribbon so <b>no two pieces are identical</b>.', 'NEW PIECE ONLY, ADD/REMOVE FROM SET', 'Maximum number of unique substrings in a split.', C_SPLIT, split(), [['Undo?', 'Remove the piece from the set after the recursion.']]),
+    T('Subsets II (90)', 'A buffet with <b>identical dishes</b>: at one decision point only one copy may start a branch.', 'SORT, RECORD EVERY NODE, SKIP EQUAL SIBLINGS', 'All unique subsets.', C_SUBSETS2, subsets2(), [['Skip rule?', 'i > idx && a[i] == a[i−1].']], [['Combination Sum II', 3]]),
+    T('Sudoku Solver (37)', '<b>Pencil marks</b>: write a guess, erase it if it leads nowhere.', 'FIRST EMPTY, TRY 1..9 VALID, UNDO', 'Fill the Sudoku grid.', C_SUDO, sudoku(), [['Box index?', '(r/3)·3 + i/3, (c/3)·3 + i%3.']]),
+    T('k-th Happy String (1415)', 'A <b>dictionary walk</b>: generate in order and stop at the k-th entry.', 'a,b,c ORDER, NO EQUAL NEIGHBOURS, STOP AT k', 'k-th lexicographic happy string of length n.', C_HAPPY, happyK(), [['Count?', '3·2^(n−1).']]),
+    T('Beautiful Subsets (2597)', 'A party where guests whose <b>ages differ by exactly k</b> refuse to meet.', 'TAKE IF x±k NOT TAKEN (COUNT MAP)', 'Number of non-empty subsets with no pair differing by k.', C_BEAU, beautiful(), [['Why a count map?', 'Duplicates: removing one copy must not forget the other.']]),
+    T('Tug of War (GFG)', 'Pick two <b>teams of equal size</b> with the closest strength.', 'EACH ELEMENT → TEAM 1 OR 2, SIZE CAPS', 'Split into halves (sizes ⌊n/2⌋, ⌈n/2⌉) minimising the sum difference.', C_TUG, tug(), [['Big n?', 'Meet in the Middle (LC 2035).']]),
+    T('Unique Paths III (980)', 'A <b>lawn mower</b> that must mow every free square exactly once.', 'COUNT FREE CELLS, DFS, STEPS == FREE AT END', 'Number of paths covering every empty square.', C_UP3, up3(), [['Termination check?', 'At the end cell, steps == empty + 1 (the start counts too).']]),
+    T('Word Break II (140)', 'Cut a sentence into <b>dictionary words</b>; remember results per start index.', 'CUT WORD, RECURSE, MEMO BY INDEX', 'All sentences formed by adding spaces.', C_WB2, wb2(), [['Why memo?', 'The same suffix is reached by different prefixes.']]),
+    T('Word Search (79)', 'A <b>maze walk</b> that marks floor tiles and wipes the marks when leaving.', 'MATCH, MARK $, 4 DIRS, UNMARK', 'Does the word exist in the grid (no cell reuse)?', C_WS, ws(), [['Many words?', 'Use a trie (Word Search II).']])
+  ]
+});
+</script>
+</body>
+</html>

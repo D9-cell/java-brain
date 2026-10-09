@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Queue Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, recorder, mount } = BrainAnim;
+
+// Simulates Reverse First K with queue and stack snapshots
+function reverseK(arr, k0) {
+  const r = recorder(); let q = [...arr], st = [], k = k0;
+  const L = (o = {}) => [
+    lane('Queue', q, { ptr: q.length ? { 0: 'front' } : {}, tag: 'front → back', ...o.q }),
+    lane('Stack', st, { vertical: true, ptr: st.length ? { [st.length - 1]: 'top' } : {}, tag: 'top on top', ...o.s })];
+  r.step(1, `Queue is <b>[${arr}]</b>, k = ${k0}. Goal: reverse only the first ${k0}, keep the rest in order.`, L(), { k });
+  const remaining = q.length - k;
+  r.step(2, `Save <b>remaining = ${q.length} − ${k} = ${remaining}</b>. These elements must come back to the end later.`, L(), { k, remaining });
+  r.step(3, `Make an empty stack. A stack is a <b>U-turn</b>: what goes in first comes out last.`, L(), { k, remaining });
+  while (k > 0) {
+    const x = q.shift(); st.push(x); k--;
+    r.step(4, `poll <b>${x}</b> from the front, push it onto the stack.`, L({ s: { active: [st.length - 1] } }), { k, remaining });
+  }
+  r.step(4, `The first ${k0} are parked in the stack. Look: they are already upside down.`, L({ s: { warn: st.map((_, i) => i) } }), { k, remaining });
+  while (st.length) {
+    const x = st.pop(); q.push(x);
+    r.step(5, `pop <b>${x}</b> from the stack and offer it to the back of the queue.`, L({ q: { active: [q.length - 1] } }), { remaining });
+  }
+  r.step(5, `The reversed block is now at the <b>back</b>. The untouched ${remaining} are stuck in front. Fix that by rotating.`, L({ q: { warn: q.map((_, i) => i).slice(0, remaining) } }), { remaining });
+  let rem = remaining;
+  while (rem > 0) {
+    const x = q.shift(); q.push(x); rem--;
+    r.step(6, `Rotate: poll <b>${x}</b> and offer it to the back. <code>q.offer(q.poll())</code>`, L({ q: { active: [q.length - 1] } }), { remaining: rem });
+  }
+  r.step(7, `Done: <b>[${q}]</b>. Pour → Pour back → Rotate the rest.`, L({ q: { done: q.map((_, i) => i) } }), { remaining: rem });
+  return r.steps;
+}
+
+// Shows the reveal process forward, to understand what the output means
+function revealProcess(deck) {
+  const r = recorder(); let d = [...deck], out = [];
+  const L = (o = {}) => [lane('Deck in your hand', d, { ptr: d.length ? { 0: 'top' } : {}, tag: 'top → bottom', ...o.d }), lane('Revealed on table', out, { done: out.map((_, i) => i) })];
+  r.step(0, `The answer for [17,13,11,2,3,5,7] is this ordering: <b>[${deck}]</b>. Let's play the game and check it.`, L());
+  while (d.length) {
+    const x = d.shift(); out.push(x);
+    r.step(0, `Reveal the top card: <b>${x}</b>.`, L());
+    if (d.length) {
+      const y = d.shift(); d.push(y);
+      r.step(0, `Move the next top card <b>${y}</b> to the bottom.`, L({ d: { active: [d.length - 1] } }));
+    }
+  }
+  r.step(0, `Revealed order: <b>${out}</b>. Increasing. So the job is to <b>arrange the deck</b> so this game reveals sorted cards.`, L());
+  return r.steps;
+}
+
+// Simulates the queue-of-indices approach
+function revealQueue(deck0) {
+  const r = recorder(); const n = deck0.length; let deck = [...deck0], res = Array(n).fill(null), que = [];
+  const L = (o = {}) => [
+    lane('Sorted deck', deck, { ...o.d }),
+    lane('Queue of seat numbers', que, { ptr: que.length ? { 0: 'front' } : {}, tag: 'front → back', ...o.q }),
+    lane('result[]', res, { showIdx: true, emptyVal: null, ...o.r })];
+  r.step(2, `n = ${n}. Key insight: the <b>reveal order of the seats</b> is fixed, whatever cards sit there.`, L(), { n });
+  r.step(4, `result has ${n} empty seats (0…${n - 1}).`, L(), { n });
+  for (let i = 0; i < n; i++) que.push(i);
+  r.step(5, `Put every seat index in a queue: this is the deck of <b>positions</b>.`, L(), { n });
+  deck.sort((a, b) => a - b);
+  r.step(6, `Sort the cards. The smallest card must go in the seat revealed first, and so on.`, L({ d: { done: deck.map((_, i) => i) } }), { n });
+  for (let i = 0; i < n; i++) {
+    const idx = que.shift(); res[idx] = deck[i];
+    r.step(8, `Seat <b>${idx}</b> is revealed next, so it gets the next smallest card <b>${deck[i]}</b>.`, L({ d: { active: [i], ghost: [...Array(i).keys()] }, r: { active: [idx] } }), { i, idx });
+    if (que.length) {
+      const nx = que.shift(); que.push(nx);
+      r.step(9, `The game moves the next card to the bottom, so seat <b>${nx}</b> goes to the back of the queue.`, L({ d: { ghost: [...Array(i + 1).keys()] }, q: { active: [que.length - 1] } }), { i });
+    }
+  }
+  r.step(11, `Result: <b>[${res}]</b>. Take a seat, send the next seat to the back.`, L({ r: { done: res.map((_, i) => i) } }));
+  return r.steps;
+}
+
+// Simulates the skip-alternate approach on the result array
+function revealSkip(deck0) {
+  const r = recorder(); const n = deck0.length; let deck = [...deck0].sort((a, b) => a - b), res = Array(n).fill(0);
+  let skip = false, i = 0, j = 0;
+  const L = (o = {}) => [lane('Sorted deck', deck, { ptr: i < n ? { [i]: 'i' } : {}, ghost: [...Array(i).keys()] }),
+    lane('result[]', res, { showIdx: true, emptyVal: 0, ptr: { [j]: 'j' }, ...o })];
+  r.step(6, `Sort the cards. Empty seats are 0. Walk the result array in a circle with j.`, L(), { i, j, skip });
+  while (i < n) {
+    if (res[j] === 0) {
+      if (!skip) { res[j] = deck[i++]; r.step(9, `Seat ${j} is empty and skip = false → <b>place ${res[j]}</b>.`, L({ done: [j] }), { i, j, skip }); }
+      else r.step(10, `Seat ${j} is empty but skip = true → <b>leave it</b> (this card went to the bottom).`, L({ warn: [j] }), { i, j, skip });
+      skip = !skip;
+    } else r.step(8, `Seat ${j} is already filled → ignore it, it is no longer in the deck.`, L({ active: [j] }), { i, j, skip });
+    j = (j + 1) % n;
+  }
+  r.step(14, `Result: <b>[${res}]</b>. Same answer with O(1) extra space.`, L({ done: res.map((_, k) => k) }), { i, j, skip });
+  return r.steps;
+}
+
+mount({
+  title: 'Queue Animations',
+  sub: 'Queue = a line at a ticket counter. Core move to remember: <code>q.offer(q.poll())</code>, which rotates the line.',
+  problems: [
+    {
+      name: 'Reverse First K (GFG)',
+      hook: 'A train of k cars enters a <b>dead-end siding</b> (stack) and backs out reversed. Then the rest of the train goes once round the loop (rotation) to get back behind them.',
+      mantra: 'POUR → POUR BACK → ROTATE REST',
+      statement: 'Given a queue and k, reverse the order of the first k elements and keep the others in the same relative order. <code>[1,2,3,4,5], k=3 → [3,2,1,4,5]</code>. O(n) time, O(k) space.',
+      anims: [{ name: 'Stack + rotation', code: `
+public Queue<Integer> modifyQueue(Queue<Integer> q, int k) {
+    int remaining = q.size() - k;
+    Deque<Integer> st = new ArrayDeque<>();
+    while (k-- > 0) st.push(q.poll());
+    while (!st.isEmpty()) q.offer(st.pop());
+    while (remaining-- > 0) q.offer(q.poll());
+    return q;
+}`, steps: reverseK([1, 2, 3, 4, 5], 3) }],
+      recall: [
+        ['Why a stack?', 'Reversal is LIFO. Pushing k items and popping them gives them back in reverse order.'],
+        ['After pouring back, where is the reversed block, and how do you fix it?', 'It is at the BACK of the queue. Rotate the (n−k) untouched elements: q.offer(q.poll()) exactly n−k times.'],
+        ['Why did the original Java version TLE, and what fixes it?', 'java.util.Stack is synchronized (it extends Vector), so it is slow. Use ArrayDeque as the stack (push/pop).'],
+        ['Complexity?', 'Time O(n): each element moves a constant number of times. Space O(k) for the stack.']],
+      links: [['Implement Queue using Stacks', '../../Stack/Implement%20Queue%20using%20Stacks.cpp'], ['Implement Stack using Queues', '../../Design/Implement%20Stack%20using%20Queues.cpp']]
+    },
+    {
+      name: 'Reveal Cards (LC 950)',
+      hook: "Don't simulate the <b>cards</b>, simulate the <b>seats</b>. A cinema usher (the queue) calls seat numbers. Whoever is called first gets the smallest ticket, and every second seat is sent to the back of the line.",
+      mantra: 'TAKE A SEAT, NEXT SEAT TO BACK',
+      statement: 'Order the deck so that repeatedly "reveal the top card, then move the next top card to the bottom" reveals cards in increasing order. <code>[17,13,11,2,3,5,7] → [2,13,3,11,5,17,7]</code>.',
+      anims: [
+        { name: '1 · Understand the game', code: `
+// The game (given):
+// 1. reveal the top card
+// 2. move the next top card to the bottom
+// 3. repeat until the deck is empty
+// Goal: revealed cards come out sorted`, steps: revealProcess([2, 13, 3, 11, 5, 17, 7]) },
+        { name: '2 · Queue of seats (main)', code: `
+public int[] deckRevealedIncreasing(int[] deck) {
+    int n = deck.length;
+    Queue<Integer> que = new ArrayDeque<>();
+    int[] result = new int[n];
+    for (int i = 0; i < n; i++) que.offer(i);
+    Arrays.sort(deck);
+    for (int i = 0; i < n; i++) {
+        result[que.poll()] = deck[i];
+        if (!que.isEmpty()) que.offer(que.poll());
+    }
+    return result;
+}`, steps: revealQueue([17, 13, 11, 2, 3, 5, 7]) },
+        { name: '3 · Skip-alternate, O(1) space', code: `
+public int[] deckRevealedIncreasingSkip(int[] deck) {
+    int n = deck.length;
+    int[] result = new int[n];
+    boolean skip = false;
+    int i = 0, j = 0;
+    Arrays.sort(deck);
+    while (i < n) {
+        if (result[j] == 0) {
+            if (!skip) result[j] = deck[i++];
+            skip = !skip;
+        }
+        j = (j + 1) % n;
+    }
+    return result;
+}`, steps: revealSkip([17, 13, 11, 2, 3, 5, 7]) }],
+      recall: [
+        ['What goes into the queue: cards or indices?', 'Indices (seats). The order the seats get revealed depends only on n, not on the card values.'],
+        ['Write the two lines inside the loop from memory.', 'result[que.poll()] = deck[i];  then  if (!que.isEmpty()) que.offer(que.poll());'],
+        ['In the skip approach, why skip only EMPTY seats?', 'Filled seats are cards already revealed, so they have left the deck. Only empty seats are still "in the deck" and take part in the reveal/move-to-bottom alternation.'],
+        ['Why does the skip approach rely on cards being ≥ 1?', 'It uses 0 to mean "empty seat". Constraints say deck[i] ≥ 1. Otherwise use a separate boolean[] filled.'],
+        ['Complexity of both?', 'O(n log n) from sorting. Queue approach uses O(n) space; skip approach uses O(1) extra.']],
+      links: [['Find the Winner of the Circular Game (same rotation)', '../Recursion/Recursion%20Animations.html#p=7'], ['Sliding Window Maximum (Deque)', '../../Sliding%20Window/Sliding%20Window%20Maximum.cpp']]
+    }
+  ]
+});
+</script>
+</body>
+</html>

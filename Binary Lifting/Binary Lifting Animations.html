@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Binary Lifting Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, tree, recorder, mount } = BrainAnim;
+const pow = j => `2^${j}=${1 << j}`;
+
+// Builds the up[][] table for a parent array, recording each doubling step
+function buildTable(r, parent, line, treeLane, colLine) {
+  const n = parent.length, log = 32 - Math.clz32(n);
+  const up = parent.map(() => Array(log).fill(null));
+  const G = (cls) => grid('up[v][j]  (2^j-th ancestor of v)', up.map(row => row.map(x => x === -1 ? '-1' : x)),
+    { colLabels: [...Array(log).keys()].map(pow), rowLabels: parent.map((_, v) => 'v' + v), cls });
+  r.step(line[0], `n = ${n}, so log = ${log} columns. Column j stores the <b>2^j-th ancestor</b>. Any k ≤ n is a sum of these powers.`, [treeLane({}), G()], { log });
+  for (let v = 0; v < n; v++) up[v][0] = parent[v];
+  r.step(line[1], `Column 0 is just the parent array: one jump up.`, [treeLane({}), G((_, c) => c === 0 ? 'active' : '')]);
+  for (let j = 1; j < log; j++) {
+    for (let v = 0; v < n; v++) up[v][j] = up[v][j - 1] === -1 ? -1 : up[up[v][j - 1]][j - 1];
+    const ex = parent.map((_, v) => v).reverse().find(v => up[v][j] !== -1) ?? n - 1;
+    const mid = up[ex][j - 1];
+    const cls = {}; cls[ex] = 'active'; if (mid !== -1) cls[mid] = 'warn'; if (up[ex][j] !== -1) cls[up[ex][j]] = 'done';
+    r.step(colLine, `Column ${j}: <b>a 2^${j} jump = two 2^${j - 1} jumps</b>. Example v${ex}: up[${ex}][${j - 1}] = ${mid}, then up[${mid}][${j - 1}] = ${up[ex][j]}. So up[${ex}][${j}] = ${up[ex][j]}.`,
+      [treeLane(cls), G((rr, c) => (rr === ex && c === j) ? 'done' : (rr === ex && c === j - 1) || (rr === mid && c === j - 1) ? 'warn' : c === j ? 'active' : c > j ? 'ghost' : '')], { j });
+  }
+  return { up, log, G };
+}
+
+// Animates LC 1483 build + one kth-ancestor query
+function kthAncestor() {
+  const parent = [-1, 0, 0, 1, 1, 3, 5, 6, 7, 8], r = recorder();
+  const P = {}; parent.forEach((p, v) => P[v] = p);
+  const T = cls => tree('Tree', P, { cls });
+  const { up, log, G } = buildTable(r, parent, [2, 5], T, 8);
+  let node = 9; const k = 5;
+  r.step(11, `Query: 5th ancestor of 9. In binary, <b>5 = 101</b> = 4 + 1. So take a 1-jump and a 4-jump: 2 table lookups instead of 5 steps.`, [T({ 9: 'active' }), G()], { node, k, 'k (binary)': k.toString(2) });
+  for (let j = 0; j < log && node !== -1; j++) {
+    if (k & (1 << j)) {
+      const from = node; node = up[node][j];
+      r.step(13, `Bit ${j} is set → jump 2^${j} = ${1 << j}: up[${from}][${j}] = <b>${node}</b>.`, [T({ [from]: 'warn', [node]: 'active' }), G((rr, c) => rr === from && c === j ? 'done' : '')], { node, j });
+    } else r.step(12, `Bit ${j} is 0 → no jump of size ${1 << j}.`, [T({ [node]: 'active' }), G((_, c) => c === j ? 'ghost' : '')], { node, j });
+  }
+  r.step(14, `Answer: <b>${node}</b>. Path 9→8→7→6→5→3. Each query is O(log n).`, [T({ [node]: 'done', 9: 'warn' }), G()], { node });
+  return r.steps;
+}
+
+// Animates LC 3559: LCA by lifting, then the 2^(d-1) formula
+function lcaQuery() {
+  const parent = [-1, 0, 0, 1, 1, 2, 3, 6, 4, 8], r = recorder();
+  const depth = parent.map(function d(p, v) { return p === -1 ? 0 : 1 + d(parent[p], p); });
+  const P = {}; parent.forEach((p, v) => P[v] = p);
+  const T = (cls, badge) => tree('Tree (badge = depth)', P, { cls, badge: badge || Object.fromEntries(depth.map((d, v) => [v, 'd' + d])) });
+  const { up, log, G } = buildTable(r, parent, [0, 0], T, 0);
+  let u = 7, v = 5;
+  r.step(2, `Query (7, 5). depth[7] = ${depth[7]}, depth[5] = ${depth[5]}. Phase 1: bring the deeper one up to the same depth.`, [T({ 7: 'active', 5: 'active' }), G()], { u, v });
+  const k = depth[u] - depth[v];
+  r.step(3, `k = ${depth[u]} − ${depth[v]} = <b>${k}</b> (binary ${k.toString(2)}).`, [T({ 7: 'active', 5: 'active' }), G()], { u, v, k });
+  for (let j = 0; j < log; j++) if (k & (1 << j)) {
+    const f = u; u = up[u][j];
+    r.step(4, `Bit ${j} set → u jumps 2^${j}: ${f} → <b>${u}</b>. Now both are at depth ${depth[u]}.`, [T({ [f]: 'ghost', [u]: 'active', [v]: 'active' }), G((rr, c) => rr === f && c === j ? 'done' : '')], { u, v });
+  }
+  r.step(5, `u ≠ v, so they sit on different branches. Phase 2: jump both up <b>from the biggest jump down</b>, but only while their ancestors are still <b>different</b>.`, [T({ [u]: 'active', [v]: 'active' }), G()], { u, v });
+  for (let j = log - 1; j >= 0; j--) {
+    const a = up[u][j], b = up[v][j];
+    if (a !== b) {
+      const fu = u, fv = v; u = a; v = b;
+      r.step(7, `j=${j}: up[${fu}][${j}] = ${a}, up[${fv}][${j}] = ${b}. Different, so it is <b>safe to jump</b>: u=${u}, v=${v}.`, [T({ [u]: 'active', [v]: 'active' }), G((rr, c) => (rr === fu || rr === fv) && c === j ? 'done' : '')], { u, v, j });
+    } else r.step(7, `j=${j}: both land on ${a === -1 ? '-1 (beyond the root)' : a}. Same, so this jump might overshoot the LCA. Skip.`, [T({ [u]: 'active', [v]: 'active', ...(a !== -1 ? { [a]: 'warn' } : {}) }), G((rr, c) => (rr === u || rr === v) && c === j ? 'bad' : '')], { u, v, j });
+  }
+  const l = up[u][0];
+  r.step(9, `Now u and v are children of the LCA. LCA = parent(u) = <b>${l}</b>.`, [T({ [u]: 'active', [v]: 'active', [l]: 'done' }), G()], { lca: l });
+  const d = depth[7] + depth[5] - 2 * depth[l];
+  r.step(12, `Path length d = ${depth[7]} + ${depth[5]} − 2·${depth[l]} = <b>${d}</b> edges.`, [T({ 7: 'done', 5: 'done', [l]: 'done' }), G()], { d });
+  r.step(13, `Each edge weight is 1 or 2, and only the parity matters. Choose the first d−1 edges freely; the last edge is then forced to make the sum odd. Answer = 2^(d−1) = <b>${1 << (d - 1)}</b>.`, [T({ 7: 'done', 5: 'done', [l]: 'done' }), G()], { answer: 1 << (d - 1) });
+  return r.steps;
+}
+
+// Animates why an odd-sum count over d edges is 2^(d-1)
+function oddCount() {
+  const r = recorder(), d = 3, rows = [];
+  r.step(0, `Path with d = 3 edges, each weight 1 or 2. How many choices give an <b>odd</b> total?`, [grid('choices', [[null, null, null, null]], { colLabels: ['e1', 'e2', 'e3', 'sum'], rowLabels: [''] })]);
+  for (let m = 0; m < 1 << d; m++) {
+    const w = [...Array(d)].map((_, i) => (m >> (d - 1 - i) & 1) + 1), s = w.reduce((a, b) => a + b);
+    rows.push([...w, s]);
+    r.step(0, `${w.join(' + ')} = ${s} → ${s % 2 ? '<b>odd ✓</b>' : 'even ✗'}`, [grid('choices', rows, { colLabels: ['e1', 'e2', 'e3', 'sum'], rowLabels: rows.map((_, i) => i + 1), cls: (rr) => rows[rr][d] % 2 ? 'done' : 'ghost' })]);
+  }
+  r.step(0, `Exactly half: 4 of 8 = 2^(3−1). The last edge acts as a <b>parity switch</b>.`, [grid('choices', rows, { colLabels: ['e1', 'e2', 'e3', 'sum'], rowLabels: rows.map((_, i) => i + 1), cls: (rr, c) => rows[rr][d] % 2 ? (c === d - 1 ? 'warn' : 'done') : 'ghost' })]);
+  return r.steps;
+}
+
+// Animates LC 3534: greedy farthest-hop table on sorted values
+function pathExistence() {
+  const vals = [1, 3, 4, 6, 8, 9, 11, 14, 15], maxDiff = 2, n = vals.length, log = 32 - Math.clz32(n), r = recorder();
+  const jump = vals.map(() => Array(log).fill(null));
+  const V = (o = {}) => lane('Sorted values (index below)', vals, { showIdx: true, ...o });
+  const G = cls => grid('jump[i][j] (farthest index after 2^j hops)', jump, { colLabels: [...Array(log).keys()].map(pow), cls });
+  r.step(0, `Values are already sorted, maxDiff = ${maxDiff}. Two nodes connect if their values differ by ≤ 2. After sorting, the best single hop from i is <b>the farthest index still within +2</b>.`, [V(), G()]);
+  for (let i = 0; i < n; i++) {
+    let t = i; while (t + 1 < n && vals[t + 1] <= vals[i] + maxDiff) t++; jump[i][0] = t;
+    r.step(1, `From ${vals[i]} (idx ${i}) the farthest value ≤ ${vals[i] + maxDiff} is ${vals[t]} → jump[${i}][0] = <b>${t}</b>${t === i ? ' (stuck: gap ahead)' : ''}.`, [V({ active: [i], done: [t] }), G((rr, c) => rr === i && c === 0 ? 'active' : '')]);
+  }
+  for (let j = 1; j < log; j++) {
+    for (let i = 0; i < n; i++) jump[i][j] = jump[jump[i][j - 1]][j - 1];
+    r.step(3, `Column ${j}: same doubling rule, jump[i][${j}] = jump[ jump[i][${j - 1}] ][${j - 1}].`, [V(), G((_, c) => c === j ? 'active' : c > j ? 'ghost' : '')], { j });
+  }
+  const a = 0, b = 6; let cur = a, hops = 0;
+  r.step(5, `Query: idx ${a} → idx ${b}. Greedy: take the biggest jump that <b>stays before b</b> (still &lt; b), from large j down to 0.`, [V({ active: [cur], warn: [b] }), G()], { cur, hops, b });
+  for (let j = log - 1; j >= 0; j--) {
+    const to = jump[cur][j];
+    if (to < b) { const f = cur; cur = to; hops += 1 << j; r.step(7, `j=${j}: jump[${f}][${j}] = ${to} &lt; ${b} → take it. hops += ${1 << j}.`, [V({ active: [cur], warn: [b], ghost: [...Array(cur).keys()] }), G((rr, c) => rr === f && c === j ? 'done' : '')], { cur, hops, j }); }
+    else r.step(7, `j=${j}: jump[${cur}][${j}] = ${to} ≥ ${b} → this jump would reach or pass b. Skip.`, [V({ active: [cur], warn: [b] }), G((rr, c) => rr === cur && c === j ? 'bad' : '')], { cur, hops, j });
+  }
+  r.step(9, `One more single hop: jump[${cur}][0] = ${jump[cur][0]} ≥ ${b} → reachable. Answer = hops + 1 = <b>${hops + 1}</b>.`, [V({ done: [b], active: [cur] }), G((rr, c) => rr === cur && c === 0 ? 'done' : '')], { answer: hops + 1 });
+  r.step(9, `Query idx 0 → idx 8 gives <b>-1</b>: everyone gets stuck at idx 6 (value 11), because the gap 11 → 14 is bigger than 2.`, [V({ bad: [6, 7] }), G((_, c) => c === 0 ? '' : '')]);
+  return r.steps;
+}
+
+mount({
+  title: 'Binary Lifting Animations',
+  sub: 'Precompute jumps of 1, 2, 4, 8, … Then any distance is a sum of powers of two, so it takes O(log n) jumps.',
+  problems: [
+    { name: 'Kth Ancestor (LC 1483)',
+      hook: 'An <b>elevator with express buttons</b>: +1, +2, +4, +8 floors. To go up 5 floors, press +4 and +1. Each button is built from two presses of the one below it.',
+      mantra: 'DOUBLE THE JUMP, READ THE BITS',
+      statement: 'Given a tree as a parent array, answer many queries for the k-th ancestor of a node (or -1). Precompute O(n log n), answer each query in O(log n).',
+      anims: [{ name: 'Build table + query', code: `
+TreeAncestor(int n, int[] parent) {
+    log = 32 - Integer.numberOfLeadingZeros(n);
+    up = new int[n][log];
+    for (int[] row : up) Arrays.fill(row, -1);
+    for (int v = 0; v < n; v++) up[v][0] = parent[v];
+    for (int j = 1; j < log; j++)
+        for (int v = 0; v < n; v++)
+            if (up[v][j - 1] != -1) up[v][j] = up[up[v][j - 1]][j - 1];
+}
+
+int getKthAncestor(int node, int k) {
+    for (int j = 0; j < log && node != -1; j++)
+        if ((k & (1 << j)) != 0) node = up[node][j];
+    return (k >> log) > 0 ? -1 : node;
+}`, steps: kthAncestor() }],
+      recall: [
+        ['What does up[v][j] mean?', 'The 2^j-th ancestor of v, or -1 if that goes above the root.'],
+        ['Write the recurrence.', 'up[v][j] = up[ up[v][j-1] ][j-1]: two half-jumps make one full jump.'],
+        ['Why must the outer loop be over j and not over v?', 'Column j needs ALL of column j-1 finished first, for every node.'],
+        ['How many columns, in Java?', 'log = 32 - Integer.numberOfLeadingZeros(n) = floor(log2 n) + 1. Avoid Math.log, which can round wrong.']],
+      links: [['Number of Ways to Assign Edge Weights II', 1], ['Path Existence Queries II', 2]] },
+    { name: 'Edge Weights II (LC 3559)',
+      hook: 'Two climbers on different branches. First the lower one takes the <b>express elevator</b> up to the same floor. Then both take the biggest jumps that still keep them apart. Their meeting point is <b>one floor above</b>.',
+      mantra: 'LEVEL UP, JUMP WHILE DIFFERENT, PARENT IS LCA',
+      statement: 'For each query (u, v), count the ways to give each edge on the u–v path weight 1 or 2 so the total is odd (mod 1e9+7). Answer = 2^(d−1), where d = path length found via the LCA.',
+      anims: [
+        { name: 'LCA by lifting', code: `
+int lca(int u, int v) {
+    if (depth[u] < depth[v]) { int t = u; u = v; v = t; }
+    int k = depth[u] - depth[v];
+    for (int j = 0; j < log; j++) if ((k & (1 << j)) != 0) u = up[u][j];
+    if (u == v) return u;
+    for (int j = log - 1; j >= 0; j--) {
+        if (up[u][j] != up[v][j]) { u = up[u][j]; v = up[v][j]; }
+    }
+    return up[u][0];
+}
+// per query:
+int d = depth[u] + depth[v] - 2 * depth[lca(u, v)];
+res[i] = d == 0 ? 0 : (int) pow2[d - 1];`, steps: lcaQuery() },
+        { name: 'Why 2^(d−1)?', code: `
+// d edges, each weight 1 (odd) or 2 (even)
+// sum is odd  <=>  odd number of 1s
+// choose the first d-1 freely: 2^(d-1) ways
+// the last edge is forced (it fixes the parity)
+// answer = 2^(d-1)  (and 0 when d == 0)`, steps: oddCount() }],
+      recall: [
+        ['Phase 1 of LCA?', 'Swap so u is deeper, then lift u by k = depth[u]-depth[v] using the bits of k.'],
+        ['Phase 2: why jump only when up[u][j] != up[v][j]?', 'Equal ancestors mean the jump reaches the LCA or overshoots it. Jumping only while they differ leaves u and v just below the LCA.'],
+        ['Path length formula?', 'd = depth[u] + depth[v] − 2·depth[lca].'],
+        ['Java pitfall for n = 1e5?', 'Recursive DFS on a path-shaped tree overflows the stack. Use BFS to fill parent and depth.']],
+      links: [['Kth Ancestor of a Tree Node', 0], ['Path Existence Queries II', 2]] },
+    { name: 'Path Existence II (LC 3534)',
+      hook: 'Stepping stones in a river, sorted by position. From any stone you jump to the <b>farthest</b> stone within reach. Then build express jumps (2, 4, 8 stones) and count hops like reading bits.',
+      mantra: 'SORT, FARTHEST HOP, LIFT BELOW TARGET, +1',
+      statement: 'Nodes i, j are connected if |nums[i] − nums[j]| ≤ maxDiff. For each query, return the minimum number of edges between u and v, or -1.',
+      anims: [{ name: 'Jump table + greedy count', code: `
+for (int i = 0; i < n; i++) jump[i][0] = lastAtMost(vals, vals[i] + maxDiff);
+for (int j = 1; j < log; j++)
+    for (int i = 0; i < n; i++) jump[i][j] = jump[jump[i][j - 1]][j - 1];
+
+// query on sorted positions a < b
+int cur = a, hops = 0;
+for (int j = log - 1; j >= 0; j--) {
+    if (jump[cur][j] < b) { cur = jump[cur][j]; hops += 1 << j; }
+}
+res[q] = jump[cur][0] >= b ? hops + 1 : -1;`, steps: pathExistence() }],
+      recall: [
+        ['Why is the farthest hop always optimal?', 'Values are sorted, so from a farther index you can reach everything a nearer index can (and more). Greedy is safe.'],
+        ['Why lift while jump < b, then add 1?', 'This is the same "stay just below" trick as LCA. We take the maximum hops that do not reach b, then one more hop either reaches b or proves it is unreachable.'],
+        ['How do you map an original node to its sorted position?', 'Sort the indices by value and store pos[original] = sortedIndex.'],
+        ['When is the answer -1?', 'When even after all jumps, jump[cur][0] < b. A gap larger than maxDiff blocks the way.']],
+      links: [['Kth Ancestor of a Tree Node', 0], ['Edge Weights II (same lift-below trick)', 1]] }
+  ]
+});
+</script>
+</body>
+</html>

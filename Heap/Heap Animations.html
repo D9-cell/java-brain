@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heap Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, tree, recorder, mount, ln } = BrainAnim;
+
+// Real binary heap (array, sift up / down) so the tree view shows true heap order
+class Heap {
+  constructor(cmp, label = x => x) { this.a = []; this.cmp = cmp; this.label = label; }
+  get size() { return this.a.length; }
+  peek() { return this.a[0]; }
+  push(x) { const a = this.a; a.push(x); let i = a.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (this.cmp(a[i], a[p]) < 0) { [a[i], a[p]] = [a[p], a[i]]; i = p; } else break; } }
+  pop() { const a = this.a, top = a[0], last = a.pop(); if (a.length) { a[0] = last; let i = 0; for (;;) { let s = i; const l = 2 * i + 1, r = l + 1; if (l < a.length && this.cmp(a[l], a[s]) < 0) s = l; if (r < a.length && this.cmp(a[r], a[s]) < 0) s = r; if (s === i) break; [a[i], a[s]] = [a[s], a[i]]; i = s; } } return top; }
+  view(name, cls = {}) { const P = {}, L = {}; this.a.forEach((x, i) => { P[i] = i ? (i - 1) >> 1 : -1; L[i] = this.label(x); }); return tree(name + (this.a.length ? '' : ' (empty)'), P, { labels: L, cls: { 0: 'done', ...cls }, wide: this.a.some(x => String(this.label(x)).length > 2) }); }
+  sorted() { return [...this.a].sort(this.cmp); }
+}
+const MIN = (a, b) => a - b, MAX = (a, b) => b - a;
+function sim(intro, steps) { const r = recorder(); r.step(intro[0], intro[1], intro[2]()); for (const s of steps) { s[3] && s[3](); r.step(s[0], s[1](), s[2]()); } return r.steps; }
+
+const C_KLA = `
+public int findKthLargestHeap(int[] nums, int k) {
+    PriorityQueue<Integer> pq = new PriorityQueue<>();   // min-heap
+    for (int x : nums) {
+        pq.offer(x);
+        if (pq.size() > k) pq.poll();                     // throw away the smallest
+    }
+    return pq.peek();
+}
+// Quickselect: partition around a random pivot, recurse into one side only → O(n) average`;
+function kthLargest() {
+  const r = recorder(), nums = [3, 2, 1, 5, 6, 4], k = 2, h = new Heap(MIN);
+  r.step(ln(C_KLA, 'min-heap'), `k = 2. Keep a <b>min-heap of the k largest</b> seen. Its top is the smallest of them = the k-th largest.`, [lane('nums', nums), h.view('min-heap')]);
+  nums.forEach((x, i) => { h.push(x); let out = null; if (h.size > k) out = h.pop(); r.step(ln(C_KLA, out === null ? 'pq.offer' : 'throw away'), `offer ${x}${out !== null ? `, size > k → poll the smallest (${out})` : ''}.`, [lane('nums', nums, { active: [i] }), h.view('min-heap (size ≤ k)')]); });
+  r.step(ln(C_KLA, 'return pq.peek()'), `Answer = top = <b>${h.peek()}</b>. O(n log k).`, [h.view('min-heap')]);
+  return r.steps;
+}
+
+const C_STREAM = `
+public int add(int val) {
+    pq.offer(val);
+    if (pq.size() > k) pq.poll();
+    return pq.peek();
+}`;
+function kthStream() {
+  const h = new Heap(MIN); [4, 5, 8, 2].forEach(x => { h.push(x); if (h.size > 3) h.pop(); });
+  return sim([0, `k = 3, start [4,5,8,2] → keep the 3 largest {4,5,8}.`, () => [h.view('min-heap of size 3')]], [3, 5, 10, 9, 4].map(v => [ln(C_STREAM, 'return pq.peek()'), () => `add(${v}) → <b>${h.peek()}</b>.`, () => [h.view('min-heap of size 3')], () => { h.push(v); if (h.size > 3) h.pop(); }]));
+}
+
+const C_STONE = `
+while (pq.size() > 1) {
+    int y = pq.poll(), x = pq.poll();     // two heaviest
+    if (y != x) pq.offer(y - x);
+}
+return pq.isEmpty() ? 0 : pq.peek();`;
+function stones() {
+  const h = new Heap(MAX); [2, 7, 4, 1, 8, 1].forEach(x => h.push(x));
+  const steps = []; const sim2 = []; const hh = new Heap(MAX); [2, 7, 4, 1, 8, 1].forEach(x => hh.push(x));
+  while (hh.size > 1) { const y = hh.pop(), x = hh.pop(); if (y !== x) hh.push(y - x); sim2.push([y, x]); }
+  return sim([0, `Max-heap: always smash the <b>two heaviest</b>.`, () => [h.view('max-heap')]], sim2.map(([y, x]) => [ln(C_STONE, 'two heaviest'), () => `${y} vs ${x} → ${y === x ? 'both destroyed' : `push ${y - x}`}.`, () => [h.view('max-heap')], () => { h.pop(); h.pop(); if (y !== x) h.push(y - x); }]));
+}
+
+const C_MED = `
+public void addNum(int num) {
+    left.offer(num);
+    right.offer(left.poll());
+    if (right.size() > left.size()) left.offer(right.poll());
+}`;
+function median() {
+  const L = new Heap(MAX), R = new Heap(MIN);
+  return sim([0, `Max-heap for the small half, min-heap for the big half.`, () => [L.view('left (max-heap)'), R.view('right (min-heap)')]], [5, 15, 1, 3].map(v => [ln(C_MED, 'right.offer'), () => `add ${v} → median ${L.size > R.size ? L.peek() : (L.peek() + R.peek()) / 2}.`, () => [L.view('left (max-heap)'), R.view('right (min-heap)')], () => { L.push(v); R.push(L.pop()); if (R.size > L.size) L.push(R.pop()); }]));
+}
+
+const C_LEX = `
+for (int i = 0; i < s.length(); i++) {
+    char ch = s.charAt(i);
+    if (ch != '*') { pos.get(ch - 'a').push(i); continue; }   // stack of indices per letter
+    gone[i] = true;
+    for (int c = 0; c < 26; c++)                              // smallest letter present…
+        if (!pos.get(c).isEmpty()) { gone[pos.get(c).pop()] = true; break; }   // …its RIGHTMOST copy
+}`;
+function lexStars() {
+  const s = 'aaba*', r = recorder();
+  r.step(0, `Each '*' deletes the smallest letter to its left. Which copy? The <b>rightmost</b> one: deleting a later 'a' keeps the earlier 'a's in front, so the string stays smaller.`, [lane('s', [...s], { showIdx: true })]);
+  r.step(ln(C_LEX, 'stack of indices'), `Stacks per letter: a → [0, 1, 3], b → [2].`, [lane('a positions (top = rightmost)', [0, 1, 3], { active: [2] }), lane('b positions', [2])]);
+  r.step(ln(C_LEX, 'RIGHTMOST copy'), `'*' at 4 → smallest letter 'a' → pop its top (index 3).`, [lane('s', [...s], { showIdx: true, bad: [3, 4] })]);
+  r.step(0, `Result <b>"aab"</b>. Heap version: order by (char asc, index desc).`, [lane('result', [...'aab'], { done: [0, 1, 2] })]);
+  return r.steps;
+}
+
+const C_KPAIR = `
+for (int i = 0; i < Math.min(a.length, k); i++) pq.offer(new int[]{i, 0});
+while (res.size() < k && !pq.isEmpty()) {
+    int[] p = pq.poll();
+    res.add(List.of(a[p[0]], b[p[1]]));
+    if (p[1] + 1 < b.length) pq.offer(new int[]{p[0], p[1] + 1});   // next in that row
+}`;
+function kPairs() {
+  const a = [1, 7, 11], b = [2, 4, 6], h = new Heap((x, y) => a[x[0]] + b[x[1]] - (a[y[0]] + b[y[1]]), p => `${a[p[0]]}+${b[p[1]]}`), res = [];
+  const G = () => grid('sum table (rows a, cols b)', a.map(x => b.map(y => x + y)), { rowLabels: a, colLabels: b, cls: (i, j) => (res.some(p => p[0] === i && p[1] === j) ? 'done' : h.a.some(p => p[0] === i && p[1] === j) ? 'active' : '') });
+  [0, 1, 2].forEach(i => h.push([i, 0]));
+  return sim([ln(C_KPAIR, 'pq.offer(new int[]{i, 0})'), `Each row of the sum table is sorted. Like merging sorted lists: start with column 0 of every row.`, () => [G(), h.view('min-heap')]], [0, 1, 2].map(() => [ln(C_KPAIR, 'next in that row'), () => `pop ${a[res.at(-1)[0]]}+${b[res.at(-1)[1]]}; push its right neighbour.`, () => [G(), h.view('min-heap')], () => { const p = h.pop(); res.push(p); if (p[1] + 1 < 3) h.push([p[0], p[1] + 1]); }]));
+}
+
+const C_FRAC = `
+for (int i = 0; i < n - 1; i++) pq.offer(new int[]{i, n - 1});   // smallest fraction of each numerator
+while (--k > 0) {
+    int[] p = pq.poll();
+    if (p[1] - 1 > p[0]) pq.offer(new int[]{p[0], p[1] - 1});   // next bigger with the same numerator
+}`;
+function frac() {
+  const arr = [1, 2, 3, 5], h = new Heap((x, y) => arr[x[0]] * arr[y[1]] - arr[y[0]] * arr[x[1]], p => `${arr[p[0]]}/${arr[p[1]]}`), out = [];
+  [0, 1, 2].forEach(i => h.push([i, 3]));
+  return sim([ln(C_FRAC, 'smallest fraction'), `k = 3. Same "k sorted lists" trick: list i = arr[i]/arr[j] for j going down.`, () => [h.view('min-heap of fractions'), lane('popped', [...out])]], [1, 2].map(() => [ln(C_FRAC, 'next bigger'), () => `pop ${out.at(-1)}; push the next fraction of that numerator.`, () => [h.view('min-heap of fractions'), lane('popped', [...out])], () => { const p = h.pop(); out.push(`${arr[p[0]]}/${arr[p[1]]}`); if (p[1] - 1 > p[0]) h.push([p[0], p[1] - 1]); }]).concat([[ln(C_FRAC, 'while (--k'), () => `3rd smallest = top = <b>${h.label(h.peek())}</b>.`, () => [h.view('min-heap of fractions', { 0: 'done' })]]]));
+}
+
+const C_FURTH = `
+for (int i = 0; i < heights.length - 1; i++) {
+    int d = heights[i + 1] - heights[i];
+    if (d <= 0) continue;
+    bricks -= d;
+    used.offer(d);                         // max-heap of climbs paid with bricks
+    if (bricks < 0) {
+        if (ladders == 0) return i;
+        bricks += used.poll();             // swap the biggest brick-climb for a ladder
+        ladders--;
+    }
+}`;
+function furthest() {
+  const H = [4, 2, 7, 6, 9, 14, 12]; let b = 5, l = 1; const h = new Heap(MAX); const r = recorder();
+  r.step(0, `bricks 5, ladders 1. Pay with bricks now, but <b>remember</b> each climb. When bricks go negative, give the biggest past climb a ladder instead.`, [lane('heights', H, { showIdx: true }), h.view('climbs paid with bricks (max-heap)')], { bricks: b, ladders: l });
+  for (let i = 0; i < H.length - 1; i++) {
+    const d = H[i + 1] - H[i]; if (d <= 0) { r.step(ln(C_FURTH, 'continue'), `${H[i]} → ${H[i + 1]}: going down, free.`, [lane('heights', H, { showIdx: true, active: [i + 1] }), h.view('max-heap')], { bricks: b, ladders: l }); continue; }
+    b -= d; h.push(d);
+    if (b < 0) { if (!l) { r.step(ln(C_FURTH, 'return i'), `Climb ${d} → bricks ${b} &lt; 0 and no ladders → stop at building <b>${i}</b>.`, [lane('heights', H, { showIdx: true, done: [i], bad: [i + 1] }), h.view('max-heap')], { bricks: b, ladders: l }); return r.steps; } const big = h.pop(); b += big; l--; r.step(ln(C_FURTH, 'swap the biggest'), `Climb ${d} → bricks went negative. Put a ladder on the biggest climb (${big}) instead → bricks back to ${b}.`, [lane('heights', H, { showIdx: true, active: [i + 1] }), h.view('max-heap')], { bricks: b, ladders: l }); }
+    else r.step(ln(C_FURTH, 'used.offer'), `Climb ${d} with bricks → ${b} left.`, [lane('heights', H, { showIdx: true, active: [i + 1] }), h.view('max-heap')], { bricks: b, ladders: l });
+  }
+  return r.steps;
+}
+
+const C_IPO = `
+while (k-- > 0) {
+    while (i < n && capital[idx[i]] <= w) pq.offer(profits[idx[i++]]);   // unlock affordable
+    if (pq.isEmpty()) break;
+    w += pq.poll();                                                    // best profit
+}`;
+function ipo() {
+  const P = [1, 2, 3], C = [0, 1, 1]; let w = 0, i = 0; const h = new Heap(MAX);
+  const V = () => [lane('projects sorted by capital (cap:profit)', C.map((c, j) => `${c}:${P[j]}`), { ghost: [...Array(i).keys()] }), h.view('unlocked profits (max-heap)')];
+  return sim([0, `k = 2, w = 0. Unlock every project you can afford; do the most profitable one; repeat.`, V], [
+    [ln(C_IPO, 'unlock affordable'), () => `w = 0 → unlock project (0:1).`, V, () => { while (i < 3 && C[i] <= w) h.push(P[i++]); }],
+    [ln(C_IPO, 'best profit'), () => `do it → w = ${w}.`, V, () => { w += h.pop(); }],
+    [ln(C_IPO, 'unlock affordable'), () => `w = 1 → unlock (1:2), (1:3).`, V, () => { while (i < 3 && C[i] <= w) h.push(P[i++]); }],
+    [ln(C_IPO, 'best profit'), () => `do the best (3) → w = <b>${w}</b>.`, V, () => { w += h.pop(); }]]);
+}
+
+const C_CTA = `
+while (pq.peek() > 1) {
+    long mx = pq.poll(), rest = sum - mx;
+    if (rest == 1) return true;
+    if (rest == 0 || mx <= rest) return false;
+    long prev = mx % rest;              // undo many steps at once
+    if (prev == 0) return false;
+    pq.offer(prev);
+    sum = rest + prev;
+}`;
+function cta() {
+  const h = new Heap(MAX); [9, 3, 5].forEach(x => h.push(x)); let sum = 17;
+  return sim([0, `Target [9,3,5]. Run time <b>backwards</b>: the biggest number was written last, as the sum of all others at that time.`, () => [h.view('max-heap'), lane('sum', [sum])]], [
+    [ln(C_CTA, 'long prev'), () => `9 came from 9 − (3+5) = 1 → [1,3,5].`, () => [h.view('max-heap'), lane('sum', [sum])], () => { h.pop(); h.push(1); sum = 9; }],
+    [ln(C_CTA, 'long prev'), () => `5 came from 5 − (1+3) = 1 → [1,3,1].`, () => [h.view('max-heap'), lane('sum', [sum])], () => { h.pop(); h.push(1); sum = 5; }],
+    [ln(C_CTA, 'long prev'), () => `3 came from 3 − 2 = 1 → all ones → <b>true</b>. Use % so [1, 1e9] does not take 1e9 steps.`, () => [h.view('max-heap'), lane('sum', [sum])], () => { h.pop(); h.push(1); sum = 3; }]]);
+}
+
+const C_SCORE = `
+while (!pq.isEmpty()) {
+    int[] p = pq.poll();                    // (value, index), smallest first
+    if (marked[p[1]]) continue;
+    score += p[0];
+    marked[p[1]] = true;
+    if (p[1] > 0) marked[p[1] - 1] = true;
+    if (p[1] + 1 < n) marked[p[1] + 1] = true;
+}`;
+function score() {
+  const a = [2, 1, 3, 4, 5, 2], m = Array(6).fill(false); let s = 0;
+  const order = a.map((v, i) => [v, i]).sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  const r = recorder(); r.step(0, `Pop (value, index) in increasing order; skip marked ones; take and mark neighbours.`, [lane('nums', a, { showIdx: true })]);
+  for (const [v, i] of order) { if (m[i]) { r.step(ln(C_SCORE, 'continue'), `(${v}, ${i}) is marked → skip.`, [lane('nums', a, { showIdx: true, ghost: m.map((x, k) => (x ? k : -1)).filter(k => k >= 0), bad: [i] })], { score: s }); continue; } s += v; m[i] = true; if (i) m[i - 1] = true; if (i < 5) m[i + 1] = true; r.step(ln(C_SCORE, 'score += p[0]'), `Take ${v} at ${i}; mark ${i - 1}, ${i}, ${i + 1}.`, [lane('nums', a, { showIdx: true, ghost: m.map((x, k) => (x ? k : -1)).filter(k => k >= 0), done: [i] })], { score: s }); }
+  return r.steps;
+}
+
+const C_CS = `
+for (int i = 0; i < nums.length; i++) {
+    while (!pq.isEmpty() && pq.peek()[1] < i - k) pq.poll();           // too far back
+    int dp = nums[i] + (pq.isEmpty() ? 0 : Math.max(0, pq.peek()[0]));
+    best = Math.max(best, dp);
+    pq.offer(new int[]{dp, i});
+}`;
+function constrained() {
+  const a = [10, 2, -10, 5, 20], k = 2, dp = []; const h = new Heap((x, y) => y[0] - x[0], p => `${p[0]}@${p[1]}`);
+  const r = recorder(); r.step(0, `dp[i] = best sum ending at i = nums[i] + max(0, best dp in the last k indices). A max-heap gives that best; drop entries older than i − k.`, [lane('nums', a, { showIdx: true })]);
+  a.forEach((v, i) => { while (h.size && h.peek()[1] < i - k) h.pop(); const d = v + (h.size ? Math.max(0, h.peek()[0]) : 0); dp.push(d); h.push([d, i]); r.step(ln(C_CS, 'int dp ='), `i=${i}: ${v} + max(0, ${h.size > 1 ? 'best in window' : '—'}) → dp = <b>${d}</b>.`, [lane('nums', a, { showIdx: true, active: [i] }), lane('dp', [...dp]), h.view('max-heap (dp@index)')]); });
+  r.step(ln(C_CS, 'best = Math.max'), `Answer max(dp) = <b>${Math.max(...dp)}</b>. (A monotonic deque makes it O(n).)`, [lane('dp', dp, { done: [dp.indexOf(Math.max(...dp))] })]);
+  return r.steps;
+}
+
+const C_CHOOSE = `
+for (int i = 0; i < n; ) {
+    int j = i;
+    while (j < n && nums1[idx[j]] == nums1[idx[i]]) ans[idx[j++]] = sum;   // equal nums1 share the old sum
+    for (int t = i; t < j; t++) {
+        pq.offer(nums2[idx[t]]);
+        sum += nums2[idx[t]];
+        if (pq.size() > k) sum -= pq.poll();                              // keep the k largest
+    }
+    i = j;
+}`;
+function choose() {
+  const r = recorder();
+  r.step(0, `For each i: sum of the k largest nums2[j] among nums1[j] &lt; nums1[i]. Sort by nums1; as nums1 grows, the candidate pool only grows → min-heap of the k largest + running sum.`, [lane('nums1', [4, 2, 1, 5, 3]), lane('nums2', [10, 20, 30, 40, 50])]);
+  r.step(ln(C_CHOOSE, 'equal nums1 share'), `Sorted by nums1: 1(30) 2(20) 3(50) 4(10) 5(40). Answer for each = sum <b>before</b> adding its own group (strictly smaller).`, [lane('sorted (nums1:nums2)', ['1:30', '2:20', '3:50', '4:10', '5:40'])]);
+  r.step(ln(C_CHOOSE, 'keep the k largest'), `k = 2 → answers: 1→0, 2→30, 3→50, 4→80, 5→80 → <b>[80,30,0,80,50]</b> in original order.`, [lane('answer', [80, 30, 0, 80, 50], { done: [0, 1, 2, 3, 4] })]);
+  return r.steps;
+}
+
+const C_HAPPY = `
+int[] first = pq.poll();
+if (n >= 2 && sb.charAt(n - 1) == first[1] && sb.charAt(n - 2) == first[1]) {
+    if (pq.isEmpty()) break;
+    int[] second = pq.poll();              // forced to use the runner-up
+    sb.append((char) second[1]);
+    if (--second[0] > 0) pq.offer(second);
+    pq.offer(first);
+} else {
+    sb.append((char) first[1]);
+    if (--first[0] > 0) pq.offer(first);
+}`;
+function happy() {
+  let cnt = { a: 1, b: 1, c: 7 }, s = ''; const r = recorder();
+  r.step(0, `a=1, b=1, c=7. Greedy: use the letter with the most left, unless it would make three in a row.`, [lane('counts', Object.entries(cnt).map(([k, v]) => `${k}:${v}`)), lane('string', [])]);
+  while (true) { const order = Object.keys(cnt).filter(k => cnt[k] > 0).sort((x, y) => cnt[y] - cnt[x]); if (!order.length) break; let ch = order[0], forced = false; if (s.endsWith(ch + ch)) { if (order.length < 2) break; ch = order[1]; forced = true; } s += ch; cnt[ch]--; r.step(ln(C_HAPPY, forced ? 'forced to use' : 'sb.append((char) first[1])'), forced ? `"${order[0]}" would make three → use runner-up "${ch}".` : `use "${ch}".`, [lane('counts', Object.entries(cnt).map(([k, v]) => `${k}:${v}`)), lane('string', [...s])]); }
+  r.step(ln(C_HAPPY, 'if (pq.isEmpty()) break'), `Only c left and "cc" at the end → stop. Answer <b>${s}</b>.`, [lane('string', [...s], { done: [...s].map((_, i) => i) })]);
+  return r.steps;
+}
+
+const C_KOPS = `
+while (k-- > 0) {
+    int x = pq.poll();
+    score += x;
+    pq.offer((x + 2) / 3);        // ceil(x / 3)
+}`;
+function kops() {
+  const h = new Heap(MAX); [1, 10, 3, 3, 3].forEach(x => h.push(x)); let sc = 0;
+  return sim([0, `Always take the biggest; it shrinks to ceil(x/3).`, () => [h.view('max-heap'), lane('score', [sc])]], [1, 2, 3].map(() => [ln(C_KOPS, 'score += x'), () => `take → score ${sc}.`, () => [h.view('max-heap'), lane('score', [sc])], () => { const x = h.pop(); sc += x; h.push(Math.ceil(x / 3)); }]));
+}
+
+const C_MSS = `
+Arrays.sort(idx, (a, b) -> nums2[b] - nums2[a]);   // nums2 descending
+for (int t = 0; t < n; t++) {
+    int i = idx[t];
+    pq.offer(nums1[i]);
+    sum += nums1[i];
+    if (pq.size() > k) sum -= pq.poll();           // keep the k largest nums1
+    if (pq.size() == k) best = Math.max(best, sum * nums2[i]);
+}`;
+function mss() {
+  const n1 = [1, 3, 3, 2], n2 = [2, 1, 3, 4], k = 3, ord = [3, 2, 0, 1], h = new Heap(MIN); let sum = 0, best = 0;
+  const r = recorder(); r.step(ln(C_MSS, 'nums2 descending'), `Score = (sum of chosen nums1) × (min of chosen nums2). Sort by nums2 descending: the current element's nums2 is the min of everything taken so far.`, [lane('order by nums2 ↓ (n1,n2)', ord.map(i => `(${n1[i]},${n2[i]})`))]);
+  ord.forEach((i, t) => { h.push(n1[i]); sum += n1[i]; if (h.size > k) sum -= h.pop(); if (h.size === k) best = Math.max(best, sum * n2[i]); r.step(ln(C_MSS, 'if (pq.size() == k)'), `take (${n1[i]},${n2[i]}): best k nums1 sum ${sum} × min ${n2[i]}${h.size === k ? ` = ${sum * n2[i]}` : ' (not k yet)'}. best = ${best}.`, [lane('order', ord.map(j => `(${n1[j]},${n2[j]})`), { active: [t] }), h.view('min-heap of nums1')], { sum, best }); });
+  return r.steps;
+}
+
+const C_MTSV = `
+for (int l = 0; l < n; l++) pq.offer(new long[]{value(l, n - 1), l, n - 1});   // widest is best for each l
+while (k-- > 0) {
+    long[] t = pq.poll();
+    total += t[0];
+    int l = (int) t[1], r = (int) t[2];
+    if (r > l) pq.offer(new long[]{value(l, r - 1), l, r - 1});              // next best for this l
+}`;
+function mtsv() {
+  const r = recorder();
+  r.step(0, `value(l, r) = max − min only grows when r grows. So for each start l the best subarray is [l, n−1], then [l, n−2], …: <b>n sorted lists</b>.`, [lane('nums', [4, 2, 5, 1], { showIdx: true })]);
+  r.step(ln(C_MTSV, 'widest is best'), `Seed one candidate per l: [0..3]=4, [1..3]=4, [2..3]=4, [3..3]=0.`, [lane('heap candidates', ['4 [0,3]', '4 [1,3]', '4 [2,3]', '0 [3,3]'])]);
+  r.step(ln(C_MTSV, 'next best for this l'), `k = 3: pop 4, 4, 4 (each push its shrunk version) → total <b>12</b>. Range max/min via a sparse table in O(1).`, [lane('popped', ['4', '4', '4'], { done: [0, 1, 2] })], { total: 12 });
+  return r.steps;
+}
+
+const C_HIRE = `
+Arrays.sort(idx, by wage / quality);              // ascending ratio
+for (int i : idx) {
+    pq.offer(quality[i]);                         // max-heap of qualities
+    qsum += quality[i];
+    if (pq.size() > k) qsum -= pq.poll();         // drop the biggest quality
+    if (pq.size() == k) best = Math.min(best, qsum * ((double) wage[i] / quality[i]));
+}`;
+function hire() {
+  const q = [10, 20, 5], w = [70, 50, 30], r = recorder();
+  r.step(0, `Everyone in a group is paid at the group's <b>highest wage/quality ratio</b>. Cost = ratio × sum(quality).`, [lane('ratio (w/q)', q.map((x, i) => `${w[i]}/${x} = ${(w[i] / x).toFixed(1)}`))]);
+  r.step(ln(C_HIRE, 'ascending ratio'), `Sort by ratio: 2.5 (q20), 6 (q5), 7 (q10). Fixing worker i as the max-ratio, choose the k−1 smallest qualities before it.`, [lane('sorted', ['2.5 q20', '6 q5', '7 q10'])]);
+  r.step(ln(C_HIRE, 'best = Math.min'), `k = 2: at ratio 6 → q 20+5 = 25 × 6 = <b>150</b>; at ratio 7 → drop q20, q 5+10 = 15 × 7 = <b>105</b>. Best 105.`, [lane('candidates', ['150', '105'], { done: [1] })]);
+  return r.steps;
+}
+
+const C_MDS = `
+for (int i = 0; i < N; i++) {                     // left[i]: n smallest of nums[0..i]
+    maxH.offer(nums[i]); s += nums[i];
+    if (maxH.size() > n) s -= maxH.poll();
+    left[i] = s;
+}
+for (int i = N - 1; i >= 0; i--) {                // right[i]: n largest of nums[i..]
+    minH.offer(nums[i]); s += nums[i];
+    if (minH.size() > n) s -= minH.poll();
+    right[i] = s;
+}
+for (int i = n - 1; i < 2 * n; i++) best = Math.min(best, left[i] - right[i + 1]);`;
+function mds() {
+  const a = [7, 9, 5, 8, 1, 3], r = recorder();
+  r.step(0, `Remove n = 2 elements; the first half minus the second half should be as small as possible. Choose a <b>split point</b>: the first part keeps its n smallest, the second part keeps its n largest.`, [lane('nums', a, { showIdx: true })]);
+  r.step(ln(C_MDS, 'left[i] = s'), `left (n smallest prefix sums): i=1 → 16, i=2 → 12 (7+5), i=3 → 12.`, [lane('left[i]', ['—', 16, 12, 12, '—', '—'])]);
+  r.step(ln(C_MDS, 'right[i] = s'), `right (n largest suffix sums): i=2 → 13 (8+5), i=3 → 11, i=4 → 4.`, [lane('right[i]', ['—', '—', 13, 11, 4, '—'])]);
+  r.step(ln(C_MDS, 'best = Math.min'), `Splits: left[1]−right[2] = 16−13 = 3, left[2]−right[3] = 12−11 = <b>1</b>, left[3]−right[4] = 12−4 = 8. Answer 1.`, [lane('differences', [3, 1, 8], { done: [1] })]);
+  return r.steps;
+}
+
+const C_THR = `
+while (pq.size() > 1 && pq.peek() < k) {
+    long x = pq.poll(), y = pq.poll();
+    pq.offer(Math.min(x, y) * 2 + Math.max(x, y));   // long: can exceed int
+    ops++;
+}`;
+function thr() {
+  const h = new Heap(MIN); [2, 11, 10, 1, 3].forEach(x => h.push(x)); let ops = 0;
+  return sim([0, `k = 10. Combine the two smallest into 2·min + max until the smallest is ≥ k.`, () => [h.view('min-heap'), lane('ops', [ops])]], [1, 2].map(() => [ln(C_THR, 'Math.min(x, y) * 2'), () => `ops = ${ops}.`, () => [h.view('min-heap'), lane('ops', [ops])], () => { const x = h.pop(), y = h.pop(); h.push(Math.min(x, y) * 2 + Math.max(x, y)); ops++; }]));
+}
+
+const C_RSS = `
+for (int i = 0; i < n; i++) pq.offer(new int[]{nums[i], i});   // single elements
+for (int c = 1; c <= right; c++) {
+    int[] p = pq.poll();                                         // next smallest subarray sum
+    if (c >= left) res += p[0];
+    if (p[1] + 1 < n) pq.offer(new int[]{p[0] + nums[p[1] + 1], p[1] + 1});   // extend it
+}`;
+function rss() {
+  const a = [1, 2, 3, 4], h = new Heap((x, y) => x[0] - y[0], p => `${p[0]}`), out = [];
+  a.forEach((v, i) => h.push([v, i]));
+  return sim([ln(C_RSS, 'single elements'), `All values positive → extending a subarray only increases its sum. Seed single elements; each pop extends itself by one.`, () => [h.view('min-heap of subarray sums'), lane('sorted sums so far', [...out])]], [1, 2, 3, 4, 5].map(() => [ln(C_RSS, 'extend it'), () => `pop ${out.at(-1)}.`, () => [h.view('min-heap of subarray sums'), lane('sorted sums so far', [...out])], () => { const p = h.pop(); out.push(p[0]); if (p[1] + 1 < 4) h.push([p[0] + a[p[1] + 1], p[1] + 1]); }]).concat([[0, () => `left = 1, right = 5 → 1+2+3+3+4 = <b>13</b>.`, () => [lane('first 5', out, { done: [0, 1, 2, 3, 4] })]]]));
+}
+
+const C_RS = `
+while (k-- > 0) {
+    int x = pq.poll();
+    total -= x / 2;
+    pq.offer(x - x / 2);
+}`;
+function rstones() {
+  const h = new Heap(MAX); [5, 4, 9].forEach(x => h.push(x));
+  return sim([0, `Each operation removes floor(x/2) from a pile. To remove the most, always halve the <b>largest</b>.`, () => [h.view('max-heap')]], [1, 2].map(() => [ln(C_RS, 'total -= x / 2'), () => `halve the biggest → total ${h.a.reduce((s, x) => s + x, 0)}.`, () => [h.view('max-heap')], () => { const x = h.pop(); h.push(x - Math.floor(x / 2)); }]));
+}
+
+const C_REORG = `
+if (cnt[top] > (n + 1) / 2) return "";
+int i = 0;
+while (cnt[top]-- > 0) { res[i] = (char) ('a' + top); i += 2; }   // most frequent on even slots
+for (int c = 0; c < 26; c++)
+    while (cnt[c] > 0) {
+        if (i >= n) i = 1;                                         // then the odd slots
+        res[i] = (char) ('a' + c);
+        i += 2;
+        cnt[c]--;
+    }`;
+function reorg() {
+  const r = recorder(), out = Array(7).fill('·');
+  r.step(ln(C_REORG, 'return ""'), `"aaabbcc": max count 3 ≤ (7+1)/2 = 4 → possible.`, [lane('slots', [...out], { showIdx: true })]);
+  [0, 2, 4].forEach(i => out[i] = 'a'); r.step(ln(C_REORG, 'most frequent on even'), `Put all a's on even slots 0, 2, 4.`, [lane('slots', [...out], { showIdx: true, done: [0, 2, 4] })]);
+  out[6] = 'b'; out[1] = 'b'; out[3] = 'c'; out[5] = 'c'; r.step(ln(C_REORG, 'then the odd slots'), `Fill the rest: even slot 6, then odd slots 1, 3, 5 → <b>${out.join('')}</b>. No two equal neighbours.`, [lane('slots', [...out], { showIdx: true, done: [0, 1, 2, 3, 4, 5, 6] })]);
+  return r.steps;
+}
+
+const C_CPU = `
+while (k < n) {
+    if (pq.isEmpty() && time < tasks[idx[i]][0]) time = tasks[idx[i]][0];   // idle → jump
+    while (i < n && tasks[idx[i]][0] <= time) pq.offer(idx[i++]);         // arrived tasks
+    int t = pq.poll();                                                     // shortest, then lowest index
+    time += tasks[t][1];
+    order[k++] = t;
+}`;
+function cpu() {
+  const T = [[1, 2], [2, 4], [3, 2], [4, 1]], r = recorder(); let time = 1;
+  r.step(ln(C_CPU, 'idle → jump'), `Tasks (enqueue, duration). At time 1 only task 0 has arrived.`, [lane('tasks', T.map((t, i) => `#${i}(${t})`))], { time });
+  r.step(ln(C_CPU, 'shortest'), `Run #0 → time 3. Arrived: #1(dur 4), #2(dur 2) → shortest #2.`, [lane('order', [0])], { time: 3 });
+  r.step(ln(C_CPU, 'shortest'), `Run #2 → time 5. Arrived: #1(4), #3(1) → shortest #3.`, [lane('order', [0, 2])], { time: 5 });
+  r.step(ln(C_CPU, 'order[k++]'), `Run #3, then #1 → order <b>[0, 2, 3, 1]</b>.`, [lane('order', [0, 2, 3, 1], { done: [0, 1, 2, 3] })], { time: 10 });
+  return r.steps;
+}
+
+const C_RANGE = `
+while (true) {
+    int[] p = pq.poll();                          // list owning the current minimum
+    int lo = nums.get(p[0]).get(p[1]);
+    if (max - lo < best[1] - best[0]) best = new int[]{lo, max};
+    if (p[1] + 1 == nums.get(p[0]).size()) return best;   // a list ran out
+    int nx = nums.get(p[0]).get(p[1] + 1);
+    max = Math.max(max, nx);
+    pq.offer(new int[]{p[0], p[1] + 1});
+}`;
+function range() {
+  const L = [[4, 10, 15, 24, 26], [0, 9, 12, 20], [5, 18, 22, 30]], ptr = [0, 0, 0], r = recorder(); let best = null;
+  const V = () => L.map((l, i) => lane(`list ${i}`, l, { active: [ptr[i]] }));
+  for (let it = 0; it < 20; it++) {
+    const cur = ptr.map((p, i) => L[i][p]), lo = Math.min(...cur), hi = Math.max(...cur), i = cur.indexOf(lo);
+    if (!best || hi - lo < best[1] - best[0]) best = [lo, hi];
+    r.step(ln(C_RANGE, 'best = new int'), `Window [${lo}, ${hi}] covers all lists. Best = [${best}]. Advance the list holding the min (${lo}).`, V(), { best: `[${best}]` });
+    if (ptr[i] + 1 === L[i].length) { r.step(ln(C_RANGE, 'a list ran out'), `List ${i} is exhausted → stop. Answer <b>[${best}]</b>.`, V()); break; }
+    ptr[i]++;
+  }
+  return r.steps;
+}
+
+const C_SCF = `
+Map<Character, Integer> cnt = new HashMap<>();
+for (char c : s.toCharArray()) cnt.merge(c, 1, Integer::sum);
+PriorityQueue<Character> pq = new PriorityQueue<>((a, b) -> cnt.get(b) - cnt.get(a));
+pq.addAll(cnt.keySet());
+while (!pq.isEmpty()) { char c = pq.poll(); sb.append(String.valueOf(c).repeat(cnt.get(c))); }`;
+function scf() {
+  return sim([ln(C_SCF, 'cnt.merge'), `"tree" → counts t:1, r:1, e:2.`, () => [lane('counts', ['e:2', 'r:1', 't:1'])]], [[ln(C_SCF, 'repeat'), () => `Pour from the max-heap by count → <b>eert</b> (or eetr).`, () => [lane('output', [...'eert'], { done: [0, 1] })]]]);
+}
+
+const C_TS = `
+while (!pq.isEmpty()) {
+    List<Integer> back = new ArrayList<>();
+    int done = 0;
+    for (int i = 0; i <= n && !pq.isEmpty(); i++) {      // one cycle of n + 1 slots
+        int c = pq.poll();
+        if (c > 1) back.add(c - 1);
+        done++;
+    }
+    pq.addAll(back);
+    time += pq.isEmpty() ? done : n + 1;                 // full cycle unless it is the last
+}`;
+function ts() {
+  const r = recorder();
+  r.step(0, `"AAABBB", n = 2. Think in <b>cycles of n+1 slots</b>; each cycle runs the most frequent remaining tasks.`, [lane('counts', ['A:3', 'B:3'])]);
+  r.step(ln(C_TS, 'one cycle'), `Cycle 1: A, B, idle → counts A:2 B:2 (time 3).`, [lane('timeline', ['A', 'B', 'idle'])]);
+  r.step(ln(C_TS, 'one cycle'), `Cycle 2: A, B, idle (time 6).`, [lane('timeline', ['A', 'B', 'idle', 'A', 'B', 'idle'])]);
+  r.step(ln(C_TS, 'unless it is the last'), `Last cycle: A, B — no idle needed → total <b>8</b>. Formula: (3−1)·3 + 2 = 8.`, [lane('timeline', ['A', 'B', 'idle', 'A', 'B', 'idle', 'A', 'B'], { done: [6, 7] })]);
+  return r.steps;
+}
+
+const C_TOPK = `
+List<List<Integer>> bucket = ...;                 // bucket[f] = values seen exactly f times
+cnt.forEach((v, f) -> bucket.get(f).add(v));
+for (int f = nums.length; f >= 0 && idx < k; f--) for (int v : bucket.get(f)) if (idx < k) res[idx++] = v;`;
+function topk() {
+  return sim([0, `[1,1,1,2,2,3], k = 2. Count: 1→3, 2→2, 3→1.`, () => [lane('counts', ['1:3', '2:2', '3:1'])]], [[ln(C_TOPK, 'bucket.get(f).add'), () => `Bucket by frequency (frequency ≤ n, so an array works): bucket[3]={1}, bucket[2]={2}, bucket[1]={3}.`, () => [lane('bucket[f]', ['0:{}', '1:{3}', '2:{2}', '3:{1}', '4:{}', '5:{}', '6:{}'])]], [ln(C_TOPK, 'res[idx++]'), () => `Read buckets from high to low → <b>[1, 2]</b>. O(n), no heap.`, () => [lane('answer', [1, 2], { done: [0, 1] })]]]);
+}
+
+const C_TKW = `
+PriorityQueue<String> pq = new PriorityQueue<>((a, b) -> !cnt.get(a).equals(cnt.get(b))
+        ? cnt.get(a) - cnt.get(b)          // lower count = worse
+        : b.compareTo(a));                 // later alphabetically = worse
+for (String w : cnt.keySet()) { pq.offer(w); if (pq.size() > k) pq.poll(); }   // evict the worst`;
+function tkw() {
+  return sim([0, `Keep the k best words in a min-heap whose top is the <b>worst</b> of them.`, () => [lane('counts', ['i:2', 'love:2', 'leetcode:1', 'coding:1'])]], [[ln(C_TKW, 'later alphabetically'), () => `Worst = lower count, or same count but alphabetically later.`, () => [lane('heap (worst on top)', ['love:2', 'i:2'])]], [ln(C_TKW, 'evict the worst'), () => `Pop all and reverse → <b>[i, love]</b>.`, () => [lane('answer', ['i', 'love'], { done: [0, 1] })]]]);
+}
+
+const C_TOPS = `
+// keep a ranked array top[0..k] (freq desc, value asc)
+// after x arrives: put x at its slot (or slot k), then bubble it left while it beats its neighbour`;
+function tops() {
+  return sim([0, `Stream [5,2,1,3,2], k = 4. After each number, output the top k by (frequency ↓, value ↑).`, () => [lane('stream', [5, 2, 1, 3, 2])]], [
+    [2, () => `5 → [5]; 2 → [2, 5]; 1 → [1, 2, 5]; 3 → [1, 2, 3, 5] (all frequency 1, smaller first).`, () => [lane('top', [1, 2, 3, 5])]],
+    [2, () => `2 again → freq 2 → it bubbles to the front → <b>[2, 1, 3, 5]</b>. Only the moved element changes position.`, () => [lane('top', [2, 1, 3, 5], { active: [0] })]]]);
+}
+
+const C_TCH = `
+while (k-- > 0) {
+    while (left.size() < candidates && i <= j) left.offer(costs[i++]);
+    while (right.size() < candidates && i <= j) right.offer(costs[j--]);
+    int a = left.isEmpty() ? Integer.MAX_VALUE : left.peek(), b = right.isEmpty() ? Integer.MAX_VALUE : right.peek();
+    if (a <= b) total += left.poll(); else total += right.poll();       // tie → left (smaller index)
+}`;
+function tch() {
+  const c = [17, 12, 10, 2, 7, 2, 11, 20, 8], r = recorder();
+  r.step(0, `k = 3, candidates = 4. Two heaps: the first 4 and the last 4 workers. i and j never cross, so nobody is in both.`, [lane('costs', c, { showIdx: true, warn: [0, 1, 2, 3, 5, 6, 7, 8] })]);
+  r.step(ln(C_TCH, 'tie → left'), `Round 1: left min 2 (idx 3), right min 2 (idx 5) → tie → take the left one. Refill left with index 4 (7).`, [lane('costs', c, { showIdx: true, done: [3] })], { total: 2 });
+  r.step(ln(C_TCH, 'tie → left'), `Round 2: left min 7, right min 2 → take 2. Round 3: left 7 vs right 8 → take 7. Total <b>11</b>.`, [lane('costs', c, { showIdx: true, done: [3, 5, 4] })], { total: 11 });
+  return r.steps;
+}
+
+const C_TRW = `
+while (!pq.isEmpty()) {
+    int[] c = pq.poll();                               // lowest wall on the frontier
+    for (int[] d : dirs) {
+        int x = c[1] + d[0], y = c[2] + d[1];
+        if (out of grid || seen[x][y]) continue;
+        seen[x][y] = true;
+        water += Math.max(0, c[0] - h[x][y]);          // fills up to the wall
+        pq.offer(new int[]{Math.max(c[0], h[x][y]), x, y});
+    }
+}`;
+function trw() {
+  const H = [[3, 3, 3, 3, 3], [3, 2, 2, 2, 3], [3, 2, 1, 2, 3], [3, 2, 2, 2, 3], [3, 3, 3, 3, 3]], r = recorder();
+  r.step(0, `Water escapes over the <b>lowest</b> point of the surrounding wall. Start with the border as the wall; a min-heap always expands from the lowest wall.`, [grid('heights', H, { cls: (i, j) => (i === 0 || j === 0 || i === 4 || j === 4 ? 'warn' : '') })]);
+  r.step(ln(C_TRW, 'fills up to the wall'), `Pop a border 3: its inner neighbour of height 2 fills to 3 → +1. The level carried inward is max(3, 2) = 3.`, [grid('water', [[0, 0, 0, 0, 0], [0, 1, 1, 1, 0], [0, 1, 0, 1, 0], [0, 1, 1, 1, 0], [0, 0, 0, 0, 0]], { cls: (i, j) => (i > 0 && j > 0 && i < 4 && j < 4 && !(i === 2 && j === 2) ? 'active' : '') })]);
+  r.step(ln(C_TRW, 'pq.offer'), `The centre (height 1) is reached with level 3 → +2. Total 8·1 + 2 = <b>10</b>.`, [grid('water', [[0, 0, 0, 0, 0], [0, 1, 1, 1, 0], [0, 1, 2, 1, 0], [0, 1, 1, 1, 0], [0, 0, 0, 0, 0]], { cls: (i, j) => (i === 2 && j === 2 ? 'done' : '') })], { water: 10 });
+  return r.steps;
+}
+
+const C_ZA = `
+for (int i = 0; i < n; i++) {
+    cover += diff[i];
+    while (j < q && queries[j][0] <= i) avail.offer(queries[j++][1]);   // started queries (by end, max-heap)
+    while (cover < nums[i] && !avail.isEmpty() && avail.peek() >= i) {
+        int end = avail.poll();                                          // pick the one reaching furthest
+        cover++;
+        diff[end + 1]--;
+        used++;
+    }
+    if (cover < nums[i]) return -1;
+}
+return q - used;`;
+function zeroArr() {
+  const r = recorder();
+  r.step(0, `nums [1,1,1,1], queries [1,3],[0,2],[1,3],[1,2]. Keep as <b>few</b> queries as possible. Sweep left to right; when an index needs more coverage, use the available query that reaches <b>furthest</b> (it helps the most future indices).`, [lane('nums', [1, 1, 1, 1], { showIdx: true })]);
+  r.step(ln(C_ZA, 'reaching furthest'), `i=0: only [0,2] has started → use it (covers 0..2).`, [lane('coverage', [1, 1, 1, 0], { showIdx: true, done: [0] })], { used: 1 });
+  r.step(ln(C_ZA, 'reaching furthest'), `i=1, 2 already covered. i=3: available ends {3, 3, 2} → use one ending at 3.`, [lane('coverage', [1, 1, 1, 1], { showIdx: true, done: [0, 1, 2, 3] })], { used: 2 });
+  r.step(ln(C_ZA, 'return q - used'), `Used 2 of 4 → can remove <b>2</b>.`, [lane('answer', [2], { done: [0] })]);
+  return r.steps;
+}
+
+const C_FAS = `
+PriorityQueue<int[]> pq = new PriorityQueue<>((x, y) -> x[0] != y[0] ? x[0] - y[0] : x[1] - y[1]);
+while (k-- > 0) {
+    int[] p = pq.poll();                    // smallest value, first index on ties
+    a[p[1]] *= multiplier;
+    pq.offer(new int[]{a[p[1]], p[1]});
+}`;
+function fas() {
+  const a = [2, 1, 3, 5, 6], r = recorder();
+  r.step(0, `k = 5, ×2. Always multiply the smallest (first occurrence on ties).`, [lane('nums', [...a], { showIdx: true })]);
+  for (let t = 0; t < 5; t++) { let m = 0; for (let i = 1; i < 5; i++) if (a[i] < a[m]) m = i; a[m] *= 2; r.step(ln(C_FAS, 'a[p[1]] *= multiplier'), `smallest at ${m} → ×2.`, [lane('nums', [...a], { showIdx: true, active: [m] })]); }
+  return r.steps;
+}
+
+const C_XS = `
+f.merge(nums[i], 1, Integer::sum);
+if (i >= k) f.merge(nums[i - k], -1, Integer::sum);       // slide the window
+PriorityQueue<int[]> pq = (freq desc, value desc);
+for (int t = 0; t < x && !pq.isEmpty(); t++) { int[] p = pq.poll(); sum += p[0] * p[1]; }`;
+function xsum() {
+  return sim([0, `[1,1,2,2,3,4,2,3], k = 6, x = 2. Window 1 = [1,1,2,2,3,4].`, () => [lane('window 1', [1, 1, 2, 2, 3, 4])]], [
+    [ln(C_XS, 'freq desc, value desc'), () => `freq: 1→2, 2→2, 3→1, 4→1. Top 2 by (freq, then larger value): 2 and 1 → 2·2 + 1·2 = <b>6</b>.`, () => [lane('top x', ['2×2', '1×2'], { done: [0, 1] })]],
+    [ln(C_XS, 'slide the window'), () => `Slide: drop 1, add 2 → [1,2,2,3,4,2] → 2 appears 3 times, then the tie (1,3,4) picks 4 → 6 + 4 = <b>10</b>.`, () => [lane('top x', ['2×3', '4×1'], { done: [0, 1] })]]]);
+}
+
+const C_GIFT = `
+while (k-- > 0) pq.offer((int) Math.sqrt(pq.poll()));`;
+function gifts() {
+  const h = new Heap(MAX); [25, 64, 9, 4, 100].forEach(x => h.push(x));
+  return sim([0, `k = 4. Take from the richest pile, leave floor(√pile).`, () => [h.view('max-heap')]], [1, 2, 3, 4].map(() => [ln(C_GIFT, 'Math.sqrt'), () => `remaining total ${h.a.reduce((s, x) => s + x, 0)}.`, () => [h.view('max-heap')], () => { h.push(Math.floor(Math.sqrt(h.pop()))); }]));
+}
+
+const T = (name, hook, mantra, statement, code, steps, recall, links = []) => ({ name, hook, mantra, statement, anims: [{ name: 'Walkthrough', code, steps }], recall, links });
+mount({
+  title: 'Heap Animations',
+  sub: 'A heap answers <b>"what is the smallest (or largest) right now?"</b> in O(1), with O(log n) insert and remove. Shapes to recognise: top-k (size-k heap), k sorted lists (seed + push next), greedy with regret (retro-fit), two heaps (median / halves), lazy deletion.',
+  problems: [
+    T('Kth Largest in Array (215)', 'A <b>VIP lounge with k seats</b>: a newcomer bumps the weakest VIP. The doorman (heap top) is always the k-th best.', 'MIN-HEAP SIZE k, TOP = ANSWER', 'Return the k-th largest element.', C_KLA, kthLargest(), [['Why a MIN-heap for the k largest?', 'Its top is the weakest of the k largest = the answer, and it is cheap to evict.'], ['O(n) average?', 'Quickselect.']], [['Kth Largest in a Stream', 1]]),
+    T('Kth Largest in Stream (703)', 'The same VIP lounge, open forever.', 'MIN-HEAP SIZE k', 'add(val) returns the k-th largest so far.', C_STREAM, kthStream(), [['Initial nums?', 'Feed them through add.']], [['Kth Largest in Array', 0]]),
+    T('Last Stone Weight (1046)', 'A <b>sumo tournament</b>: the two heaviest always fight; the winner limps back lighter.', 'MAX-HEAP, SMASH TOP TWO', 'Smash the two heaviest stones until at most one remains.', C_STONE, stones(), [['Equal weights?', 'Both disappear.']], []),
+    T('Lex Min After Stars (3170)', 'A <b>bouncer</b> removes the cheapest guest standing to his left, but the latest-arriving copy, so early cheap guests keep their place in line.', 'PER-LETTER STACKS, DELETE SMALLEST LETTER\'S RIGHTMOST', 'Each * removes the smallest non-* character to its left; return the lexicographically smallest result.', C_LEX, lexStars(), [['Why the rightmost copy?', 'Removing a later equal letter keeps the string\'s early positions small.'], ['Heap comparator?', '(char asc, index desc).']], []),
+    T('K Pairs Smallest Sums (373)', 'Merging <b>k sorted rows</b> of a sum table: only the front of each row can be next.', 'SEED COLUMN 0, POP → PUSH RIGHT NEIGHBOUR', 'Return the k pairs with the smallest sums from two sorted arrays.', C_KPAIR, kPairs(), [['Why only push (i, j+1)?', 'Each row is seeded already, so pushing (i+1, j) would create duplicates.']], [['K-th Smallest Prime Fraction', 5]]),
+    T('K-th Prime Fraction (786)', 'Again <b>sorted lists</b>: numerator i gives the fractions arr[i]/arr[j] for decreasing j.', 'SEED arr[i]/arr[n−1], POP k−1 TIMES', 'Return the k-th smallest fraction arr[i]/arr[j].', C_FRAC, frac(), [['Compare without doubles?', 'a/b < c/d ⇔ a·d < c·b (use long).'], ['Binary-search alternative?', 'Search on the value with two pointers counting.']], [['K Pairs', 4]]),
+    T('Furthest Building (1642)', 'Pay with bricks now, but <b>keep the receipts</b>. When you run out, return the most expensive receipt and use a ladder there instead.', 'BRICKS FIRST, MAX-HEAP OF CLIMBS, RETRO-FIT LADDER', 'How far can you go with given bricks and ladders?', C_FURTH, furthest(), [['Why is it optimal?', 'Ladders end up on the largest climbs seen so far.'], ['Mirror version?', 'Min-heap of ladder climbs; when size > ladders, pay the smallest with bricks.']], [['IPO (greedy + heap)', 7]]),
+    T('IPO (502)', 'A <b>startup accelerator</b>: as your money grows, more projects unlock; always pick the most profitable unlocked one.', 'SORT BY CAPITAL, UNLOCK, TAKE MAX PROFIT', 'Maximise capital after at most k projects.', C_IPO, ipo(), [['Why sort by capital?', 'So unlocking is a moving pointer, never re-scanned.']], [['Furthest Building', 6]]),
+    T('Construct Target Array (1354)', '<b>Rewind the film</b>: the biggest number was the last one written, so undo it.', 'MAX-HEAP, prev = max % rest', 'Can [1,1,...,1] be turned into target by replacing an element with the total sum?', C_CTA, cta(), [['Why %?', '[1, 1e9] would need 1e9 subtractions.'], ['rest == 1?', 'Always possible.']], []),
+    T('Find Score (2593)', 'Pick the <b>cheapest unmarked</b> item; it and its neighbours leave the shop.', 'MIN-HEAP (value, index), SKIP MARKED', 'Repeatedly take the smallest unmarked element and mark its neighbours; sum what you take.', C_SCORE, score(), [['Tie rule?', 'Smaller index first, so compare (value, index).']], []),
+    T('Constrained Subsequence (1425)', 'A frog that can only jump up to k stones back: remember the best stone within reach.', 'dp = num + max(0, best in window)', 'Max sum of a subsequence whose consecutive indices differ by ≤ k.', C_CS, constrained(), [['Why max(0, …)?', 'Starting fresh is allowed.'], ['O(n)?', 'A monotonic deque of dp values.']], []),
+    T('Choose K Max Sum (3478)', 'A growing talent pool sorted by rank; keep the k best scores of everyone ranked strictly below you.', 'SORT BY nums1, MIN-HEAP OF k LARGEST nums2', 'For each i, the sum of the k largest nums2[j] with nums1[j] < nums1[i].', C_CHOOSE, choose(), [['Equal nums1?', 'They must not count each other: assign answers for the whole group before adding it.']], []),
+    T('Longest Happy String (1405)', 'Speak with the most-left letter, but never <b>three in a row</b>: then the runner-up speaks once.', 'MAX-HEAP, AVOID 3-RUN WITH RUNNER-UP', 'Longest string with at most a, b, c letters and no "aaa"/"bbb"/"ccc".', C_HAPPY, happy(), [['When to stop?', 'The top would make three in a row and nothing else is left.']], [['Reorganize String', 23]]),
+    T('Maximal Score K Ops (2530)', 'Always eat the biggest cake; it shrinks to a third.', 'MAX-HEAP, ADD x, PUSH ceil(x/3)', 'Maximise the score after k operations.', C_KOPS, kops(), [['Integer ceil?', '(x + 2) / 3.']], [['Remove Stones', 20]]),
+    T('Max Subsequence Score (2542)', 'Choose a team: the <b>weakest member\'s rating</b> multiplies the team total. Walk from strongest to weakest rating.', 'SORT nums2 ↓, MIN-HEAP KEEPS k LARGEST nums1', 'Max of (sum of k nums1) × (min of their nums2).', C_MSS, mss(), [['Why sort by nums2 descending?', 'The current element is then the min of the chosen group.']], [['Hire K Workers (same shape)', 16]]),
+    T('Max Total Subarray II (3691)', 'Each start index l offers a <b>sorted menu</b>: widest is most valuable, then shrink.', 'SEED [l, n−1], POP k, PUSH [l, r−1]', 'Sum of the k largest subarray values (max − min), distinct subarrays.', C_MTSV, mtsv(), [['Why monotone in r?', 'Widening can only raise max or lower min.']], [['K Pairs (sorted lists)', 4]]),
+    T('Hire K Workers (857)', 'Everyone is paid at the <b>greediest worker\'s rate</b>. Fix the greediest, then pick the cheapest teammates by quality.', 'SORT BY RATIO, MAX-HEAP DROPS BIGGEST QUALITY', 'Minimum cost to hire exactly k workers.', C_HIRE, hire(), [['Cost formula?', 'max ratio × sum of qualities.']], [['Max Subsequence Score', 14]]),
+    T('Min Diff After Removal (2163)', 'Cut the line at a point: the left part keeps its <b>cheapest</b> n, the right part keeps its <b>richest</b> n.', 'PREFIX n SMALLEST, SUFFIX n LARGEST, TRY EVERY SPLIT', 'Remove n of 3n elements to minimise first half − second half.', C_MDS, mds(), [['Valid split points?', 'i from n−1 to 2n−1.']], []),
+    T('Exceed Threshold II (3066)', 'Merge the two <b>smallest</b> pebbles into a bigger one until every pebble is big enough.', 'MIN-HEAP OF LONG, 2·min + max', 'Minimum operations until all elements ≥ k.', C_THR, thr(), [['Why long?', '2·min + max can overflow int.']], []),
+    T('Sorted Subarray Sums (1508)', 'Positive numbers: extending a subarray makes it bigger, so sums come out in order like <b>k sorted lists</b>.', 'SEED SINGLES, POP, EXTEND BY ONE', 'Sum of positions left..right of all sorted subarray sums.', C_RSS, rss(), [['Why does this need positive numbers?', 'So that extending never decreases the sum.']], [['K Pairs', 4]]),
+    T('Remove Stones (1962)', 'Always halve the <b>tallest</b> pile.', 'MAX-HEAP, REMOVE floor(x/2)', 'Minimum total after k halving operations.', C_RS, rstones(), [['Remaining pile?', 'x − x/2 (the ceiling).']], [['Maximal Score', 13]]),
+    T('Single-Threaded CPU (1834)', 'A <b>clinic queue</b>: among the patients who have arrived, the quickest appointment goes first.', 'SORT BY ENQUEUE, HEAP (duration, index), JUMP WHEN IDLE', 'Order in which a single CPU processes the tasks.', C_CPU, cpu(), [['Idle CPU?', 'Jump the time to the next enqueue time.'], ['Overflow?', 'Time can reach 1e9·1e5, so use long.']], []),
+    T('Smallest Range K Lists (632)', 'One finger on each sorted list; the range is <b>min finger … max finger</b>. Move the min finger forward.', 'HEAP OF HEADS, TRACK MAX, ADVANCE MIN', 'Smallest range that includes at least one number from each list.', C_RANGE, range(), [['When to stop?', 'When the list owning the minimum is exhausted.']], [['K Pairs', 4]]),
+    T('Reorganize String (767)', '<b>Seat the biggest family first</b> on every other chair, then fill the gaps.', 'MAX ≤ (n+1)/2, EVEN SLOTS FIRST', 'Rearrange so no two adjacent characters are equal.', C_REORG, reorg(), [['Impossible when?', 'maxCount > (n + 1) / 2.'], ['Heap version?', 'Place the two most frequent different letters each round.']], [['Longest Happy String', 12], ['Task Scheduler', 27]]),
+    T('Sort Chars by Frequency (451)', 'Line up the letters by <b>popularity</b>.', 'COUNT, POUR BY COUNT', 'Sort characters by decreasing frequency.', C_SCF, scf(), [['Bucket alternative?', 'bucket[count] lists, read from high to low.']], []),
+    T('Top K Frequent (347)', 'Hang numbers on <b>hooks numbered by frequency</b>; read from the highest hook.', 'COUNT, BUCKET BY FREQ, READ HIGH → LOW', 'k most frequent elements.', C_TOPK, topk(), [['Why can buckets be an array?', 'A frequency is at most n.']], [['Top K Frequent Words', 26]]),
+    T('Top K Frequent Words (692)', 'A size-k lounge where the <b>worst</b> word (lowest count, then alphabetically later) stands at the door.', 'MIN-HEAP OF WORST, REVERSE AT THE END', 'k most frequent words; ties alphabetical.', C_TKW, tkw(), [['Comparator for the "worst on top" heap?', 'count asc, then word desc.']], [['Top K Frequent', 25]]),
+    T('Task Scheduler (621)', 'Work in <b>rounds of n+1 slots</b>; fill each round with the most frequent tasks.', 'CYCLES OF n+1, MOST FREQUENT FIRST', 'Minimum time units to finish all tasks with a cooldown of n.', C_TS, ts(), [['Formula?', 'max(tasks, (maxFreq − 1)(n + 1) + #letters with maxFreq).']], [['Reorganize String', 23]]),
+    T('Top k in Stream (GFG)', 'A <b>live chart</b> where only the song that was just played can move up.', 'RANKED ARRAY OF k+1, BUBBLE THE NEW ONE', 'After each number, print the top k by frequency (ties: smaller number).', C_TOPS, tops(), [['Why is O(k) per step enough?', 'Only the new element\'s rank changes.']], []),
+    T('Total Cost Hire K (2462)', 'Hire from the <b>two ends</b> of a line: the front window and the back window each have a heap.', 'TWO MIN-HEAPS, REFILL FROM THE MIDDLE', 'Total cost of k hiring rounds choosing from the first/last candidates.', C_TCH, tch(), [['Tie?', 'Take the left heap (smaller index).'], ['Overlap?', 'i ≤ j guards so nobody enters both heaps.']], []),
+    T('Trapping Rain Water II (407)', 'Water leaks over the <b>lowest point</b> of the wall around it: always grow inward from the lowest wall.', 'BORDER IN MIN-HEAP, EXPAND LOWEST, FILL TO WALL', 'Volume of water trapped on a 2-D height map.', C_TRW, trw(), [['Carried level?', 'max(wall, neighbour height).']], [['Trapping Rain Water (1-D, Stack folder)', 'x']]),
+    T('Zero Array III (3362)', 'Cover each spot with the <b>longest-reaching</b> blanket available.', 'SWEEP, HEAP OF ENDS, DIFF ARRAY, q − used', 'Max number of queries you can remove and still zero the array.', C_ZA, zeroArr(), [['Why the furthest end?', 'It covers the most future indices.']], [['Line Sweep (diff array)', 'x']]),
+    T('Final Array State (3264)', 'Always boost the <b>weakest</b> (first on ties).', 'MIN-HEAP (value, index)', 'Multiply the minimum k times.', C_FAS, fas(), [['Tie rule?', 'Smaller index.']], []),
+    T('Find X-Sum I (3318)', 'Score each window by its <b>top x favourites</b> (most frequent, then bigger value).', 'SLIDE FREQ MAP, HEAP TOP x', 'x-sum for every window of size k.', C_XS, xsum(), [['Tie rule?', 'Higher value wins.']], []),
+    T('Take Gifts (2558)', 'Always rob the <b>richest pile</b>, leaving √pile.', 'MAX-HEAP, PUSH floor(√x)', 'Remaining gifts after k seconds.', C_GIFT, gifts(), [['Sum type?', 'long.']], [])
+  ].map(p => ({ ...p, links: p.links.filter(l => typeof l[1] === 'number') }))
+});
+</script>
+</body>
+</html>

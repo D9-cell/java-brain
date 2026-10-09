@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graph Basics Animations</title>
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/graph-kit.js"></script>
+<script>
+const { lane, graph, recorder, mount, ln } = BrainAnim;
+const { range, C, EC, Q, S, A, story, adjOf } = GK;
+const SQ = { 0: [0, 1], 1: [1, 0], 2: [1, 2], 3: [2, 1] };
+const bits = a => a.map(b => (b ? 1 : 0));
+
+const C_BFS = `
+que.add(start);
+visited[start] = true;                  // mark when queued
+while (!que.isEmpty()) {
+    int curr = que.poll();
+    order.add(curr);
+    for (int next : adj.get(curr)) {
+        if (!visited[next]) {
+            visited[next] = true;
+            que.add(next);
+        }
+    }
+}`;
+function bfs() {
+  const E = [[0, 1], [0, 2], [1, 2], [2, 0], [2, 3], [3, 3]], adj = adjOf(4, E, true), r = recorder();
+  const vis = [true, false, false, false], q = [0], order = [];
+  const G = (cls, ecls) => graph('graph (directed)', SQ, E, { directed: true, cls, ecls });
+  r.step(ln(C_BFS, 'que.add(start)'), 'Start at 0: queue it and mark it visited <b>at once</b>, so nobody can queue it twice.', [G(C({ warn: [0] })), Q('queue', q), A('visited', bits(vis))], { order: '' });
+  while (q.length) {
+    const u = q.shift(); order.push(u);
+    r.step(ln(C_BFS, 'order.add(curr)'), `Poll ${u} from the front and visit it. Order so far: ${order.join(' → ')}.`, [G(C({ active: [u], done: order.slice(0, -1), warn: q })), Q('queue', q), A('visited', bits(vis))], { order: order.join(',') });
+    for (const v of adj[u]) {
+      if (vis[v]) { r.step(ln(C_BFS, 'if (!visited[next])'), `${u} → ${v}: already visited, skip it.`, [G(C({ active: [u], done: order.slice(0, -1), warn: q }), EC({ bad: [[u, v]] })), Q('queue', q), A('visited', bits(vis))], { order: order.join(',') }); continue; }
+      vis[v] = true; q.push(v);
+      r.step(ln(C_BFS, 'que.add(next)'), `${u} → ${v}: new node. Mark it and queue it at the back.`, [G(C({ active: [u], done: order.slice(0, -1), warn: q }), EC({ hot: [[u, v]] })), Q('queue', q), A('visited', bits(vis))], { order: order.join(',') });
+    }
+  }
+  r.step(0, `Queue empty: BFS order <b>${order.join(' → ')}</b>. Nodes come out in rings of distance 0, 1, 2…`, [G(C({ done: order })), Q('queue', []), A('visited', bits(vis))], { order: order.join(',') });
+  return r.steps;
+}
+
+const C_DFSR = `
+void dfs(List<List<Integer>> adj, int u, boolean[] visited, List<Integer> order) {
+    visited[u] = true;
+    order.add(u);
+    for (int v : adj.get(u)) {
+        if (!visited[v]) dfs(adj, v, visited, order);
+    }
+}`;
+const C_DFSI = `
+stack.push(start);
+while (!stack.isEmpty()) {
+    int curr = stack.pop();
+    if (visited[curr]) continue;
+    visited[curr] = true;
+    order.add(curr);
+    for (int i = next.size() - 1; i >= 0; i--) {
+        if (!visited[next.get(i)]) stack.push(next.get(i));
+    }
+}`;
+function dfsRec() {
+  const E = [[0, 1], [0, 2], [1, 2], [2, 0], [2, 3], [3, 3]], adj = adjOf(4, E, true), r = recorder();
+  const vis = [false, false, false, false], order = [], path = [];
+  const G = (cls, ecls) => graph('graph (directed)', SQ, E, { directed: true, cls, ecls });
+  function go(u) {
+    vis[u] = true; order.push(u); path.push(u);
+    r.step(ln(C_DFSR, 'order.add(u)'), `Enter ${u}: mark and record it. The call stack is [${path.join(', ')}].`, [G(C({ active: [u], done: order.filter(x => x !== u && !path.includes(x)), warn: path.slice(0, -1) })), S('call stack', path), A('visited', bits(vis))], { order: order.join(',') });
+    for (const v of adj[u]) {
+      if (vis[v]) { r.step(ln(C_DFSR, 'if (!visited[v])'), `${u} → ${v} is already visited: skip.`, [G(C({ active: [u], warn: path.slice(0, -1), done: order.filter(x => !path.includes(x)) }), EC({ bad: [[u, v]] })), S('call stack', path), A('visited', bits(vis))], { order: order.join(',') }); continue; }
+      r.step(ln(C_DFSR, 'dfs(adj, v'), `${u} → ${v} is new: dive into it before looking at ${u}'s other neighbours.`, [G(C({ active: [u], warn: path.slice(0, -1), done: order.filter(x => !path.includes(x)) }), EC({ hot: [[u, v]] })), S('call stack', path), A('visited', bits(vis))], { order: order.join(',') });
+      go(v);
+    }
+    path.pop();
+    r.step(ln(C_DFSR, 'for (int v : adj.get(u))'), `${u} has no more new neighbours: return to ${path.length ? path[path.length - 1] : 'the caller'}.`, [G(C({ done: order.filter(x => !path.includes(x)), warn: path })), S('call stack', path), A('visited', bits(vis))], { order: order.join(',') });
+  }
+  go(2);
+  r.step(0, `Recursive DFS from 2 visits <b>${order.join(' → ')}</b>.`, [G(C({ done: order })), A('visited', bits(vis))], { order: order.join(',') });
+  return r.steps;
+}
+function dfsIter() {
+  const E = [[0, 1], [0, 2], [1, 2], [2, 0], [2, 3], [3, 3]], adj = adjOf(4, E, true), r = recorder();
+  const vis = [false, false, false, false], order = [], st = [2];
+  const G = (cls, ecls) => graph('graph (directed)', SQ, E, { directed: true, cls, ecls });
+  r.step(ln(C_DFSI, 'stack.push(start)'), 'Push the start node 2. The stack replaces the recursion.', [G(C({ warn: [2] })), S('stack', st), A('visited', bits(vis))], { order: '' });
+  while (st.length) {
+    const u = st.pop();
+    if (vis[u]) { r.step(ln(C_DFSI, 'if (visited[curr]) continue'), `Pop ${u}: already visited, discard.`, [G(C({ done: order })), S('stack', st), A('visited', bits(vis))], { order: order.join(',') }); continue; }
+    vis[u] = true; order.push(u);
+    r.step(ln(C_DFSI, 'order.add(curr)'), `Pop ${u}, visit it.`, [G(C({ active: [u], done: order.slice(0, -1) })), S('stack', st), A('visited', bits(vis))], { order: order.join(',') });
+    const push = adj[u].filter(v => !vis[v]).reverse();
+    push.forEach(v => st.push(v));
+    if (push.length) r.step(ln(C_DFSI, 'stack.push(next.get(i))'), `Push unvisited neighbours <b>in reverse</b> (${push.join(', ')}) so the first neighbour ends on top, exactly like recursion.`, [G(C({ active: [u], done: order.slice(0, -1), warn: push })), S('stack', st), A('visited', bits(vis))], { order: order.join(',') });
+  }
+  r.step(0, `Same order as the recursive version: <b>${order.join(' → ')}</b>. Pushing forward instead gives 2 → 3 → 0 → 1, a valid DFS but a different order.`, [G(C({ done: order })), A('visited', bits(vis))], { order: order.join(',') });
+  return r.steps;
+}
+
+const C_PATH = `
+boolean dfs(List<List<Integer>> adj, int u, int target, boolean[] visited) {
+    if (u == target) return true;
+    visited[u] = true;
+    for (int v : adj.get(u)) {
+        if (!visited[v] && dfs(adj, v, target, visited)) return true;
+    }
+    return false;
+}`;
+function pathEx() {
+  const N = { 0: [0, 1], 1: [1, 0], 2: [1, 2], 3: [3, 0], 4: [4, 0], 5: [3, 2] }, E = [[0, 1], [0, 2], [3, 5], [5, 4], [4, 3]], adj = adjOf(6, E, false), r = recorder();
+  const vis = Array(6).fill(false), path = [];
+  const G = (cls, ecls) => graph('graph (undirected)', N, E, { cls, ecls, tag: 'looking for a path from 0 to 5' });
+  r.step(0, 'Two islands: {0, 1, 2} and {3, 4, 5}. Is there a path from 0 to 5?', [G(C({ warn: [0], active: [5] }))], { source: 0, target: 5 });
+  let found = false;
+  (function go(u) {
+    path.push(u);
+    if (u === 5) { found = true; return; }
+    vis[u] = true;
+    r.step(ln(C_PATH, 'visited[u] = true'), `Visit ${u}. Not the target yet.`, [G(C({ active: [u], done: range(0, 5).filter(x => vis[x] && x !== u), warn: [5] })), A('visited', bits(vis))], { at: u });
+    for (const v of adj[u]) if (!vis[v]) { r.step(ln(C_PATH, '!visited[v]'), `Try ${u} → ${v}.`, [G(C({ active: [u], done: range(0, 5).filter(x => vis[x] && x !== u), warn: [5] }), EC({ hot: [[u, v]] })), A('visited', bits(vis))], { at: u }); go(v); if (found) return; }
+    r.step(ln(C_PATH, 'return false'), `${u} has nothing new to try: this branch returns false.`, [G(C({ bad: [u], done: range(0, 5).filter(x => vis[x] && x !== u) })), A('visited', bits(vis))], { at: u });
+  })(0);
+  r.step(0, 'The whole component of 0 is explored, 5 is not in it: <b>false</b>. A path exists exactly when both ends share a component.', [G(C({ done: [0, 1, 2], bad: [3, 4, 5] })), A('visited', bits(vis))], { answer: 'false' });
+  return r.steps;
+}
+const C_PATHB = `
+que.add(source);
+visited[source] = true;
+while (!que.isEmpty()) {
+    int u = que.poll();
+    if (u == destination) return true;
+    for (int v : adj.get(u)) {
+        if (!visited[v]) {
+            visited[v] = true;
+            que.add(v);
+        }
+    }
+}
+return false;`;
+function pathBfs() {
+  const N = { 0: [0, 1], 1: [1, 0], 2: [1, 2], 3: [2, 1] }, E = [[0, 1], [0, 2], [1, 3], [2, 3]], adj = adjOf(4, E, false), r = recorder();
+  const vis = [true, false, false, false], q = [0], done = [];
+  const G = (cls, ecls) => graph('graph (undirected)', N, E, { cls, ecls, tag: 'path from 0 to 3?' });
+  r.step(ln(C_PATHB, 'que.add(source)'), 'Queue the source 0 and mark it.', [G(C({ warn: [0], active: [3] })), Q('queue', q), A('visited', bits(vis))], {});
+  while (q.length) {
+    const u = q.shift(); done.push(u);
+    if (u === 3) { r.step(ln(C_PATHB, 'return true'), 'Polled 3 = destination: <b>true</b>. BFS even finds a shortest route (2 edges).', [G(C({ done: done.slice(0, -1), active: [3] })), Q('queue', q), A('visited', bits(vis))], {}); break; }
+    for (const v of adj[u]) if (!vis[v]) { vis[v] = true; q.push(v); }
+    r.step(ln(C_PATHB, 'int u = que.poll()'), `Poll ${u} (not the destination), queue its new neighbours.`, [G(C({ active: [u], done: done.slice(0, -1), warn: q.concat([3]) })), Q('queue', q), A('visited', bits(vis))], {});
+  }
+  return r.steps;
+}
+
+const { grid, tree } = BrainAnim;
+// Grid lane where sets of [r,c] cells get a class
+const GR = (name, m, o = {}) => { const mark = {}; for (const k of ['ghost', 'done', 'warn', 'bad', 'active']) (o[k] || []).forEach(([a, b]) => { mark[a + ',' + b] = k; }); return grid(name, m, { cls: (r, c) => mark[r + ',' + c], tag: o.tag }); };
+
+const C_GRIDB = `
+que.add(src);
+seen[src[0]][src[1]] = true;
+while (!que.isEmpty()) {
+    int[] c = que.poll();
+    if (c[0] == dst[0] && c[1] == dst[1]) return true;
+    for (int[] d : DIRS) {
+        int x = c[0] + d[0], y = c[1] + d[1];
+        if (x >= 0 && x < n && y >= 0 && y < n && g[x][y] != 0 && !seen[x][y]) {
+            seen[x][y] = true;
+            que.add(new int[]{x, y});
+        }
+    }
+}
+return false;`;
+function gridPath() {
+  const m = [[3, 3, 1], [3, 0, 3], [2, 3, 3]], n = 3, D = [[-1, 0], [1, 0], [0, 1], [0, -1]], r = recorder();
+  const seen = new Set(['0,2']), q = [[0, 2]], done = [];
+  const L = (act) => [GR('grid (1 = source, 2 = destination, 0 = wall)', m, { done, warn: q, active: act ? [act] : [] }), Q('queue', q.map(c => `(${c})`))];
+  r.step(ln(C_GRIDB, 'que.add(src)'), 'Queue the source (0,2) and mark it seen. Walls (0) are never entered.', L(), {});
+  while (q.length) {
+    const c = q.shift();
+    if (c[0] === 2 && c[1] === 0) { r.step(ln(C_GRIDB, 'return true'), `Polled (${c}) = destination: <b>true</b>.`, L(c), {}); break; }
+    done.push(c);
+    for (const d of D) { const x = c[0] + d[0], y = c[1] + d[1]; if (x >= 0 && x < n && y >= 0 && y < n && m[x][y] !== 0 && !seen.has(x + ',' + y)) { seen.add(x + ',' + y); q.push([x, y]); } }
+    r.step(ln(C_GRIDB, 'int[] c = que.poll()'), `Poll (${c}) and queue its open, unseen neighbours.`, L(c), { seen: seen.size });
+  }
+  return r.steps;
+}
+const C_GRIDD = `
+boolean dfs(int[][] g, int i, int j, int[] dst, boolean[][] seen) {
+    if (i < 0 || i >= n || j < 0 || j >= n || g[i][j] == 0 || seen[i][j]) return false;
+    if (i == dst[0] && j == dst[1]) return true;
+    seen[i][j] = true;
+    for (int[] d : DIRS) if (dfs(g, i + d[0], j + d[1], dst, seen)) return true;
+    return false;
+}`;
+function gridDfs() {
+  const m = [[3, 3, 1], [3, 0, 3], [2, 3, 3]], n = 3, D = [[-1, 0], [1, 0], [0, 1], [0, -1]], r = recorder(), seen = new Set(), path = [];
+  let found = false;
+  const L = (act) => [GR('grid', m, { done: [...seen].map(s => s.split(',').map(Number)).filter(c => !(act && c[0] === act[0] && c[1] === act[1])), active: act ? [act] : [] }), S('call stack', path.map(c => `(${c})`))];
+  (function go(i, j) {
+    if (i < 0 || i >= n || j < 0 || j >= n || m[i][j] === 0 || seen.has(i + ',' + j)) return false;
+    path.push([i, j]);
+    if (m[i][j] === 2) { found = true; r.step(ln(C_GRIDD, 'return true'), `(${i},${j}) is the destination: true, and every caller returns true.`, L([i, j]), {}); return true; }
+    seen.add(i + ',' + j);
+    r.step(ln(C_GRIDD, 'seen[i][j] = true'), `Enter (${i},${j}) and mark it. It is <b>never un-marked</b>, so each cell is expanded once.`, L([i, j]), {});
+    for (const d of D) if (go(i + d[0], j + d[1])) return true;
+    path.pop();
+    return false;
+  })(0, 2);
+  return r.steps;
+}
+
+const C_MOM = `
+for (int i = 0; i < n; i++) {
+    if (!visited[i]) {
+        dfs(adj, i, visited);
+        candidate = i;          // last vertex that had to start a new DFS
+    }
+}
+visited = new boolean[n];
+dfs(adj, candidate, visited);   // one check
+for (boolean b : visited) if (!b) return -1;
+return candidate;`;
+function mother() {
+  const N = { 0: [1, 0], 1: [2, 0], 2: [0, 1], 3: [3, 1], 4: [4, 0], 5: [0, 3], 6: [3, 3] }, E = [[0, 1], [0, 2], [1, 3], [4, 1], [5, 2], [5, 6], [6, 0], [6, 4]], adj = adjOf(7, E, true), r = recorder();
+  let vis = Array(7).fill(false), cand = 0;
+  const G = (cls, ecls, tag) => graph('graph (directed)', N, E, { directed: true, cls, ecls, tag });
+  const reach = u => { const out = []; (function d(x) { if (vis[x]) return; vis[x] = true; out.push(x); adj[x].forEach(d); })(u); return out; };
+  r.step(0, '7 vertices. A mother vertex reaches all the others. Run DFS from every still-unvisited vertex; the <b>last start</b> is the only possible mother.', [G(C({}))], {});
+  for (let i = 0; i < 7; i++) {
+    if (vis[i]) { r.step(ln(C_MOM, 'if (!visited[i])'), `${i} was already reached by an earlier DFS: no new start.`, [G(C({ done: range(0, 6).filter(x => vis[x]) })), A('visited', bits(vis))], { candidate: cand }); continue; }
+    const got = reach(i); cand = i;
+    r.step(ln(C_MOM, 'candidate = i'), `${i} starts a new DFS and reaches ${got.join(', ')}. Candidate = ${i}.`, [G(C({ active: [i], done: range(0, 6).filter(x => vis[x] && x !== i) })), A('visited', bits(vis))], { candidate: cand });
+  }
+  vis = Array(7).fill(false);
+  const all = reach(cand);
+  r.step(ln(C_MOM, 'dfs(adj, candidate'), `Verify: a fresh DFS from ${cand} reaches ${all.sort().join(', ')}.`, [G(C({ active: [cand], done: all.filter(x => x !== cand) }), {}, 'second pass'), A('visited', bits(vis))], { candidate: cand });
+  r.step(ln(C_MOM, 'return candidate'), `All 7 reached: the mother vertex is <b>${cand}</b>. Why the candidate? Any earlier start was reached by a later DFS or could not reach the later start.`, [G(C({ done: range(0, 6).filter(x => x !== cand), active: [cand] })), A('visited', bits(vis))], { answer: cand });
+  return r.steps;
+}
+
+const C_KEYS = `
+void dfs(List<List<Integer>> rooms, int u, boolean[] visited) {
+    visited[u] = true;
+    for (int key : rooms.get(u)) if (!visited[key]) dfs(rooms, key, visited);
+}
+// then every room must be visited`;
+function keys() {
+  const rooms = [[1, 3], [3, 0, 1], [2], [0]], E = [], r = recorder();
+  rooms.forEach((ks, u) => ks.forEach(k => E.push([u, k])));
+  const N = { 0: [0, 1], 1: [1, 0], 2: [3, 1], 3: [1, 2] }, vis = Array(4).fill(false);
+  const G = (cls, ecls) => graph('rooms (room → rooms its keys open)', N, E, { directed: true, cls, ecls });
+  r.step(0, 'Room 0 is open. Each room holds keys to other rooms. Can we enter every room?', [G(C({ warn: [0] }))], {});
+  (function go(u) {
+    vis[u] = true;
+    r.step(ln(C_KEYS, 'visited[u] = true'), `Enter room ${u}, take keys [${rooms[u].join(', ')}].`, [G(C({ active: [u], done: range(0, 3).filter(x => vis[x] && x !== u) })), A('visited', bits(vis))], {});
+    for (const k of rooms[u]) if (!vis[k]) { r.step(ln(C_KEYS, 'dfs(rooms, key'), `Use key ${k} from room ${u}.`, [G(C({ active: [u], done: range(0, 3).filter(x => vis[x] && x !== u) }), EC({ hot: [[u, k]] })), A('visited', bits(vis))], {}); go(k); }
+  })(0);
+  r.step(0, 'DFS ends with room 2 never entered: nobody holds its key. <b>false</b>.', [G(C({ done: [0, 1, 3], bad: [2] })), A('visited', bits(vis))], { answer: 'false' });
+  return r.steps;
+}
+
+const C_CC = `
+int components = n;
+for (int[] e : edges) {
+    int a = find(parent, e[0]), b = find(parent, e[1]);
+    if (a != b) {
+        parent[a] = b;
+        components--;
+    }
+}`;
+function cc() {
+  const E = [[0, 1], [1, 2], [3, 4]], N = { 0: [0, 0], 1: [1, 0], 2: [2, 0], 3: [0, 2], 4: [1, 2] }, parent = [0, 1, 2, 3, 4], r = recorder();
+  const f = x => parent[x] === x ? x : f(parent[x]); let comps = 5; const joined = [];
+  const G = (cls, ecls) => graph('graph', N, E, { cls, ecls });
+  r.step(ln(C_CC, 'int components = n'), '5 nodes = 5 components to start. Each successful union removes one.', [G(C({})), A('parent', parent), ], { components: comps });
+  E.forEach(([u, v], k) => {
+    const a = f(u), b = f(v);
+    if (a !== b) { parent[a] = b; comps--; joined.push([u, v]); }
+    r.step(a !== b ? ln(C_CC, 'components--') : ln(C_CC, 'if (a != b)'), `Edge ${u}-${v}: roots ${a} and ${b} ${a !== b ? 'differ → union, one fewer component' : 'are equal: already connected'}.`, [G(C({ active: [u, v] }), EC({ done: joined })), A('parent', parent)], { components: comps });
+  });
+  r.step(0, `Components: <b>${comps}</b> ({0,1,2} and {3,4}).`, [G(C({ done: [0, 1, 2], warn: [3, 4] }), EC({ done: joined })), A('parent', parent)], { components: comps });
+  return r.steps;
+}
+const C_PROV = `
+for (int i = 0; i < n; i++) {
+    if (!visited[i]) {
+        count++;
+        dfs(isConnected, i, visited);
+    }
+}`;
+function prov() {
+  const m = [[1, 1, 0], [1, 1, 0], [0, 0, 1]], vis = [false, false, false], r = recorder();
+  let count = 0; const mk = () => GR('isConnected (1 = connected)', m, {});
+  const L = (act, extra) => [GR('isConnected', m, { active: act ? [[act, act]] : [] }), A('visited', bits(vis)), ...(extra || [])];
+  r.step(0, '3 cities. Matrix says 0 and 1 are connected, 2 stands alone.', L(), { count });
+  for (let i = 0; i < 3; i++) {
+    if (vis[i]) { r.step(ln(C_PROV, 'if (!visited[i])'), `City ${i} is already inside a province.`, L(i), { count }); continue; }
+    count++;
+    const comp = [i]; vis[i] = true; for (let j = 0; j < 3; j++) if (m[i][j] === 1 && !vis[j]) { vis[j] = true; comp.push(j); }
+    r.step(ln(C_PROV, 'count++'), `City ${i} is new: province #${count}. DFS marks its members ${comp.join(', ')}.`, L(i), { count });
+  }
+  r.step(0, `<b>${count}</b> provinces: a province is a connected component.`, L(), { count });
+  return r.steps;
+}
+
+const C_CLONE = `
+Node dfs(Node node, Map<Node, Node> clones) {
+    if (clones.containsKey(node)) return clones.get(node);
+    Node copy = new Node(node.val);
+    clones.put(node, copy);               // register before recursing
+    for (Node next : node.neighbors) copy.neighbors.add(dfs(next, clones));
+    return copy;
+}`;
+function clone() {
+  const N = { 1: [0, 0], 2: [2, 0], 3: [2, 2], 4: [0, 2] }, E = [[1, 2], [2, 3], [3, 4], [4, 1]], adj = adjOf(5, E, false), r = recorder();
+  const made = [], madeE = [], names = {}; const Np = { 1: [0, 0], 2: [2, 0], 3: [2, 2], 4: [0, 2] };
+  const CN = made.length ? Object.fromEntries(made.map(n => ['' + n + "'", Np[n]])) : {};
+  const view = (act) => [graph('original', N, E, { cls: C({ active: act ? [act] : [], done: made.filter(x => x !== act) }) }),
+    graph('clone being built', Object.fromEntries(made.map(n => [n + "'", Np[n]])), madeE.map(([a, b]) => [a + "'", b + "'"]), { cls: C({ done: made.map(n => n + "'") }) })];
+  const seen = new Set();
+  (function go(u) {
+    if (seen.has(u)) return;
+    seen.add(u); made.push(u);
+    r.step(ln(C_CLONE, 'clones.put(node, copy)'), `Clone node ${u} → ${u}' and register it <b>before</b> visiting neighbours (so cycles find it again).`, view(u), { clones: made.length });
+    for (const v of adj[u].filter(x => x >= 1)) {
+      if (seen.has(v)) { if (!madeE.some(([a, b]) => a === u && b === v)) madeE.push([u, v]); r.step(ln(C_CLONE, 'if (clones.containsKey(node))'), `${v} already has a clone ${v}': just link ${u}' → ${v}'. No new node.`, view(u), { clones: made.length }); continue; }
+      madeE.push([u, v]);
+      go(v);
+      r.step(ln(C_CLONE, 'copy.neighbors.add'), `Back in ${u}': link ${u}' → ${v}'.`, view(u), { clones: made.length });
+    }
+  })(1);
+  r.step(0, '4 new nodes, wired exactly like the original, and no node is shared.', view(null), { clones: made.length });
+  return r.steps;
+}
+
+const C_ALLP = `
+void dfs(int[][] graph, int u, List<Integer> path, List<List<Integer>> result) {
+    if (u == graph.length - 1) {
+        result.add(new ArrayList<>(path));
+        return;
+    }
+    for (int v : graph[u]) {
+        path.add(v);
+        dfs(graph, v, path, result);
+        path.remove(path.size() - 1);
+    }
+}`;
+function allPaths() {
+  const g = [[1, 2], [3], [3], []], N = { 0: [0, 1], 1: [1, 0], 2: [1, 2], 3: [2, 1] }, E = [[0, 1], [0, 2], [1, 3], [2, 3]], r = recorder(), path = [0], res = [];
+  const view = (cls, ecls) => [graph('DAG', N, E, { directed: true, cls, ecls }), A('path', path.slice()), A('paths found', res.map(p => p.join('→')))];
+  r.step(0, 'Start with path [0]. Backtracking: add a node, recurse, remove it.', view(C({ active: [0] })), {});
+  (function go(u) {
+    if (u === 3) { res.push(path.slice()); r.step(ln(C_ALLP, 'result.add'), `Reached the last node: record <b>${path.join('→')}</b>.`, view(C({ done: path }), EC({ done: path.slice(1).map((v, i) => [path[i], v]) })), {}); return; }
+    for (const v of g[u]) {
+      path.push(v);
+      r.step(ln(C_ALLP, 'path.add(v)'), `Step ${u} → ${v}.`, view(C({ active: [v], warn: path.slice(0, -1) }), EC({ hot: [[u, v]] })), {});
+      go(v);
+      path.pop();
+      r.step(ln(C_ALLP, 'path.remove'), `Backtrack: remove ${v}, try ${u}'s next edge.`, view(C({ active: [u], warn: path.slice(0, -1) })), {});
+    }
+  })(0);
+  r.step(0, `Done: <b>${res.length}</b> paths. This is backtracking on a DAG; there is no visited array because a DAG has no cycles.`, view(C({ done: [0, 1, 2, 3] })), {});
+  return r.steps;
+}
+
+const C_LEAD = `
+boolean dfs(List<List<Integer>> adj, int u, int dest, boolean[] inStack, boolean[] visited) {
+    if (adj.get(u).isEmpty()) return u == dest;
+    inStack[u] = true;
+    visited[u] = true;
+    for (int v : adj.get(u)) {
+        if (inStack[v]) return false;
+        if (!visited[v] && !dfs(adj, v, dest, inStack, visited)) return false;
+    }
+    inStack[u] = false;
+    return true;
+}`;
+function lead() {
+  const N = { 0: [0, 1], 1: [1, 0], 2: [3, 0], 3: [1, 2] }, E = [[0, 1], [0, 3], [1, 2], [2, 1]], adj = adjOf(4, E, true), r = recorder();
+  const inS = Array(4).fill(false), vis = Array(4).fill(false), path = [];
+  const view = (cls, ecls) => [graph('digraph, source 0, destination 3', N, E, { directed: true, cls, ecls }), S('call stack', path), A('inStack', bits(inS))];
+  let failed = false;
+  (function go(u) {
+    path.push(u);
+    if (!adj[u].length) { r.step(ln(C_LEAD, 'return u == dest'), `${u} has no outgoing edge: it must be the destination (3).`, view(C({ done: [u], active: [] })), {}); path.pop(); return u === 3; }
+    inS[u] = vis[u] = true;
+    r.step(ln(C_LEAD, 'inStack[u] = true'), `Enter ${u}; it is now on the current path.`, view(C({ active: [u], warn: path.slice(0, -1) })), {});
+    for (const v of adj[u]) {
+      if (inS[v]) { r.step(ln(C_LEAD, 'if (inStack[v]) return false'), `${u} → ${v}: ${v} is still on the path, so a <b>cycle</b>: infinitely many walks. Return false.`, view(C({ bad: [u, v] }), EC({ bad: [[u, v]] })), {}); failed = true; path.pop(); return false; }
+      if (!vis[v]) { r.step(ln(C_LEAD, '!dfs(adj, v'), `Descend ${u} → ${v}.`, view(C({ active: [u], warn: path.slice(0, -1) }), EC({ hot: [[u, v]] })), {}); if (!go(v)) { path.pop(); return false; } }
+    }
+    inS[u] = false; path.pop(); return true;
+  })(0);
+  r.step(0, 'Cycle 1 ↔ 2 is reachable from 0, so not all paths lead to 3: <b>false</b>. Also: the destination must have no outgoing edges.', view(C({ bad: [1, 2], done: [3] })), {});
+  return r.steps;
+}
+
+const C_MINV = `
+boolean[] hasIncoming = new boolean[n];
+for (List<Integer> e : edges) hasIncoming[e.get(1)] = true;
+for (int i = 0; i < n; i++) if (!hasIncoming[i]) result.add(i);`;
+function minV() {
+  const N = { 0: [0, 1], 1: [2, 0], 2: [2, 2], 3: [0, 3], 4: [1, 3], 5: [4, 2] }, E = [[0, 1], [0, 2], [2, 5], [3, 4], [4, 2]], r = recorder(), has = Array(6).fill(false);
+  const view = (cls, ecls) => [graph('DAG', N, E, { directed: true, cls, ecls }), A('hasIncoming', bits(has))];
+  r.step(0, 'Find the fewest starting nodes that reach everything.', view(C({})), {});
+  E.forEach(([u, v]) => { has[v] = true; r.step(ln(C_MINV, 'hasIncoming[e.get(1)]'), `Edge ${u} → ${v}: ${v} can be reached from somewhere, it never needs to be a start.`, view(C({ done: range(0, 5).filter(x => has[x]), active: [v] }), EC({ hot: [[u, v]] })), {}); });
+  const res = range(0, 5).filter(x => !has[x]);
+  r.step(ln(C_MINV, 'result.add(i)'), `Nodes with no incoming edge cannot be reached by anyone: they <b>must</b> be starts, and (in a DAG) they reach everything: <b>{${res.join(', ')}}</b>.`, view(C({ active: res, done: range(0, 5).filter(x => has[x]) })), { answer: res.join(',') });
+  return r.steps;
+}
+
+const C_CHAMP = `
+int[] indegree = new int[n];
+for (int[] e : edges) indegree[e[1]]++;
+int champ = -1, count = 0;
+for (int i = 0; i < n; i++) {
+    if (indegree[i] == 0) {
+        champ = i;
+        if (++count > 1) return -1;
+    }
+}
+return champ;`;
+function champ() {
+  const r = recorder();
+  const run = (n, E, N, label) => {
+    const ind = Array(n).fill(0), rng = range(0, n - 1);
+    r.step(ln(C_CHAMP, 'int[] indegree'), `${label}: edge u → v means u beat v. Count how many teams beat each team.`, [graph('beats', N, E, { directed: true, cls: C({}) }), A('indegree', ind)], {});
+    E.forEach(([u, v]) => { ind[v]++; r.step(ln(C_CHAMP, 'indegree[e[1]]++'), `${u} → ${v}: team ${v} has been beaten once more.`, [graph('beats', N, E, { directed: true, cls: C({ active: [v] }), ecls: EC({ hot: [[u, v]] }) }), A('indegree', ind)], {}); });
+    const zeros = rng.filter(x => ind[x] === 0);
+    r.step(ln(C_CHAMP, 'if (++count > 1)'), zeros.length === 1 ? `Exactly one team (${zeros[0]}) is unbeaten: it is the champion.` : `${zeros.length} unbeaten teams (${zeros.join(', ')}): they cannot be compared, so <b>no champion: −1</b>.`, [graph('beats', N, E, { directed: true, cls: C({ active: zeros.length === 1 ? zeros : [], bad: zeros.length === 1 ? [] : zeros }) }), A('indegree', ind)], { answer: zeros.length === 1 ? zeros[0] : -1 });
+  };
+  run(3, [[0, 1], [1, 2]], { 0: [0, 0], 1: [1, 0], 2: [2, 0] }, 'Example 1');
+  run(4, [[0, 2], [1, 3], [1, 2]], { 0: [0, 0], 1: [0, 2], 2: [2, 0], 3: [2, 2] }, 'Example 2');
+  return r.steps;
+}
+
+const C_STAR = `
+public int findCenter(int[][] edges) {
+    return edges[0][0] == edges[1][0] || edges[0][0] == edges[1][1] ? edges[0][0] : edges[0][1];
+}`;
+function star() {
+  const N = { 1: [1, 0], 2: [1, 1], 3: [0, 2], 4: [2, 2] }, E = [[1, 2], [2, 3], [4, 2]], r = recorder();
+  const view = (cls, ecls) => [graph('star graph', N, E, { cls, ecls }), A('edges[0], edges[1]', ['[1,2]', '[2,3]'])];
+  r.step(0, 'Every edge touches the centre. Two edges are enough to expose it.', view(C({})), {});
+  r.step(ln(C_STAR, 'return edges[0][0]'), 'First edge [1,2], second edge [2,3]. Is 1 in the second edge? No.', view(C({ warn: [1, 2] }), EC({ hot: [[1, 2]] })), {});
+  r.step(ln(C_STAR, 'edges[0][1]'), 'So the shared endpoint is the first edge\'s other end: <b>2</b>. O(1), no counting needed.', view(C({ active: [2], done: [1, 3, 4] })), { answer: 2 });
+  return r.steps;
+}
+
+const C_CELEB = `
+int celebrity = 0;
+for (int i = 1; i < n; i++) if (knows(celebrity, i)) celebrity = i;
+for (int i = 0; i < n; i++) {
+    if (i != celebrity && (knows(celebrity, i) || !knows(i, celebrity))) return -1;
+}
+return celebrity;`;
+function celeb() {
+  const K = [[0, 1, 1, 0], [0, 0, 1, 0], [0, 0, 0, 0], [1, 0, 1, 0]], n = 4, r = recorder(); let c = 0, calls = 0;
+  const view = (hl, tag) => [GR(`knows[a][b]  (row knows column)`, K, { active: hl ? [hl] : [], tag }), A('candidate', [c])];
+  r.step(0, 'Everyone knows person 2, and 2 knows nobody. Find them with few questions. Pass 1 eliminates: if the candidate knows i, the candidate is not famous, but i might be.', view(null), { candidate: c, calls });
+  for (let i = 1; i < n; i++) {
+    calls++; const k = K[c][i];
+    if (k) { r.step(ln(C_CELEB, 'celebrity = i'), `knows(${c}, ${i}) = true → ${c} knows someone, so ${c} is out. New candidate ${i}.`, view([c, i]), { candidate: i, calls }); c = i; }
+    else r.step(ln(C_CELEB, 'knows(celebrity, i)'), `knows(${c}, ${i}) = false → ${c} does not know ${i}, so ${i} cannot be the celebrity (everyone must know them). Keep ${c}.`, view([c, i]), { candidate: c, calls });
+  }
+  for (let i = 0; i < n; i++) {
+    if (i === c) continue; calls += 2;
+    r.step(ln(C_CELEB, 'if (i != celebrity'), `Verify with ${i}: knows(${c}, ${i}) = ${!!K[c][i]} (must be false), knows(${i}, ${c}) = ${!!K[i][c]} (must be true).`, view([c, i]), { candidate: c, calls });
+  }
+  r.step(ln(C_CELEB, 'return celebrity'), `All checks pass: celebrity <b>${c}</b>, about 3n questions in total.`, view([c, c]), { answer: c, calls });
+  return r.steps;
+}
+
+const C_RANK = `
+for (int[] r : roads) {
+    degree[r[0]]++;
+    degree[r[1]]++;
+    direct[r[0]][r[1]] = direct[r[1]][r[0]] = true;
+}
+for (int i = 0; i < n; i++) for (int j = i + 1; j < n; j++)
+    best = Math.max(best, degree[i] + degree[j] - (direct[i][j] ? 1 : 0));`;
+function rank() {
+  const N = { 0: [0, 0], 1: [2, 0], 2: [2, 2], 3: [0, 2] }, E = [[0, 1], [0, 3], [1, 2], [1, 3]], deg = [2, 3, 1, 2], r = recorder();
+  const dir = new Set(E.map(([a, b]) => Math.min(a, b) + ',' + Math.max(a, b))); let best = 0; const badge = Object.fromEntries(deg.map((d, i) => [i, 'deg ' + d]));
+  r.step(ln(C_RANK, 'degree[r[0]]++'), 'Count each city\'s degree: [2, 3, 1, 2].', [graph('roads', N, E, { badge })], { degree: deg.join(',') });
+  for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+    const d = dir.has(i + ',' + j), rk = deg[i] + deg[j] - (d ? 1 : 0); best = Math.max(best, rk);
+    r.step(ln(C_RANK, 'best = Math.max'), `Pair (${i},${j}): ${deg[i]} + ${deg[j]}${d ? ' − 1 (they share a road, counted twice)' : ''} = ${rk}. Best so far ${best}.`, [graph('roads', N, E, { badge, cls: C({ active: [i, j] }), ecls: d ? EC({ hot: [[i, j]] }) : {} })], { rank: rk, best });
+  }
+  r.step(0, `Maximal network rank = <b>${best}</b>. Only the top degrees can win, which is why a sort-free O(n + E) version exists too.`, [graph('roads', N, E, { badge, cls: C({ done: [0, 1] }) })], { best });
+  return r.steps;
+}
+
+const C_IMP = `
+for (int[] r : roads) {
+    degree[r[0]]++;
+    degree[r[1]]++;
+}
+Arrays.sort(degree);
+for (int i = 0; i < n; i++) sum += (long) degree[i] * (i + 1);`;
+function imp() {
+  const N = { 0: [0, 0], 1: [1, 1], 2: [2, 0], 3: [3, 1], 4: [2, 2] }, E = [[0, 1], [1, 2], [2, 3], [0, 2], [1, 3], [2, 4]], deg = [2, 3, 4, 2, 1], r = recorder();
+  r.step(ln(C_IMP, 'degree[r[0]]++'), 'A road is worth value(a) + value(b), so a city counts once per road: <b>degree × its value</b>.', [graph('roads (badge = degree)', N, E, { badge: Object.fromEntries(deg.map((d, i) => [i, d])) }), A('degree', deg)], {});
+  const order = [4, 0, 3, 1, 2], vals = {}; order.forEach((c, i) => { vals[c] = i + 1; });
+  r.step(ln(C_IMP, 'Arrays.sort'), 'Biggest value to the busiest city: sort degrees ascending, then give them 1, 2, 3, 4, 5.', [A('sorted degree', [1, 2, 2, 3, 4], { showIdx: false }), A('value given', [1, 2, 3, 4, 5])], {});
+  let sum = 0;
+  order.forEach((c, i) => { sum += deg[c] * (i + 1); r.step(ln(C_IMP, 'sum +='), `City ${c} (degree ${deg[c]}) gets value ${i + 1}: adds ${deg[c] * (i + 1)}. Total ${sum}.`, [graph('roads (badge = assigned value)', N, E, { badge: Object.fromEntries(Object.entries(vals).filter(([k]) => order.indexOf(+k) <= i)), cls: C({ active: [c], done: order.slice(0, i) }) })], { sum }); });
+  r.step(0, `Maximum total importance <b>${sum}</b>. A greedy exchange argument: swapping a bigger label onto a busier city never hurts.`, [graph('final', N, E, { badge: vals, cls: C({ done: order }) })], { sum });
+  return r.steps;
+}
+
+const C_THRONE = `
+public List<String> getInheritanceOrder() {
+    List<String> order = new ArrayList<>();
+    dfs(king, order);
+    return order;
+}
+private void dfs(String name, List<String> order) {
+    if (!dead.contains(name)) order.add(name);
+    for (String child : children.getOrDefault(name, List.of())) dfs(child, order);
+}`;
+function throne() {
+  const par = { king: null, andy: 'king', bob: 'king', catherine: 'king', matthew: 'andy', alex: 'bob', asha: 'bob' }, kids = { king: ['andy', 'bob', 'catherine'], andy: ['matthew'], bob: ['alex', 'asha'] }, r = recorder();
+  const dead = new Set(); let order = [];
+  const view = (act, done) => [tree('family tree', par, { wide: true, cls: Object.fromEntries([...dead].map(d => [d, 'bad']).concat(done.map(d => [d, 'done'])).concat(act ? [[act, 'active']] : [])) }), A('order', order, { showIdx: false })];
+  const run = title => {
+    order = []; const seen = [];
+    (function go(n) {
+      seen.push(n); if (!dead.has(n)) order.push(n);
+      r.step(ln(C_THRONE, 'if (!dead.contains(name))'), dead.has(n) ? `${n} is dead: skip the name but <b>still walk the children</b> (they inherit through ${n}).` : `Visit ${n}: add to the order.`, view(n, seen.filter(x => x !== n && !dead.has(x))), {});
+      (kids[n] || []).forEach(go);
+    })('king');
+    r.step(0, `${title}: <b>${order.join(' → ')}</b>`, view(null, order), {});
+  };
+  run('Order with everyone alive');
+  dead.add('bob');
+  r.step(ln(C_THRONE, 'dead.contains'), 'death("bob") only adds bob to a set. The tree is untouched.', view(null, []), {});
+  run('Order after bob dies');
+  return r.steps;
+}
+
+const C_JUMP = `
+for (int start = 1; start <= 9 && start <= x; start++) {
+    Queue<Long> que = new ArrayDeque<>();
+    que.add((long) start);
+    while (!que.isEmpty()) {
+        long num = que.poll();
+        if (num > x) continue;
+        result.add((int) num);
+        int last = (int) (num % 10);
+        if (last > 0) que.add(num * 10 + last - 1);
+        if (last < 9) que.add(num * 10 + last + 1);
+    }
+}`;
+function jump() {
+  const x = 20, r = recorder(), res = [0];
+  r.step(0, 'Jumping numbers: neighbouring digits differ by exactly 1 (0 and all 1-digit numbers qualify). Grow each number by appending last digit ± 1, like a BFS tree.', [A('found (≤ 20)', res, { showIdx: false })], {});
+  for (let s = 1; s <= 9; s++) {
+    const q = [s]; const log = [];
+    while (q.length) {
+      const num = q.shift();
+      if (num > x) { log.push(`${num} too big`); continue; }
+      res.push(num); const l = num % 10;
+      if (l > 0) q.push(num * 10 + l - 1); if (l < 9) q.push(num * 10 + l + 1);
+      if (s === 1 || num < 10) r.step(ln(C_JUMP, 'result.add'), `Start ${s}: take ${num}, queue ${[l > 0 ? num * 10 + l - 1 : null, l < 9 ? num * 10 + l + 1 : null].filter(v => v !== null).join(' and ')}.`, [Q('queue', q.slice()), A('found', res.slice(), { showIdx: false })], { start: s });
+    }
+  }
+  const sorted = res.slice().sort((a, b) => a - b);
+  r.step(ln(C_JUMP, 'for (int start'), 'Every start digit is exhausted. BFS output is only sorted within one start digit, so sort at the end (the DFS + TreeSet version is sorted for free).', [A('found (sorted)', sorted, { showIdx: false, done: range(0, sorted.length - 1) })], { count: sorted.length });
+  return r.steps;
+}
+
+const C_CYD = `
+boolean dfs(List<List<Integer>> adj, int u, boolean[] visited, boolean[] inPath) {
+    visited[u] = inPath[u] = true;
+    for (int v : adj.get(u)) {
+        if (!visited[v] && dfs(adj, v, visited, inPath)) return true;
+        if (inPath[v]) return true;
+    }
+    inPath[u] = false;
+    return false;
+}`;
+function cycD() {
+  const N = { 0: [0, 1], 1: [1, 0], 2: [2, 1], 3: [3, 1] }, E = [[0, 1], [1, 2], [2, 0], [2, 3]], adj = adjOf(4, E, true), r = recorder(), vis = Array(4).fill(false), inP = Array(4).fill(false), path = [];
+  const view = (cls, ecls) => [graph('digraph', N, E, { directed: true, cls, ecls }), S('current path', path), A('inPath', bits(inP))];
+  let hit = false;
+  (function go(u) {
+    vis[u] = inP[u] = true; path.push(u);
+    r.step(ln(C_CYD, 'visited[u] = inPath[u]'), `Enter ${u}: visited and on the current path.`, view(C({ active: [u], warn: path.slice(0, -1) })), {});
+    for (const v of adj[u]) {
+      if (!vis[v]) { r.step(ln(C_CYD, '!visited[v]'), `${u} → ${v}: unvisited, go deeper.`, view(C({ active: [u], warn: path.slice(0, -1) }), EC({ hot: [[u, v]] })), {}); if (go(v)) return true; }
+      else if (inP[v]) { r.step(ln(C_CYD, 'if (inPath[v])'), `${u} → ${v}: ${v} is on the current path, a <b>back edge</b>. Cycle ${path.slice(path.indexOf(v)).join(' → ')} → ${v}.`, view(C({ bad: path.slice(path.indexOf(v)) }), EC({ bad: [[u, v]] })), {}); hit = true; return true; }
+    }
+    inP[u] = false; path.pop(); return false;
+  })(0);
+  r.step(0, `Cycle found: <b>${hit}</b>. A node that is visited but <i>off</i> the path (cross edge) is harmless in a directed graph.`, view(C({ bad: [0, 1, 2] })), {});
+  return r.steps;
+}
+const C_CYK = `
+for (List<Integer> out : adj) for (int v : out) indegree[v]++;
+for (int i = 0; i < n; i++) if (indegree[i] == 0) que.add(i);
+while (!que.isEmpty()) {
+    int u = que.poll();
+    removed++;
+    for (int v : adj.get(u)) if (--indegree[v] == 0) que.add(v);
+}
+return removed != n;`;
+function cycK() {
+  const N = { 0: [0, 1], 1: [1, 0], 2: [2, 1], 3: [3, 1], 4: [4, 1] }, E = [[0, 1], [1, 2], [2, 1], [2, 3], [0, 4]], adj = adjOf(5, E, true), r = recorder();
+  const ind = Array(5).fill(0); E.forEach(([, v]) => ind[v]++);
+  const q = range(0, 4).filter(i => ind[i] === 0), gone = []; let removed = 0;
+  const view = (act) => [graph('digraph (badge = indegree)', N, E, { directed: true, cls: C({ active: act ? [act] : [], done: gone, warn: q }), badge: Object.fromEntries(ind.map((d, i) => [i, d])) }), Q('queue', q), A('indegree', ind)];
+  r.step(ln(C_CYK, 'indegree[v]++'), 'Count incoming edges. Nodes with indegree 0 have no prerequisites: queue them.', view(null), { removed });
+  while (q.length) {
+    const u = q.shift(); removed++; gone.push(u);
+    for (const v of adj[u]) { ind[v]--; if (ind[v] === 0) q.push(v); }
+    r.step(ln(C_CYK, 'removed++'), `Remove ${u} and lower its neighbours' indegree.`, view(u), { removed });
+  }
+  r.step(ln(C_CYK, 'return removed != n'), `Only ${removed} of 5 nodes could be removed. Nodes 1 and 2 keep each other's indegree above 0: <b>cycle</b>.`, [graph('digraph', N, E, { directed: true, cls: C({ done: gone, bad: [1, 2, 3].filter(x => !gone.includes(x)) }) }), A('indegree', ind)], { removed });
+  return r.steps;
+}
+
+const C_CYU = `
+boolean dfs(List<List<Integer>> adj, int u, int parent, boolean[] visited) {
+    visited[u] = true;
+    for (int v : adj.get(u)) {
+        if (v == parent) continue;
+        if (visited[v] || dfs(adj, v, u, visited)) return true;
+    }
+    return false;
+}`;
+function cycU() {
+  const N = { 0: [0, 0], 1: [2, 0], 2: [1, 1.6], 3: [3, 1.6] }, E = [[0, 1], [1, 2], [0, 2], [2, 3]], adj = adjOf(4, E, false), r = recorder(), vis = Array(4).fill(false), path = [];
+  const view = (cls, ecls) => [graph('undirected graph', N, E, { cls, ecls }), S('call stack (node/parent)', path.map(([a, b]) => `${a}/${b < 0 ? '-' : b}`)), A('visited', bits(vis))];
+  (function go(u, p) {
+    vis[u] = true; path.push([u, p]);
+    r.step(ln(C_CYU, 'visited[u] = true'), `Enter ${u} (came from ${p < 0 ? 'nowhere' : p}).`, view(C({ active: [u], warn: path.slice(0, -1).map(x => x[0]) })), {});
+    for (const v of adj[u]) {
+      if (v === p) { r.step(ln(C_CYU, 'v == parent'), `${u} — ${v}: that is the edge we just walked in on. Ignore it.`, view(C({ active: [u] }), EC({ ghost: [[u, v]] })), {}); continue; }
+      if (vis[v]) { r.step(ln(C_CYU, 'visited[v] ||'), `${u} — ${v}: ${v} is visited and not my parent, so another route already reached it: <b>cycle</b>.`, view(C({ bad: [u, v] }), EC({ bad: [[u, v]] })), {}); return true; }
+      r.step(ln(C_CYU, 'dfs(adj, v, u'), `Go deeper ${u} → ${v}.`, view(C({ active: [u] }), EC({ hot: [[u, v]] })), {});
+      if (go(v, u)) return true;
+    }
+    path.pop(); return false;
+  })(0, -1);
+  r.step(0, 'Cycle 0-1-2 found. Tail 3 does not matter.', view(C({ bad: [0, 1, 2], done: [] })), {});
+  return r.steps;
+}
+const C_CYDSU = `
+for (int[] e : edges) {
+    int a = find(parent, e[0]), b = find(parent, e[1]);
+    if (a == b) return true;        // ends already connected
+    parent[a] = b;
+}
+return false;`;
+function cycDsu() {
+  const N = { 0: [0, 0], 1: [2, 0], 2: [1, 1.6], 3: [3, 1.6] }, E = [[0, 1], [1, 2], [2, 3], [0, 2]], parent = [0, 1, 2, 3], r = recorder();
+  const f = x => parent[x] === x ? x : f(parent[x]); const used = [];
+  r.step(0, 'Edge list instead of an adjacency list: use Union-Find. An edge whose ends already share a root closes a cycle.', [graph('graph', N, E, {}), A('parent', parent)], {});
+  for (const [u, v] of E) {
+    const a = f(u), b = f(v);
+    if (a === b) { r.step(ln(C_CYDSU, 'if (a == b)'), `Edge ${u}-${v}: both ends have root ${a}. They were already connected: <b>cycle</b>.`, [graph('graph', N, E, { cls: C({ bad: [u, v] }), ecls: EC({ done: used, bad: [[u, v]] }) }), A('parent', parent)], {}); return r.steps; }
+    parent[a] = b; used.push([u, v]);
+    r.step(ln(C_CYDSU, 'parent[a] = b'), `Edge ${u}-${v}: roots ${a} ≠ ${b}, union them.`, [graph('graph', N, E, { cls: C({ active: [u, v] }), ecls: EC({ done: used }) }), A('parent', parent)], {});
+  }
+  return r.steps;
+}
+
+const C_BIP = `
+boolean dfs(int[][] graph, int u, int c, int[] color) {
+    color[u] = c;
+    for (int v : graph[u]) {
+        if (color[v] == c) return false;
+        if (color[v] == -1 && !dfs(graph, v, 1 - c, color)) return false;
+    }
+    return true;
+}`;
+const colorSteps = (N, E, adj, n, start, code, tag) => {
+  const r = recorder(), color = Array(n).fill(-1);
+  const names = ['A', 'B'], cl = () => ({ A: range(0, n - 1).filter(i => color[i] === 0), B: range(0, n - 1).filter(i => color[i] === 1) });
+  const view = (act, bad, ecls) => { const k = cl(); return [graph(tag, N, E, { cls: { ...Object.fromEntries(k.A.map(i => [i, 'active'])), ...Object.fromEntries(k.B.map(i => [i, 'warn'])), ...(bad ? Object.fromEntries(bad.map(i => [i, 'bad'])) : {}) }, ecls }), A('colour (0 = blue, 1 = amber)', color.map(c => c < 0 ? '·' : c))]; };
+  let ok = true;
+  (function go(u, c) {
+    color[u] = c;
+    r.step(ln(code, 'color[u] = c'), `Paint ${u} ${c === 0 ? 'blue (0)' : 'amber (1)'}.`, view(u), {});
+    for (const v of adj[u]) {
+      if (color[v] === c) { r.step(ln(code, 'color[v] == c'), `${u} and its neighbour ${v} would both be ${c === 0 ? 'blue' : 'amber'}: an odd cycle, <b>not bipartite</b>.`, view(null, [u, v], EC({ bad: [[u, v]] })), {}); ok = false; return false; }
+      if (color[v] === -1) { r.step(ln(code, '1 - c'), `${v} is unpainted: give it the <b>opposite</b> colour.`, view(u, null, EC({ hot: [[u, v]] })), {}); if (!go(v, 1 - c)) return false; }
+    }
+    return true;
+  })(start, 0);
+  r.step(0, ok ? 'Every edge joins a blue and an amber node: <b>bipartite</b>.' : 'Colouring failed: <b>false</b>.', view(null), { answer: ok });
+  return r.steps;
+};
+function bipOk() { const N = { 0: [0, 0], 1: [2, 0], 2: [2, 2], 3: [0, 2] }, E = [[0, 1], [1, 2], [2, 3], [3, 0]]; return colorSteps(N, E, adjOf(4, E, false), 4, 0, C_BIP, 'square (even cycle)'); }
+function bipBad() { const N = { 0: [0, 0], 1: [2, 0], 2: [1, 1.7], 3: [3, 1.7] }, E = [[0, 1], [1, 2], [0, 2], [2, 3]]; return colorSteps(N, E, adjOf(4, E, false), 4, 0, C_BIP, 'triangle with a tail (odd cycle)'); }
+const C_BIPB = `
+color[s] = 0;
+que.add(s);
+while (!que.isEmpty()) {
+    int u = que.poll();
+    for (int v : graph[u]) {
+        if (color[v] == color[u]) return false;
+        if (color[v] == -1) {
+            color[v] = 1 - color[u];
+            que.add(v);
+        }
+    }
+}`;
+function bipBfs() {
+  const N = { 0: [0, 0], 1: [2, 0], 2: [2, 2], 3: [0, 2] }, E = [[0, 1], [1, 2], [2, 3], [3, 0]], adj = adjOf(4, E, false), r = recorder(), color = [0, -1, -1, -1], q = [0];
+  const view = (act, ecls) => [graph('square', N, E, { cls: { ...Object.fromEntries(range(0, 3).filter(i => color[i] === 0).map(i => [i, 'active'])), ...Object.fromEntries(range(0, 3).filter(i => color[i] === 1).map(i => [i, 'warn'])) }, ecls }), Q('queue', q), A('colour', color.map(c => c < 0 ? '·' : c))];
+  r.step(ln(C_BIPB, 'color[s] = 0'), 'Start: colour 0 blue and queue it.', view(), {});
+  while (q.length) {
+    const u = q.shift();
+    for (const v of adj[u]) {
+      if (color[v] === color[u]) { r.step(ln(C_BIPB, 'color[v] == color[u]'), 'Conflict.', view(), {}); return r.steps; }
+      if (color[v] === -1) { color[v] = 1 - color[u]; q.push(v); r.step(ln(C_BIPB, 'color[v] = 1 - color[u]'), `${u} → ${v}: colour ${v} opposite to ${u}, queue it.`, view(u, EC({ hot: [[u, v]] })), {}); }
+      else r.step(ln(C_BIPB, 'color[v] == color[u]'), `${u} → ${v}: already coloured differently: fine.`, view(u, EC({ done: [[u, v]] })), {});
+    }
+  }
+  r.step(0, 'Queue empty with no conflict: <b>bipartite</b>. BFS colours layer by layer, so even/odd distance = colour.', view(), {});
+  return r.steps;
+}
+
+const C_POSB = `
+for (int s = 1; s <= n; s++) {
+    if (color[s] != -1) continue;
+    color[s] = 0;
+    que.add(s);
+    while (!que.isEmpty()) {
+        int u = que.poll();
+        for (int v : adj.get(u)) {
+            if (color[v] == color[u]) return false;
+            if (color[v] == -1) { color[v] = 1 - color[u]; que.add(v); }
+        }
+    }
+}
+return true;`;
+function posb() {
+  const N = { 1: [0, 0], 2: [2, 0], 3: [0, 2], 4: [2, 2] }, E = [[1, 2], [1, 3], [2, 4]], adj = adjOf(5, E, false), r = recorder(), color = [-1, -1, -1, -1, -1], q = [];
+  const view = (act, ecls) => [graph('dislikes (an edge = cannot share a group)', N, E, { cls: { ...Object.fromEntries([1, 2, 3, 4].filter(i => color[i] === 0).map(i => [i, 'active'])), ...Object.fromEntries([1, 2, 3, 4].filter(i => color[i] === 1).map(i => [i, 'warn'])) }, ecls }), Q('queue', q), A('group', color.slice(1).map(c => c < 0 ? '·' : c))];
+  r.step(0, '4 people, 3 dislike pairs. Can we split into two groups with no pair inside a group? That is 2-colouring.', view(), {});
+  for (let s = 1; s <= 4; s++) {
+    if (color[s] !== -1) continue;
+    color[s] = 0; q.push(s);
+    r.step(ln(C_POSB, 'color[s] = 0'), `Person ${s} starts group 0.`, view(), {});
+    while (q.length) { const u = q.shift(); for (const v of adj[u]) if (color[v] === -1) { color[v] = 1 - color[u]; q.push(v); r.step(ln(C_POSB, 'color[v] = 1 - color[u]'), `${u} dislikes ${v}: ${v} goes to the other group.`, view(u, EC({ hot: [[u, v]] })), {}); } }
+  }
+  r.step(0, 'No conflicting pair: <b>true</b>. Groups {1, 4} and {2, 3}.', view(), {});
+  return r.steps;
+}
+
+const C_TT = `
+void dfs(List<List<Integer>> adj, int u, boolean[] visited) {
+    visited[u] = true;
+    tin[u] = ++timer;
+    for (int v : adj.get(u)) if (!visited[v]) dfs(adj, v, visited);
+    tout[u] = ++timer;
+}
+boolean onSamePath(int u, int v) {
+    return (tin[u] < tin[v] && tout[u] > tout[v]) || (tin[v] < tin[u] && tout[v] > tout[u]);
+}`;
+function tinout() {
+  const par = { 1: null, 2: 1, 3: 1, 4: 2, 5: 2, 6: 3, 7: 5, 8: 5, 9: 5 }, kids = { 1: [2, 3], 2: [4, 5], 3: [6], 5: [7, 8, 9] }, r = recorder(); let t = 0; const tin = {}, tout = {}, badge = {};
+  const view = (act, done) => [tree('tree (badge = tin/tout)', par, { badge, cls: C({ active: act ? [act] : [], done: done || [] }) })];
+  const fin = [];
+  (function go(u) {
+    tin[u] = ++t; badge[u] = tin[u] + '/…';
+    r.step(ln(C_TT, 'tin[u] = ++timer'), `Enter ${u}: tin = ${tin[u]}.`, view(u, fin), {});
+    (kids[u] || []).forEach(go);
+    tout[u] = ++t; badge[u] = tin[u] + '/' + tout[u]; fin.push(u);
+    r.step(ln(C_TT, 'tout[u] = ++timer'), `Leave ${u}: tout = ${tout[u]}. Its whole subtree sits between ${tin[u]} and ${tout[u]}.`, view(u, fin), {});
+  })(1);
+  const q = (a, b) => { const yes = (tin[a] < tin[b] && tout[a] > tout[b]) || (tin[b] < tin[a] && tout[b] > tout[a]); r.step(ln(C_TT, 'return (tin[u] < tin[v]'), `Query (${a}, ${b}): intervals [${tin[a]},${tout[a]}] and [${tin[b]},${tout[b]}] ${yes ? 'are nested → one is an ancestor of the other: <b>Yes</b>' : 'are disjoint → different branches: <b>No</b>'}.`, view(null, []).concat([]), {}); };
+  q(1, 5); q(2, 9); q(2, 6);
+  return r.steps;
+}
+
+const C_SAFE = `
+for (int u = 0; u < n; u++) {
+    for (int v : graph[u]) { reverse.get(v).add(u); outdegree[u]++; }
+}
+for (int i = 0; i < n; i++) if (outdegree[i] == 0) que.add(i);
+while (!que.isEmpty()) {
+    int u = que.poll();
+    safe[u] = true;
+    for (int p : reverse.get(u)) if (--outdegree[p] == 0) que.add(p);
+}`;
+function safe() {
+  const g = [[1, 2], [2, 3], [5], [0], [5], [], []], N = { 0: [0, 0], 1: [1, 0], 2: [2, 0], 3: [1, 1.5], 4: [3, 1.5], 5: [3, 0], 6: [4, 0] }, E = [];
+  g.forEach((o, u) => o.forEach(v => E.push([u, v])));
+  const out = g.map(o => o.length), rev = g.map(() => []); g.forEach((o, u) => o.forEach(v => rev[v].push(u)));
+  const q = range(0, 6).filter(i => out[i] === 0), done = [], r = recorder();
+  const view = (act) => [graph('digraph (badge = outdegree left)', N, E, { directed: true, cls: C({ done, active: act !== undefined ? [act] : [], warn: q }), badge: Object.fromEntries(out.map((d, i) => [i, d])) }), Q('queue', q), A('outdegree', out)];
+  r.step(ln(C_SAFE, 'outdegree[u]++'), 'A node is safe if every walk from it ends. Terminal nodes (outdegree 0) are safe; work backwards from them.', view(), {});
+  while (q.length) {
+    const u = q.shift(); done.push(u);
+    rev[u].forEach(p => { out[p]--; if (out[p] === 0) q.push(p); });
+    r.step(ln(C_SAFE, 'safe[u] = true'), `${u} is safe. Each node pointing to it loses one unfinished edge.`, view(u), {});
+  }
+  r.step(0, `Safe: <b>${done.slice().sort((a, b) => a - b).join(', ')}</b>. Nodes 0, 1, 3 sit on a cycle (0→1→3→0) and never run out of edges.`, [graph('final', N, E, { directed: true, cls: C({ done, bad: [0, 1, 3] }) })], {});
+  return r.steps;
+}
+
+const C_ANC = `
+for (int[] e : edges) { adj.get(e[0]).add(e[1]); indegree[e[1]]++; }
+for (int i = 0; i < n; i++) if (indegree[i] == 0) que.add(i);
+while (!que.isEmpty()) {
+    int u = que.poll();
+    for (int v : adj.get(u)) {
+        anc.get(v).add(u);
+        anc.get(v).addAll(anc.get(u));
+        if (--indegree[v] == 0) que.add(v);
+    }
+}`;
+function anc() {
+  const n = 8, E = [[0, 3], [0, 4], [1, 3], [2, 4], [2, 7], [3, 5], [3, 6], [3, 7], [4, 6]], adj = adjOf(n, E, true), ind = Array(n).fill(0); E.forEach(([, v]) => ind[v]++);
+  const N = { 0: [0, 0], 1: [1, 0], 2: [3, 0], 3: [0.5, 1.5], 4: [2.5, 1.5], 5: [0, 3], 6: [1.5, 3], 7: [3, 3] }, an = Array.from({ length: n }, () => new Set()), r = recorder(), q = range(0, n - 1).filter(i => ind[i] === 0), done = [];
+  const view = (act, ecls) => [graph('DAG', N, E, { directed: true, cls: C({ active: act !== undefined ? [act] : [], done, warn: q }), ecls }), A('ancestors of node', an.map(s => [...s].sort((a, b) => a - b).join(',') || '—'), { showIdx: true })];
+  r.step(ln(C_ANC, 'indegree[e[1]]++'), 'Process nodes in topological order. When u is handed to child v, v gets u <b>and all of u\'s ancestors</b> (already final).', view(), {});
+  while (q.length) {
+    const u = q.shift();
+    for (const v of adj[u]) { an[v].add(u); an[u].forEach(x => an[v].add(x)); ind[v]--; if (ind[v] === 0) q.push(v); r.step(ln(C_ANC, 'anc.get(v).addAll'), `${u} → ${v}: ancestors(${v}) gets ${u} and ancestors(${u}) = {${[...an[u]].join(', ')}}.`, view(u, EC({ hot: [[u, v]] })), {}); }
+    done.push(u);
+  }
+  r.step(0, 'All ancestor sets are complete. Node 6 collects {0,1,2,3,4} through both parents.', view(), {});
+  return r.steps;
+}
+
+const C_LC = `
+int u = start;
+step++;
+int t = 0;
+while (u != -1 && stamp[u] == 0) {
+    stamp[u] = step;
+    walk[u] = t++;
+    u = edges[u];
+}
+if (u != -1 && stamp[u] == step) best = Math.max(best, t - walk[u]);`;
+function longCyc() {
+  const e = [3, 3, 4, 2, 3], N = { 0: [0, 1], 1: [0, 2], 2: [2, 1], 3: [1, 0], 4: [3, 0] }, E = e.map((v, u) => [u, v]), r = recorder(), stamp = Array(5).fill(0), walk = Array(5).fill(0); let step = 0, best = -1;
+  const view = (cls, ecls) => [graph('each node has one outgoing edge', N, E, { directed: true, cls, ecls }), A('stamp (which walk)', stamp), A('walk (step in this walk)', walk)];
+  for (let s = 0; s < 5; s++) {
+    if (stamp[s]) continue;
+    let u = s, t = 0; step++; const seen = [];
+    while (u !== -1 && stamp[u] === 0) { stamp[u] = step; walk[u] = t++; seen.push(u); r.step(ln(C_LC, 'stamp[u] = step'), `Walk ${step}: stamp node ${u} with step number ${t - 1}.`, view(C({ active: [u], warn: seen.slice(0, -1) })), { best }); u = e[u]; }
+    if (u !== -1 && stamp[u] === step) { best = Math.max(best, t - walk[u]); r.step(ln(C_LC, 'best = Math.max'), `The walk ran into ${u}, stamped in the <b>same</b> walk at step ${walk[u]}. Cycle length = ${t} − ${walk[u]} = ${t - walk[u]}.`, view(C({ bad: seen.slice(walk[u]) }), EC({ bad: seen.slice(walk[u]).map(x => [x, e[x]]) })), { best }); }
+    else r.step(ln(C_LC, 'if (u != -1'), `The walk hit a node from an earlier walk (or the end): no new cycle.`, view(C({ done: seen })), { best });
+  }
+  r.step(0, `Longest cycle: <b>${best}</b> (2 → 4 → 3 → 2).`, view(C({ bad: [2, 4, 3], done: [0, 1] })), { best });
+  return r.steps;
+}
+
+const C_REO = `
+private int dfs(int node, int parent, List<List<int[]>> adj) {
+    int flips = 0;
+    for (int[] next : adj.get(node)) {
+        if (next[0] != parent) flips += next[1] + dfs(next[0], node, adj);
+    }
+    return flips;
+}`;
+function reorder() {
+  const con = [[0, 1], [1, 3], [2, 3], [4, 0], [4, 5]], N = { 0: [1, 1], 1: [0, 0], 2: [-1, 2], 3: [0, 2], 4: [2, 0], 5: [3, 1] }, r = recorder(); let flips = 0; const bad = [], good = [];
+  const view = (act) => [graph('roads (arrow = allowed direction)', N, con, { directed: true, cls: C({ active: act !== undefined ? [act] : [], done: [0] }), ecls: EC({ bad, done: good }) })];
+  const adj = Array.from({ length: 6 }, () => []); con.forEach(([a, b]) => { adj[a].push([b, 1]); adj[b].push([a, 0]); });
+  r.step(0, 'Roads are one-way, but the layout is a tree. Every road must point toward 0, so each edge walked <b>away from 0</b> in its own direction must be flipped.', view(0), { flips });
+  (function go(u, p) {
+    for (const [v, w] of adj[u]) {
+      if (v === p) continue;
+      flips += w; (w ? bad : good).push(w ? [u, v] : [v, u]);
+      r.step(ln(C_REO, 'flips += next[1]'), w ? `Edge ${u} → ${v} points away from 0: <b>flip it</b> (+1).` : `Edge ${v} → ${u} already points toward 0: free.`, view(v), { flips });
+      go(v, u);
+    }
+  })(0, -1);
+  r.step(0, `Minimum reorders: <b>${flips}</b>.`, view(), { flips });
+  return r.steps;
+}
+
+const C_UNR = `
+long result = 0, remaining = n;
+for (int i = 0; i < n; i++) {
+    if (visited[i]) continue;
+    long size = dfs(adj, i, visited);
+    remaining -= size;
+    result += size * remaining;
+}`;
+function unreach() {
+  const N = { 0: [0, 0], 2: [1, 0], 4: [1, 1.5], 5: [0, 1.5], 1: [3, 0], 6: [3, 1.5], 3: [5, 0.7] }, E = [[0, 2], [0, 5], [2, 4], [1, 6], [5, 4]], comps = [[0, 2, 4, 5], [1, 6], [3]], r = recorder(); let remaining = 7, res = 0; const done = [];
+  r.step(0, '7 nodes in 3 components. A node cannot reach anyone outside its component.', [graph('graph', N, E, {})], { remaining });
+  for (const c of comps) {
+    remaining -= c.length; const add = c.length * remaining; res += add; done.push(...c);
+    r.step(ln(C_UNR, 'result += size * remaining'), `Component of size ${c.length}: pairs it with the ${remaining} nodes not yet counted: ${c.length} × ${remaining} = ${add}. Total ${res}.`, [graph('graph', N, E, { cls: C({ active: c, done: done.filter(x => !c.includes(x)) }) })], { size: c.length, remaining, result: res });
+  }
+  r.step(0, `<b>${res}</b> unreachable pairs. Counting only with "remaining" avoids counting each pair twice.`, [graph('graph', N, E, { cls: C({ done }) })], { result: res });
+  return r.steps;
+}
+
+const C_MS = `
+private void dfs(List<List<int[]>> adj, int u, boolean[] visited, int[] best) {
+    visited[u] = true;
+    for (int[] e : adj.get(u)) {
+        best[0] = Math.min(best[0], e[1]);
+        if (!visited[e[0]]) dfs(adj, e[0], visited, best);
+    }
+}`;
+function minScore() {
+  const E = [[1, 2, 9], [2, 3, 6], [2, 4, 5], [1, 4, 7]], N = { 1: [0, 0], 2: [2, 0], 3: [4, 0], 4: [1, 2] }, adj = Array.from({ length: 5 }, () => []); E.forEach(([a, b, w]) => { adj[a].push([b, w]); adj[b].push([a, w]); });
+  const r = recorder(), vis = Array(5).fill(false), seenE = []; let best = 1e9;
+  const view = (act) => [graph('roads (weights)', N, E.map(([a, b, w]) => [a, b, w]), { cls: C({ active: act ? [act] : [], done: [1, 2, 3, 4].filter(x => vis[x] && x !== act) }), ecls: EC({ hot: seenE }) }), A('lightest road seen', [best === 1e9 ? '∞' : best])];
+  r.step(0, 'A path may reuse roads, so the score is simply the lightest road in the component that contains city 1 (and n).', view(), {});
+  (function go(u) {
+    vis[u] = true;
+    for (const [v, w] of adj[u]) {
+      best = Math.min(best, w); seenE.push([u, v]);
+      r.step(ln(C_MS, 'best[0] = Math.min'), `Road ${u}-${v} (${w}): lightest so far ${best}.`, view(u), { best });
+      if (!vis[v]) go(v);
+    }
+  })(1);
+  r.step(0, `Answer <b>${best}</b>. Walk 1 → 2 → 4 (5) then back: roads can be reused, so the lightest reachable road always counts.`, view(), { best });
+  return r.steps;
+}
+
+const C_STN = `
+for (int[] s : stones) union(parent, s[0], s[1] + 100001);   // stone = edge row—column
+Set<Integer> roots = new HashSet<>();
+for (int key : new ArrayList<>(parent.keySet())) roots.add(find(parent, key));
+return stones.length - roots.size();`;
+function stones() {
+  const st = [[0, 0], [0, 1], [1, 0], [1, 2], [2, 1], [2, 2]], N = { R0: [0, 0], R1: [0, 1.5], R2: [0, 3], C0: [3, 0], C1: [3, 1.5], C2: [3, 3] }, r = recorder(), E = [], parent = {};
+  const f = x => { parent[x] = parent[x] || x; return parent[x] === x ? x : (parent[x] = f(parent[x])); };
+  r.step(0, 'Stones that share a row or a column are connected. Model it as a graph: every <b>row</b> and <b>column</b> is a node and every <b>stone is an edge</b> between its row and column.', [graph('rows R and columns C', N, [], {})], {});
+  st.forEach(([x, y]) => {
+    const a = 'R' + x, b = 'C' + y; E.push([a, b]); parent[f(a)] = f(b);
+    const roots = new Set(Object.keys(parent).map(f));
+    r.step(ln(C_STN, 'union(parent'), `Stone (${x},${y}) joins ${a} and ${b}. Components so far: ${roots.size}.`, [graph('rows R and columns C', N, E, { cls: C({ active: [a, b] }), ecls: EC({ hot: [[a, b]] }) })], { components: roots.size });
+  });
+  r.step(ln(C_STN, 'return stones.length'), '6 stones, 1 component: we can remove 6 − 1 = <b>5</b> stones. In every component one stone must stay.', [graph('rows R and columns C', N, E, { cls: C({ done: Object.keys(N) }) })], { answer: 5 });
+  return r.steps;
+}
+
+mount({
+  title: "Graph Basics Animations",
+  sub: "A graph is <b>nodes + edges</b>. Store it as an adjacency list, then every problem is one of three moves: <b>BFS</b> (queue, rings of distance), <b>DFS</b> (stack or recursion, go deep), or <b>count in-degrees</b>. Mark a node visited the moment you queue it. Directed cycle = a node revisited while still on the path; undirected cycle = a visited neighbour that is not your parent.",
+  problems: [
+    { name: "BFS Traversal", hook: "A ripple on a pond: the stone is the start, each ring is one more edge away.", mantra: "MARK WHEN QUEUED, VISIT WHEN POLLED", statement: "Print the nodes of a directed graph in BFS order from a start node.",
+      anims: [{ name: "Walkthrough", code: C_BFS, steps: bfs() }],
+      recall: [["When do you mark visited?", "When the node is added to the queue, otherwise it can be queued many times."], ["What does BFS give for free?", "The fewest edges from the start to every reachable node."]], links: [["Find if Path Exists in Graph", 2], ["Is Graph Bipartite", 21]] },
+    { name: "DFS Traversal", hook: "A rat in a maze: dive until a dead end, back up, take the next unexplored turn.", mantra: "MARK, RECORD, RECURSE ON UNVISITED", statement: "Print the nodes of a directed graph in DFS order, both recursively and with an explicit stack.",
+      anims: [{ name: "Recursive", code: C_DFSR, steps: dfsRec() },
+      { name: "Iterative", code: C_DFSI, steps: dfsIter() }],
+      recall: [["Why push neighbours in reverse?", "The stack pops the last pushed first, so reversing makes the first neighbour come out first."], ["When does recursion break?", "On a 1e5-long chain the Java call stack overflows; use the iterative form."]], links: [["BFS Traversal", 0], ["Keys and Rooms", 5]] },
+    { name: "Find if Path Exists in Graph", hook: "Two cities are connected exactly when you can walk from one to the other: just walk.", mantra: "WALK FROM SOURCE; TOUCH TARGET \u21d2 TRUE", statement: "Undirected graph with n nodes. Is there a path from source to destination?",
+      anims: [{ name: "DFS", code: C_PATH, steps: pathEx() },
+      { name: "BFS", code: C_PATHB, steps: pathBfs() }],
+      recall: [["Why return early?", "Once the destination is reached the answer is final."], ["Alternative?", "Union-Find: same root means a path exists."]], links: [["Number of Connected Components in an Undirected Graph", 6], ["Find Whether Path Exist in a Grid", 3]] },
+    { name: "Find Whether Path Exist in a Grid", hook: "A grid is a graph whose edges are the four neighbours; walls are missing nodes.", mantra: "MARK ON PUSH; NEVER UN-MARK", statement: "n \u00d7 n matrix: 1 source, 2 destination, 3 blank, 0 wall. Is the destination reachable moving up/down/left/right?",
+      anims: [{ name: "BFS", code: C_GRIDB, steps: gridPath() },
+      { name: "DFS", code: C_GRIDD, steps: gridDfs() }],
+      recall: [["Why not restore the cell in DFS?", "Restoring lets the same cell be re-entered along many routes: exponential time."], ["What bug does the BFS original have?", "It marks cells at poll time, so a cell can be queued many times."]], links: [["Find if Path Exists in Graph", 2]] },
+    { name: "Find Mother Vertex in Directed Graph", hook: "The last person to start a fresh rumour must be the one who can reach everyone, or nobody can.", mantra: "LAST DFS START \u21d2 CANDIDATE; VERIFY ONCE", statement: "A mother vertex reaches every other vertex. Find one, or return \u22121.",
+      anims: [{ name: "Walkthrough", code: C_MOM, steps: mother() }],
+      recall: [["Why is the last DFS start the candidate?", "Any earlier start was either reached by a later DFS or cannot reach the later start; a mother can only be a vertex no later DFS reached."], ["Why a second DFS?", "The candidate is only *possible*; the second pass proves it reaches everything."]], links: [] },
+    { name: "Keys and Rooms", hook: "A treasure hunt: every room hides keys to other rooms; can you eventually open every door?", mantra: "START AT 0, FOLLOW KEYS, COUNT ROOMS", statement: "Room 0 is open; each room contains keys. Can you visit all rooms?",
+      anims: [{ name: "Walkthrough", code: C_KEYS, steps: keys() }],
+      recall: [["Directed or undirected?", "Directed: a key opens a room one way only."], ["What is the answer test?", "Every room is visited."]], links: [["Find if Path Exists in Graph", 2]] },
+    { name: "Number of Connected Components in an Undirected Graph", hook: "Start with n separate islands; every bridge you build merges two, unless they were already one.", mantra: "n \u2212 SUCCESSFUL UNIONS", statement: "n nodes and a list of undirected edges. Count connected components.",
+      anims: [{ name: "Walkthrough", code: C_CC, steps: cc() }],
+      recall: [["Why n \u2212 unions?", "Each union that merges two different sets reduces the count by exactly one."], ["Union-Find or DFS?", "Union-Find when edges arrive as a list or stream; DFS when you already have an adjacency list."]], links: [["Number of Provinces", 7]] },
+    { name: "Number of Provinces", hook: "Friend circles at a party: every unvisited person starts a new circle, and the search pulls in the whole circle.", mantra: "NEW START \u21d2 COUNT++, FLOOD THE REST", statement: "An n \u00d7 n matrix says which cities are directly connected. Count the provinces (connected groups).",
+      anims: [{ name: "Walkthrough", code: C_PROV, steps: prov() }],
+      recall: [["Why O(n\u00b2)?", "Scanning one row of the matrix costs n, and every city is expanded once."], ["Could you use Union-Find?", "Yes: union i and j whenever the matrix has a 1."]], links: [["Number of Connected Components in an Undirected Graph", 6]] },
+    { name: "Clone Graph", hook: "Photocopying a city map: keep a list of \"original \u2192 copy\" so a road leading back to an old junction reuses its copy.", mantra: "MAP ORIGINAL \u2192 CLONE; REGISTER BEFORE RECURSING", statement: "Return a deep copy of a connected undirected graph given one node.",
+      anims: [{ name: "Walkthrough", code: C_CLONE, steps: clone() }],
+      recall: [["Why a HashMap&lt;Node, Node&gt;?", "It is both the visited set and the lookup of the clone."], ["What goes wrong if you register after recursing?", "A cycle recurses forever."]], links: [["Number of Provinces", 7]] },
+    { name: "All Paths From Source to Target", hook: "Retracing every hiking trail from camp to summit: step, recurse, step back.", mantra: "ADD, RECURSE, REMOVE", statement: "In a DAG of n nodes, list every path from node 0 to node n \u2212 1.",
+      anims: [{ name: "Walkthrough", code: C_ALLP, steps: allPaths() }],
+      recall: [["Why no visited array?", "Acyclic: you can never loop, and the same node may legitimately appear on different paths."], ["Worst case?", "A graph where every node points to all later nodes: 2^(n\u22122) paths."]], links: [["All Paths from Source Lead to Destination", 10]] },
+    { name: "All Paths from Source Lead to Destination", hook: "Every road out of town must end at the same harbour, and no road may loop forever.", mantra: "DEAD END = DEST; BACK EDGE \u21d2 FALSE", statement: "In a directed graph, do all paths starting at source end at destination (finitely many paths, every dead end is the destination)?",
+      anims: [{ name: "Walkthrough", code: C_LEAD, steps: lead() }],
+      recall: [["Why must the destination have no outgoing edges?", "Otherwise a path could continue past it and end somewhere else, or loop forever."], ["What marks an infinite path?", "Reaching a node that is already on the current DFS path."]], links: [["Detect Cycle in a Directed Graph", 19], ["All Paths From Source to Target", 9]] },
+    { name: "Minimum Number of Vertices to Reach All Nodes", hook: "In a river system the springs are the places no water flows into.", mantra: "INDEGREE 0 \u21d2 MUST START THERE", statement: "In a DAG, find the smallest set of vertices from which all nodes are reachable.",
+      anims: [{ name: "Walkthrough", code: C_MINV, steps: minV() }],
+      recall: [["Why does it fail with cycles?", "A cycle with no outside edge would have no indegree-0 node but still needs a start."], ["Is the answer unique?", "Yes for a DAG."]], links: [["Find Champion II", 12], ["Find Eventual Safe States", 24]] },
+    { name: "Find Champion II", hook: "A tournament ladder: the champion is the only team nobody has beaten.", mantra: "EXACTLY ONE INDEGREE-0 NODE", statement: "Edges mean u is stronger than v. Return the team that no one is stronger than, or \u22121 if it is not unique.",
+      anims: [{ name: "Walkthrough", code: C_CHAMP, steps: champ() }],
+      recall: [["Why \u22121 for two unbeaten teams?", "Neither is known to be stronger than the other."], ["Why not DFS?", "Indegree answers it directly."]], links: [["Minimum Number of Vertices to Reach All Nodes", 11]] },
+    { name: "Find Center of Star Graph", hook: "The hub of a wheel appears in every spoke.", mantra: "SHARED ENDPOINT OF ANY TWO EDGES", statement: "An n-node star has one centre joined to every other node. Given its edges, find the centre.",
+      anims: [{ name: "Walkthrough", code: C_STAR, steps: star() }],
+      recall: [["Why do two edges suffice?", "Both contain the centre, and they share only the centre."], ["Complexity?", "O(1)."]], links: [["Maximal Network Rank", 15]] },
+    { name: "Find the Celebrity", hook: "At a party, ask one question to throw one person out: if A knows B, A is not the celebrity; if A does not know B, B is not.", mantra: "ELIMINATE, THEN VERIFY", statement: "Among n people a celebrity is known by all and knows nobody. Using knows(a, b), find them with O(n) calls.",
+      anims: [{ name: "Walkthrough", code: C_CELEB, steps: celeb() }],
+      recall: [["How many knows() calls?", "At most 3n: n \u2212 1 to eliminate and 2(n \u2212 1) to verify."], ["Why verify?", "Elimination only finds a possible celebrity; there may be none."]], links: [["Find Champion II", 12]] },
+    { name: "Maximal Network Rank", hook: "Two radio towers: their reach is the sum of their links, but a shared link only counts once.", mantra: "deg(a) + deg(b) \u2212 shared", statement: "The network rank of two cities is the number of roads touching either. Return the maximum over all pairs.",
+      anims: [{ name: "Walkthrough", code: C_RANK, steps: rank() }],
+      recall: [["Why subtract 1?", "The road between the pair is counted once in each degree."], ["How does the fast version work?", "It counts nodes at the max and second-max degree and checks only whether all candidate pairs are directly linked."]], links: [["Maximum Total Importance of Roads", 16]] },
+    { name: "Maximum Total Importance of Roads", hook: "Hand the biggest trophies to the busiest cities.", mantra: "SORT BY DEGREE, LABEL 1..n", statement: "Assign the values 1..n to cities. A road is worth the sum of its two cities. Maximise the total.",
+      anims: [{ name: "Walkthrough", code: C_IMP, steps: imp() }],
+      recall: [["Why is greedy right?", "Rearrangement inequality: matching sorted with sorted maximises a sum of products."], ["Why long?", "Values reach 5\u00b710^4 and degrees 10^5, so the sum overflows int."]], links: [["Maximal Network Rank", 15]] },
+    { name: "Throne Inheritance", hook: "A family tree read in birth order: king, then his first child with all of that child's descendants, then the next child.", mantra: "PRE-ORDER DFS, SKIP THE DEAD", statement: "Support birth(parent, child), death(name) and getInheritanceOrder() for a royal family.",
+      anims: [{ name: "Walkthrough", code: C_THRONE, steps: throne() }],
+      recall: [["Why not delete a dead person?", "Their descendants must still be reachable."], ["What gives the order?", "Pre-order DFS with children kept in birth order."]], links: [] },
+    { name: "Jumping Numbers", hook: "Build numbers like a tree: each number sprouts at most two children, last digit minus one and plus one.", mantra: "APPEND last \u00b1 1", statement: "Print all jumping numbers (adjacent digits differ by 1) up to x.",
+      anims: [{ name: "Walkthrough", code: C_JUMP, steps: jump() }],
+      recall: [["Why sort at the end of the BFS version?", "Each start digit is sorted, but 12 comes after 10 and before 2 only after merging all starts."], ["Overflow?", "Appending a digit to a number near 2^31 overflows int; use long."]], links: [["BFS Traversal", 0]] },
+    { name: "Detect Cycle in a Directed Graph", hook: "A hiker leaves a trail of breadcrumbs; meeting a breadcrumb from the *current* trail means walking in circles.", mantra: "BACK EDGE = NODE ON CURRENT PATH", statement: "Does a directed graph contain a cycle?",
+      anims: [{ name: "DFS", code: C_CYD, steps: cycD() },
+      { name: "Kahn", code: C_CYK, steps: cycK() }],
+      recall: [["Why is \"already visited\" not enough?", "A cross edge to a finished node (black) is not a cycle in a directed graph."], ["How does Kahn detect it?", "If fewer than n nodes can be removed, the rest lie on or behind a cycle."]], links: [["Detect Cycle in an Undirected Graph", 20], ["Find Eventual Safe States", 24]] },
+    { name: "Detect Cycle in an Undirected Graph", hook: "In a two-way street network, meeting a visited junction you did not just come from means you found a loop.", mantra: "VISITED AND NOT MY PARENT \u21d2 CYCLE", statement: "Does an undirected graph contain a cycle?",
+      anims: [{ name: "DFS with parent", code: C_CYU, steps: cycU() },
+      { name: "Union-Find", code: C_CYDSU, steps: cycDsu() }],
+      recall: [["Why track the parent?", "The edge you came along leads to a visited node but is not a cycle."], ["Fast edge-count test?", "A graph has a cycle iff edges &gt; nodes \u2212 components."]], links: [["Detect Cycle in a Directed Graph", 19]] },
+    { name: "Is Graph Bipartite", hook: "Paint the nodes with two colours so every road joins different colours; a clash means an odd cycle.", mantra: "NEIGHBOUR = OPPOSITE COLOUR", statement: "Can the nodes be split into two sets with every edge between the sets?",
+      anims: [{ name: "DFS: even cycle", code: C_BIP, steps: bipOk() },
+      { name: "DFS: odd cycle", code: C_BIP, steps: bipBad() },
+      { name: "BFS", code: C_BIPB, steps: bipBfs() }],
+      recall: [["Why loop over all start nodes?", "The graph may be disconnected."], ["What does bipartite forbid?", "Odd-length cycles."]], links: [["Possible Bipartition", 22]] },
+    { name: "Possible Bipartition", hook: "Seat arrangements at a wedding: people who dislike each other go at different tables.", mantra: "DISLIKE EDGE \u21d2 DIFFERENT GROUP", statement: "n people, some pairs dislike each other. Can everyone be split into two groups with no disliking pair inside a group?",
+      anims: [{ name: "Walkthrough", code: C_POSB, steps: posb() }],
+      recall: [["How is it different from Is Graph Bipartite?", "Input is an edge list and nodes are 1-indexed."], ["Why a colour array of size n + 1?", "People are numbered 1..n."]], links: [["Is Graph Bipartite", 21]] },
+    { name: "Check If Two Nodes Are On Same Path In A Graph", hook: "Stamp each node with the clock time you enter and leave it; an ancestor's visit window contains its descendants' windows.", mantra: "NESTED TIN/TOUT \u21d2 SAME PATH", statement: "In a rooted tree, answer queries: do nodes u and v lie on the same root-to-leaf path?",
+      anims: [{ name: "Walkthrough", code: C_TT, steps: tinout() }],
+      recall: [["Why is it O(1) per query?", "Two integer comparisons on precomputed times."], ["What do nested intervals mean?", "The inner node was visited while the outer one was still open, so it is in its subtree."]], links: [] },
+    { name: "Find Eventual Safe States", hook: "A node is safe if every road from it eventually runs out; any road into a cycle is a trap.", mantra: "REVERSE GRAPH, PEEL OUTDEGREE 0", statement: "A node is safe if every path from it ends at a terminal node. Return all safe nodes in order.",
+      anims: [{ name: "Walkthrough", code: C_SAFE, steps: safe() }],
+      recall: [["Why reverse the graph?", "Safety flows backwards from terminals to their predecessors."], ["Which nodes are unsafe?", "Nodes on a cycle and nodes that can reach one."]], links: [["Detect Cycle in a Directed Graph", 19]] },
+    { name: "All Ancestors of a Node in a Directed Acyclic Graph", hook: "Family trees: you inherit your parents and everything they inherited.", mantra: "CHILD GETS PARENT + PARENT'S ANCESTORS", statement: "For every node of a DAG, return the sorted list of all its ancestors.",
+      anims: [{ name: "Walkthrough", code: C_ANC, steps: anc() }],
+      recall: [["Why topological order?", "It guarantees a parent's ancestor set is complete before it is copied to children."], ["Why a TreeSet?", "It deduplicates and returns the ancestors sorted."]], links: [] },
+    { name: "Longest Cycle in a Graph", hook: "Follow the arrows and leave a numbered pebble on each stop; stepping on a pebble from this very walk closes a loop whose length is the pebble gap.", mantra: "STAMP WALK + STEP; LENGTH = t \u2212 walk[u]", statement: "Each node has at most one outgoing edge. Return the length of the longest cycle, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_LC, steps: longCyc() }],
+      recall: [["Why does each node get visited once?", "A node already stamped by an earlier walk cannot start a new cycle."], ["Why compare stamps?", "Meeting an older walk's node means the cycle (if any) was already counted."]], links: [["Detect Cycle in a Directed Graph", 19]] },
+    { name: "Reorder Routes to Make All Paths Lead to the City Zero", hook: "A tree of one-way roads: walk out from city 0, and every road you walk the wrong way (along its arrow) must be turned around.", mantra: "EDGE POINTS AWAY FROM 0 \u21d2 FLIP", statement: "n cities form a tree of one-way roads. Find the minimum roads to reverse so every city reaches city 0.",
+      anims: [{ name: "Walkthrough", code: C_REO, steps: reorder() }],
+      recall: [["Why store weight 1 and 0?", "1 marks the real direction (needs a flip), 0 the reverse copy."], ["Why no visited array in DFS?", "It is a tree: skipping the parent is enough."]], links: [] },
+    { name: "Count Unreachable Pairs of Nodes in an Undirected Graph", hook: "Each island can pair with every person on the islands you have not counted yet.", mantra: "size \u00d7 REMAINING", statement: "Count pairs of nodes that cannot reach each other.",
+      anims: [{ name: "Walkthrough", code: C_UNR, steps: unreach() }],
+      recall: [["Why \"remaining\" and not n \u2212 size?", "It avoids counting each pair from both sides."], ["Why long?", "n = 10^5 gives up to 5\u00b710^9 pairs."]], links: [["Number of Connected Components in an Undirected Graph", 6]] },
+    { name: "Minimum Score of a Path Between Two Cities", hook: "Roads can be driven twice, so the weakest bridge anywhere in your region sets your score.", mantra: "MIN ROAD IN CITY 1'S COMPONENT", statement: "Score of a path = its minimum road. Walks may reuse roads. Return the minimum score from city 1 to city n.",
+      anims: [{ name: "Walkthrough", code: C_MS, steps: minScore() }],
+      recall: [["Why can every road in the component be used?", "You may go there and come back along the same roads."], ["Is Dijkstra needed?", "No: it is a component question."]], links: [["Number of Connected Components in an Undirected Graph", 6]] },
+    { name: "Most Stones Removed with Same Row or Column", hook: "Stones sharing a row or column are one family; a family can be removed down to its last stone.", mantra: "n \u2212 COMPONENTS", statement: "You may remove a stone if another stone shares its row or column. How many stones can you remove?",
+      anims: [{ name: "Walkthrough", code: C_STN, steps: stones() }],
+      recall: [["Why offset the column ids?", "Row 5 and column 5 must be different nodes."], ["Why does one stone always remain?", "The last stone of a component has no neighbour left to justify removing it."]], links: [["Number of Connected Components in an Undirected Graph", 6], ["Number of Provinces", 7]] }
+  ]
+});
+
+</script>
+</body>
+</html>

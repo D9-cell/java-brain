@@ -1,0 +1,787 @@
+const W = (name, code, steps) => [{ name, code, steps }];
+const vals = (t, ids) => ids.map(u => t.val(u));
+// Post-order story: fn(u, st, badge) returns {say, line, lanes, vars, cls}; badge[u] is set by fn
+function postStory(t, o) {
+  const badge = {}, doneIds = [];
+  return nodeStory(t, t.post(), {
+    intro: o.intro, introLine: o.introLine,
+    lanes0: st => (o.init ? o.init(st) : []),
+    step: (u, k, st) => { const s = o.fn(u, st, badge); doneIds.push(u);
+      return { line: s.line, say: s.say, badge: { ...badge }, cls: { done: doneIds.slice(0, -1), ...(s.cls || {}) }, lanes: s.lanes, vars: s.vars }; },
+    end: st => ({ line: o.endLine, say: o.end(st), badge, cls: { done: t.ids }, lanes: o.endLanes ? o.endLanes(st) : undefined })
+  });
+}
+// Pre-order story where the parent passes state down; fn(u, st, badge) as above
+function preStory(t, o) {
+  const badge = {}, seen = [];
+  return nodeStory(t, t.pre(), {
+    intro: o.intro, introLine: o.introLine,
+    lanes0: st => (o.init ? o.init(st) : []),
+    step: (u, k, st) => { const s = o.fn(u, st, badge); seen.push(u);
+      return { line: s.line, say: s.say, badge: { ...badge }, cls: { done: seen.slice(0, -1), ...(s.cls || {}) }, lanes: s.lanes, vars: s.vars }; },
+    end: st => ({ line: o.endLine, say: o.end(st), badge, cls: { done: t.ids }, lanes: o.endLanes ? o.endLanes(st) : undefined })
+  });
+}
+
+const C_DIA = `
+private int height(TreeNode n, int[] best) {
+    if (n == null) return 0;
+    int l = height(n.left, best), r = height(n.right, best);
+    best[0] = Math.max(best[0], l + r);
+    return 1 + Math.max(l, r);
+}`;
+{
+  const t = make([1, 2, 3, 4, 5]);
+  ANIM['Diameter of Binary Tree'] = W('Height + record', C_DIA, postStory(t, {
+    intro: 'Each node returns its <b>height</b> and records <code>left + right</code> (edges of the path bending here).',
+    init: st => { st.h = {}; st.best = 0; return [A('best', [0])]; },
+    fn: (u, st, badge) => { const l = t.L[u] === undefined ? 0 : st.h[t.L[u]], r = t.R[u] === undefined ? 0 : st.h[t.R[u]]; st.h[u] = 1 + Math.max(l, r); st.best = Math.max(st.best, l + r); badge[u] = 'h' + st.h[u];
+      return { line: ln(C_DIA, 'best[0] ='), say: `Node ${t.val(u)}: l = ${l}, r = ${r} → path through it has ${l + r} edges. Returns height ${st.h[u]}. Best = <b>${st.best}</b>.`, lanes: [A('best', [st.best], { done: [0] })], vars: { best: st.best } }; },
+    endLine: ln(C_DIA, 'return 1'), end: st => `Diameter = <b>${st.best}</b> (path 4–2–1–3).`
+  }));
+}
+
+const C_MPS = `
+private int down(TreeNode n, int[] best) {
+    if (n == null) return 0;
+    int l = Math.max(0, down(n.left, best)), r = Math.max(0, down(n.right, best));
+    best[0] = Math.max(best[0], l + r + n.val);
+    return n.val + Math.max(l, r);
+}`;
+{
+  const t = make([-10, 9, 20, null, null, 15, 7]);
+  ANIM['Binary Tree Maximum Path Sum'] = W('Gain + record', C_MPS, postStory(t, {
+    intro: 'Return the best <b>one-armed</b> gain, record the best <b>two-armed</b> path. Negative arms are cut with <code>max(0, ·)</code>.',
+    init: st => { st.g = {}; st.best = -Infinity; return [A('best', ['−∞'])]; },
+    fn: (u, st, badge) => { const l = Math.max(0, t.L[u] === undefined ? 0 : st.g[t.L[u]]), r = Math.max(0, t.R[u] === undefined ? 0 : st.g[t.R[u]]); const through = l + r + t.val(u); st.best = Math.max(st.best, through); st.g[u] = t.val(u) + Math.max(l, r); badge[u] = st.g[u];
+      return { line: ln(C_MPS, 'best[0] ='), say: `Node ${t.val(u)}: arms ${l} and ${r} → bent path ${through}. Returns gain ${st.g[u]}. Best = <b>${st.best}</b>.`, lanes: [A('best', [st.best], { done: [0] })], vars: { best: st.best } }; },
+    endLine: ln(C_MPS, 'return n.val'), end: st => `Answer <b>${st.best}</b>: 15 + 20 + 7. The root −10 is never worth including.`
+  }));
+}
+
+const C_TWO = `
+private int down(TreeNode n, int[] best) {
+    if (n == null) return 0;
+    if (n.left == null && n.right == null) return n.val;
+    if (n.left == null) return n.val + down(n.right, best);
+    if (n.right == null) return n.val + down(n.left, best);
+    int l = down(n.left, best), r = down(n.right, best);
+    best[0] = Math.max(best[0], l + r + n.val);
+    return n.val + Math.max(l, r);
+}`;
+{
+  const t = make([10, -2, 7, 8, -4]);
+  ANIM['Maximum Path Sum between 2 Leaf Nodes'] = W('Two-children nodes close paths', C_TWO, postStory(t, {
+    intro: 'Only a node with <b>two children</b> can close a leaf-to-leaf path. Leaves return their own value.',
+    init: st => { st.g = {}; st.best = -Infinity; return [A('best', ['−∞'])]; },
+    fn: (u, st, badge) => { const L = t.L[u], R = t.R[u];
+      if (L === undefined && R === undefined) { st.g[u] = t.val(u); badge[u] = st.g[u]; return { line: ln(C_TWO, 'return n.val;'), say: `Leaf ${t.val(u)} returns itself.`, lanes: [A('best', [st.best === -Infinity ? '−∞' : st.best])] }; }
+      const l = st.g[L], r = st.g[R]; const cand = l + r + t.val(u); st.best = Math.max(st.best, cand); st.g[u] = t.val(u) + Math.max(l, r); badge[u] = st.g[u];
+      return { line: ln(C_TWO, 'best[0] ='), say: `Node ${t.val(u)}: leaf-to-leaf candidate ${l} + ${t.val(u)} + ${r} = ${cand}. Returns ${st.g[u]}. Best = <b>${st.best}</b>.`, lanes: [A('best', [st.best], { done: [0] })] }; },
+    endLine: ln(C_TWO, 'return n.val + Math.max'), end: st => `Answer <b>${st.best}</b> (8 → −2 → 10 → 7).`
+  }));
+}
+
+const C_TILT = `
+private int sum(TreeNode n, int[] tilt) {
+    if (n == null) return 0;
+    int l = sum(n.left, tilt), r = sum(n.right, tilt);
+    tilt[0] += Math.abs(l - r);
+    return l + n.val + r;
+}`;
+{
+  const t = make([4, 2, 9, 3, 5, null, 7]);
+  ANIM['Binary Tree Tilt'] = W('Subtree sums', C_TILT, postStory(t, {
+    intro: 'Return the subtree <b>sum</b>; add <code>|left − right|</code> to a running tilt.',
+    init: st => { st.s = {}; st.tilt = 0; return [A('tilt', [0])]; },
+    fn: (u, st, badge) => { const l = t.L[u] === undefined ? 0 : st.s[t.L[u]], r = t.R[u] === undefined ? 0 : st.s[t.R[u]]; st.s[u] = l + t.val(u) + r; st.tilt += Math.abs(l - r); badge[u] = 's' + st.s[u];
+      return { line: ln(C_TILT, 'tilt[0] +='), say: `Node ${t.val(u)}: left sum ${l}, right sum ${r} → tilt |${l} − ${r}| = ${Math.abs(l - r)}. Total tilt = <b>${st.tilt}</b>.`, lanes: [A('tilt', [st.tilt], { done: [0] })] }; },
+    endLine: ln(C_TILT, 'return l'), end: st => `Total tilt = <b>${st.tilt}</b>.`
+  }));
+}
+
+const C_COIN = `
+private int excess(TreeNode n, int[] moves) {
+    if (n == null) return 0;
+    int l = excess(n.left, moves), r = excess(n.right, moves);
+    moves[0] += Math.abs(l) + Math.abs(r);
+    return n.val + l + r - 1;
+}`;
+{
+  const t = make([0, 3, 0]);
+  ANIM['Distribute Coins in Binary Tree'] = W('Flow over each edge', C_COIN, postStory(t, {
+    intro: 'Every node must end with exactly 1 coin. A subtree sends up <code>coins − nodes</code> through its parent edge; each edge costs that many moves.',
+    init: st => { st.x = {}; st.m = 0; return [A('moves', [0])]; },
+    fn: (u, st, badge) => { const l = t.L[u] === undefined ? 0 : st.x[t.L[u]], r = t.R[u] === undefined ? 0 : st.x[t.R[u]]; st.m += Math.abs(l) + Math.abs(r); st.x[u] = t.val(u) + l + r - 1; badge[u] = (st.x[u] > 0 ? '+' : '') + st.x[u];
+      return { line: ln(C_COIN, 'return n.val'), say: `Node ${t.val(u)}: children's flows ${l}, ${r} cost ${Math.abs(l) + Math.abs(r)} moves. Its subtree has surplus <b>${st.x[u]}</b>. Total moves ${st.m}.`, lanes: [A('moves', [st.m], { done: [0] })] }; },
+    endLine: ln(C_COIN, 'moves[0] +='), end: st => `Minimum moves = <b>${st.m}</b>.`
+  }));
+}
+
+const C_CAM = `
+private int state(TreeNode n, int[] cameras) {
+    if (n == null) return 2;
+    int l = state(n.left, cameras), r = state(n.right, cameras);
+    if (l == 0 || r == 0) { cameras[0]++; return 1; }
+    if (l == 1 || r == 1) return 2;
+    return 0;
+}`;
+{
+  const t = make([0, 0, null, 0, 0]), name = ['not covered', 'CAMERA', 'covered'];
+  ANIM['Binary Tree Cameras'] = W('Greedy states', C_CAM, postStory(t, {
+    intro: 'States: 0 = not covered, 1 = has a camera, 2 = covered. A node with an uncovered child must carry the camera. Null children count as covered (2).',
+    init: st => { st.s = {}; st.c = 0; return [A('cameras', [0])]; },
+    fn: (u, st, badge) => { const l = t.L[u] === undefined ? 2 : st.s[t.L[u]], r = t.R[u] === undefined ? 2 : st.s[t.R[u]]; let s;
+      if (l === 0 || r === 0) { s = 1; st.c++; } else if (l === 1 || r === 1) s = 2; else s = 0; st.s[u] = s; badge[u] = ['0', 'CAM', '2'][s];
+      return { line: s === 1 ? ln(C_CAM, 'cameras[0]++') : s === 2 ? ln(C_CAM, 'return 2;', 2) : ln(C_CAM, 'return 0'), say: `Children states (${l}, ${r}) → node is <b>${name[s]}</b>. Cameras so far: ${st.c}.`, cls: s === 1 ? { active: [u] } : {}, lanes: [A('cameras', [st.c], { done: [0] })] }; },
+    endLine: ln(C_CAM, 'return 0'), end: st => `Root state ${st.s[0]} ${st.s[0] === 0 ? '→ uncovered, add one more camera: ' + (st.c + 1) : '→ covered: ' + st.c} cameras.`
+  }));
+}
+
+const C_ZZ2 = `
+private int[] dfs(TreeNode n, int[] best) {
+    if (n == null) return new int[]{-1, -1};
+    int[] l = dfs(n.left, best), r = dfs(n.right, best);
+    int goLeft = l[1] + 1, goRight = r[0] + 1;
+    best[0] = Math.max(best[0], Math.max(goLeft, goRight));
+    return new int[]{goLeft, goRight};
+}`;
+{
+  const t = make([1, null, 1, 1, 1, null, null, 1, 1]);
+  ANIM['Longest ZigZag Path in a Binary Tree'] = W('Left-start / right-start pair', C_ZZ2, postStory(t, {
+    intro: 'Each node returns <code>{L, R}</code>: the zigzag length (edges) if the next move is left / right. Going left continues with the left child\'s <b>right</b> value.',
+    init: st => { st.p = {}; st.best = 0; return [A('best', [0])]; },
+    fn: (u, st, badge) => { const l = t.L[u] === undefined ? [-1, -1] : st.p[t.L[u]], r = t.R[u] === undefined ? [-1, -1] : st.p[t.R[u]]; const gl = l[1] + 1, gr = r[0] + 1; st.p[u] = [gl, gr]; st.best = Math.max(st.best, gl, gr); badge[u] = `${gl}|${gr}`;
+      return { line: ln(C_ZZ2, 'int goLeft'), say: `Node ${u}: goLeft = ${l[1]} + 1 = ${gl}, goRight = ${r[0]} + 1 = ${gr}. Best = <b>${st.best}</b>.`, lanes: [A('best', [st.best], { done: [0] })] }; },
+    endLine: ln(C_ZZ2, 'return new int[]{goLeft'), end: st => `Longest zigzag = <b>${st.best}</b> edges. Badge shows goLeft|goRight.`
+  }));
+}
+
+const C_LC1 = `
+private void down(TreeNode n, TreeNode parent, int len, int[] best) {
+    if (n == null) return;
+    len = parent != null && n.val == parent.val + 1 ? len + 1 : 1;
+    best[0] = Math.max(best[0], len);
+    down(n.left, n, len, best);
+    down(n.right, n, len, best);
+}`;
+{
+  const t = make([1, null, 3, 2, 4, null, null, null, 5]);
+  ANIM['Binary Tree Longest Consecutive Sequence'] = W('Streak from the parent', C_LC1, preStory(t, {
+    intro: 'Pass the streak length down. <code>child == parent + 1</code> extends it, anything else restarts at 1.',
+    init: st => { st.len = {}; st.best = 0; return [A('best', [0])]; },
+    fn: (u, st, badge) => { const p = t.par[u], ext = p >= 0 && t.val(u) === t.val(p) + 1; st.len[u] = ext ? st.len[p] + 1 : 1; st.best = Math.max(st.best, st.len[u]); badge[u] = st.len[u];
+      return { line: ln(C_LC1, 'len = parent'), say: `Node ${t.val(u)}${p >= 0 ? ` under ${t.val(p)}` : ''}: ${ext ? 'consecutive → streak ' + st.len[u] : 'restart → 1'}. Best = <b>${st.best}</b>.`, lanes: [A('best', [st.best], { done: [0] })] }; },
+    endLine: ln(C_LC1, 'best[0] ='), end: st => `Longest consecutive path = <b>${st.best}</b> (3 → 4 → 5).`
+  }));
+}
+
+const C_LC2 = `
+private int[] both(TreeNode n, int[] best) {
+    if (n == null) return new int[]{0, 0};
+    int inc = 1, dec = 1;
+    for (TreeNode c : new TreeNode[]{n.left, n.right}) {
+        if (c == null) continue;
+        int[] r = both(c, best);
+        if (c.val == n.val + 1) inc = Math.max(inc, r[0] + 1);
+        if (c.val == n.val - 1) dec = Math.max(dec, r[1] + 1);
+    }
+    best[0] = Math.max(best[0], inc + dec - 1);
+    return new int[]{inc, dec};
+}`;
+{
+  const t = make([2, 1, 3, null, null, null, 4]);
+  ANIM['Binary Tree Longest Consecutive Sequence II'] = W('{inc, dec} pair', C_LC2, postStory(t, {
+    intro: 'Each node returns the longest <b>+1 chain</b> and <b>−1 chain</b> going down. A path bending at the node is <code>inc + dec − 1</code>.',
+    init: st => { st.p = {}; st.best = 0; return [A('best', [0])]; },
+    fn: (u, st, badge) => { let inc = 1, dec = 1; [t.L[u], t.R[u]].forEach(c => { if (c === undefined) return; if (t.val(c) === t.val(u) + 1) inc = Math.max(inc, st.p[c][0] + 1); if (t.val(c) === t.val(u) - 1) dec = Math.max(dec, st.p[c][1] + 1); }); st.p[u] = [inc, dec]; st.best = Math.max(st.best, inc + dec - 1); badge[u] = `${inc}/${dec}`;
+      return { line: ln(C_LC2, 'best[0] ='), say: `Node ${t.val(u)}: inc ${inc}, dec ${dec} → bent path ${inc + dec - 1}. Best = <b>${st.best}</b>.`, lanes: [A('best', [st.best], { done: [0] })] }; },
+    endLine: ln(C_LC2, 'return new int'), end: st => `Answer <b>${st.best}</b> (1–2–3). Node 4 hangs under 3 → chain 3–4 is only 2 long.`
+  }));
+}
+
+const C_GN = `
+private int dfs(TreeNode n, int max) {
+    if (n == null) return 0;
+    int here = n.val >= max ? 1 : 0;
+    max = Math.max(max, n.val);
+    return here + dfs(n.left, max) + dfs(n.right, max);
+}`;
+{
+  const t = make([3, 1, 4, 3, null, 1, 5]);
+  ANIM['Count Good Nodes in Binary Tree'] = W('Carry the max', C_GN, preStory(t, {
+    intro: 'Carry the largest value on the path. A node is good if it is at least that large.',
+    init: st => { st.mx = {}; st.good = 0; return [A('good', [0])]; },
+    fn: (u, st, badge) => { const p = t.par[u], above = p >= 0 ? st.mx[p] : -Infinity, good = t.val(u) >= above; if (good) st.good++; st.mx[u] = Math.max(above, t.val(u)); badge[u] = 'max' + st.mx[u];
+      return { line: ln(C_GN, 'int here'), say: `Node ${t.val(u)} vs max above ${above === -Infinity ? '−∞' : above}: ${good ? '<b>good</b>' : 'not good'}. Good so far ${st.good}.`, cls: good ? { active: [u] } : { bad: [u] }, lanes: [A('good', [st.good], { done: [0] })] }; },
+    endLine: ln(C_GN, 'return here'), end: st => `<b>${st.good}</b> good nodes.`
+  }));
+}
+
+const C_AVG = `
+private int[] dfs(TreeNode n, int[] matches) {
+    if (n == null) return new int[]{0, 0};
+    int[] l = dfs(n.left, matches), r = dfs(n.right, matches);
+    int sum = l[0] + r[0] + n.val, cnt = l[1] + r[1] + 1;
+    if (sum / cnt == n.val) matches[0]++;
+    return new int[]{sum, cnt};
+}`;
+{
+  const t = make([4, 8, 5, 0, 1, null, 6]);
+  ANIM['Count Nodes Equal to Average of Subtree'] = W('Sum and count', C_AVG, postStory(t, {
+    intro: 'Each subtree returns <code>{sum, count}</code>, so the parent can test <code>sum / count == val</code> in O(1).',
+    init: st => { st.p = {}; st.m = 0; return [A('matches', [0])]; },
+    fn: (u, st, badge) => { const l = t.L[u] === undefined ? [0, 0] : st.p[t.L[u]], r = t.R[u] === undefined ? [0, 0] : st.p[t.R[u]]; const s = l[0] + r[0] + t.val(u), c = l[1] + r[1] + 1; st.p[u] = [s, c]; const ok = Math.floor(s / c) === t.val(u); if (ok) st.m++; badge[u] = `${s}/${c}`;
+      return { line: ln(C_AVG, 'if (sum / cnt'), say: `Node ${t.val(u)}: ${s} / ${c} = ${Math.floor(s / c)} → ${ok ? '<b>match</b>' : 'no match'}. Matches ${st.m}.`, cls: ok ? { active: [u] } : {}, lanes: [A('matches', [st.m], { done: [0] })] }; },
+    endLine: ln(C_AVG, 'return new int'), end: st => `<b>${st.m}</b> nodes equal the average of their subtree.`
+  }));
+}
+
+const C_MD = `
+private int down(TreeNode n, int min, int max) {
+    if (n == null) return max - min;
+    min = Math.min(min, n.val);
+    max = Math.max(max, n.val);
+    return Math.max(down(n.left, min, max), down(n.right, min, max));
+}`;
+{
+  const t = make([8, 3, 10, 1, 6, null, 14, null, null, 4, 7, 13]);
+  ANIM['Maximum Difference Between Node and Ancestor'] = W('Carry min and max', C_MD, preStory(t, {
+    intro: 'Carry the smallest and largest value on the path. At a leaf the spread <code>max − min</code> is a candidate.',
+    init: st => { st.mm = {}; st.best = 0; return [A('best', [0])]; },
+    fn: (u, st, badge) => { const p = t.par[u], mm = p >= 0 ? [Math.min(st.mm[p][0], t.val(u)), Math.max(st.mm[p][1], t.val(u))] : [t.val(u), t.val(u)]; st.mm[u] = mm; badge[u] = `${mm[0]}..${mm[1]}`; const leaf = t.leaf(u); if (leaf) st.best = Math.max(st.best, mm[1] - mm[0]);
+      return { line: leaf ? ln(C_MD, 'return max - min') : ln(C_MD, 'min = Math.min'), say: leaf ? `Leaf ${t.val(u)}: path spread ${mm[1]} − ${mm[0]} = ${mm[1] - mm[0]}. Best = <b>${st.best}</b>.` : `Node ${t.val(u)}: path min ${mm[0]}, max ${mm[1]}.`, lanes: [A('best', [st.best], { done: [0] })] }; },
+    endLine: ln(C_MD, 'return Math.max'), end: st => `Answer <b>${st.best}</b>.`
+  }));
+}
+
+const C_MPS2 = `
+long total = sum(root, sums);
+long best = 0;
+for (long s : sums) best = Math.max(best, s * (total - s));
+return (int) (best % 1_000_000_007);`;
+{
+  const t = make([1, 2, 3, 4, 5, 6]), r = recorder(), sums = {};
+  r.step(0, 'Cutting the edge above a node splits the tree into the subtree (sum <code>s</code>) and the rest (<code>total − s</code>). Collect all subtree sums first.', [t.snap('tree')]);
+  const bd = {}; t.post().forEach(u => { sums[u] = t.val(u) + (t.L[u] === undefined ? 0 : sums[t.L[u]]) + (t.R[u] === undefined ? 0 : sums[t.R[u]]); bd[u] = 's' + sums[u]; });
+  r.step(ln(C_MPS2, 'long total'), `Subtree sums as badges. total = <b>${sums[0]}</b>.`, [t.snap('tree', { badge: bd, done: [0] })]);
+  let best = 0, bu = null; t.ids.filter(u => u !== 0).forEach(u => { const p = sums[u] * (sums[0] - sums[u]); if (p > best) { best = p; bu = u; }
+    r.step(ln(C_MPS2, 'for (long s'), `Cut above node ${t.val(u)}: ${sums[u]} × ${sums[0] - sums[u]} = ${p}. Best ${best}.`, [t.snap('tree', { badge: bd, active: [u] }), A('best', [best], { done: [0] })]); });
+  r.step(ln(C_MPS2, 'return (int)'), `Maximum product = <b>${best}</b> (cut above node ${t.val(bu)}).`, [t.snap('tree', { badge: bd, done: [bu] }), A('best', [best], { done: [0] })]);
+  ANIM['Maximum Product of Splitted Binary Tree'] = W('Try every cut', C_MPS2, r.steps);
+}
+
+const C_PS = `
+public boolean hasPathSum(TreeNode root, int target) {
+    if (root == null) return false;
+    if (root.left == null && root.right == null) return root.val == target;
+    return hasPathSum(root.left, target - root.val) || hasPathSum(root.right, target - root.val);
+}`;
+{
+  const t = make([5, 4, 8, 11, null, 13, 4, 7, 2, null, null, null, 1]);
+  const order = [0, 1, 3, 7]; const remaining = { 0: 22 }; order.slice(1).forEach(u => { remaining[u] = remaining[t.par[u]] - t.val(t.par[u]); });
+  ANIM['Path Sum'] = W('Subtract on the way down', C_PS, nodeStory(t, order, {
+    intro: 'Target 22. Hand down <code>target − node.val</code>; at a leaf the remaining target must equal the leaf value.',
+    step: (u, k) => { const rem = remaining[u], leaf = t.leaf(u); return { line: leaf ? ln(C_PS, 'return root.val == target') : ln(C_PS, 'return hasPathSum(root.left'), say: leaf ? `Leaf ${t.val(u)}: remaining ${rem} ${t.val(u) === rem ? '== ' + t.val(u) + ' → <b>true</b>' : '≠ ' + t.val(u) + ' → false, try the next branch'}.` : `Node ${t.val(u)} with remaining ${rem} → pass ${rem - t.val(u)} to the children.`, cls: { done: order.slice(0, k) }, badge: Object.fromEntries(order.slice(0, k + 1).map(x => [x, 'r' + remaining[x]])) }; }
+  }));
+}
+
+const C_PS2 = `
+private void dfs(TreeNode n, int remain, List<Integer> path, List<List<Integer>> res) {
+    if (n == null) return;
+    path.add(n.val);
+    if (n.left == null && n.right == null && remain == n.val) res.add(new ArrayList<>(path));
+    dfs(n.left, remain - n.val, path, res);
+    dfs(n.right, remain - n.val, path, res);
+    path.remove(path.size() - 1);
+}`;
+{
+  const t = make([5, 4, 8, 11, null, 13, 4, 7, 2, null, null, 5, 1]), r = recorder(), path = [], res = [];
+  r.step(0, 'Target 22. Keep one shared <code>path</code>: add on the way in, remove on the way out. Copy it only at a matching leaf.', [t.snap('tree'), R('path', path), R('res', res)]);
+  const rec = (u, rem) => { if (u === undefined) return; path.push(t.val(u)); const leaf = t.leaf(u), hit = leaf && rem === t.val(u); if (hit) res.push([...path]);
+    r.step(hit ? ln(C_PS2, 'res.add') : ln(C_PS2, 'path.add'), hit ? `Leaf ${t.val(u)}: remaining ${rem} == ${t.val(u)} → store a <b>copy</b> of the path.` : leaf ? `Leaf ${t.val(u)}: remaining ${rem} ≠ ${t.val(u)}, no match.` : `Enter ${t.val(u)} (remaining ${rem}).`, [t.snap('tree', { active: [u], done: hit ? [u] : [] }), R('path', path), R('res', res, { done: res.map((_, i) => i) })]);
+    rec(t.L[u], rem - t.val(u)); rec(t.R[u], rem - t.val(u)); path.pop();
+    if (!leaf) r.step(ln(C_PS2, 'path.remove'), `Leave ${t.val(u)}: remove it from the path.`, [t.snap('tree', { warn: [u] }), R('path', path), R('res', res)]); };
+  rec(0, 22);
+  ANIM['Path Sum II'] = W('Backtracking', C_PS2, r.steps);
+}
+
+const C_PS3 = `
+private int dfs(TreeNode n, long prefix, int target, Map<Long, Integer> seen) {
+    if (n == null) return 0;
+    prefix += n.val;
+    int count = seen.getOrDefault(prefix - target, 0);
+    seen.merge(prefix, 1, Integer::sum);
+    count += dfs(n.left, prefix, target, seen) + dfs(n.right, prefix, target, seen);
+    seen.merge(prefix, -1, Integer::sum);
+    return count;
+}`;
+{
+  const t = make([10, 5, -3, 3, 2, null, 11, 3, -2, null, 1]), r = recorder(), seen = { 0: 1 }; let total = 0; const bd = {};
+  r.step(0, 'Target 8. Think of the root path as an array of prefix sums. A path ending here sums to 8 if some earlier prefix equals <code>prefix − 8</code>.', [t.snap('tree'), R('prefix counts', ['0×1'])]);
+  const rec = (u, pre) => { if (u === undefined) return; pre += t.val(u); const hit = seen[pre - 8] || 0; total += hit; seen[pre] = (seen[pre] || 0) + 1; bd[u] = 'P' + pre;
+    r.step(ln(C_PS3, 'int count'), `Node ${t.val(u)}: prefix ${pre}; look for ${pre - 8} → found ${hit}×. Total = <b>${total}</b>.`, [t.snap('tree', { active: [u], badge: { ...bd } }), R('prefix counts', Object.entries(seen).filter(([, c]) => c > 0).map(([k, c]) => `${k}×${c}`))]);
+    rec(t.L[u], pre); rec(t.R[u], pre); seen[pre]--;
+    r.step(ln(C_PS3, 'seen.merge(prefix, -1'), `Leaving ${t.val(u)}: remove prefix ${pre} so other branches do not see it.`, [t.snap('tree', { warn: [u], badge: { ...bd } }), R('prefix counts', Object.entries(seen).filter(([, c]) => c > 0).map(([k, c]) => `${k}×${c}`))]); };
+  rec(0, 0);
+  r.step(ln(C_PS3, 'return count'), `Answer <b>${total}</b> paths.`, [t.snap('tree', { badge: bd, done: t.ids }), A('answer', [total])]);
+  ANIM['Path Sum III'] = W('Prefix sums + map', C_PS3, r.steps);
+}
+
+const C_PFR = `
+private void dfs(TreeNode n, int target, int sum, List<Integer> path, List<List<Integer>> res) {
+    if (n == null) return;
+    sum += n.val;
+    path.add(n.val);
+    if (sum == target) res.add(new ArrayList<>(path));
+    dfs(n.left, target, sum, path, res);
+    dfs(n.right, target, sum, path, res);
+    path.remove(path.size() - 1);
+}`;
+{
+  const t = make([1, 2, 3, -1, 6]), r = recorder(), path = [], res = [];
+  r.step(0, 'Target 3. Unlike Path Sum II a path may stop at <b>any</b> node, so check the running sum at every node.', [t.snap('tree'), R('res', res)]);
+  const rec = (u, s) => { if (u === undefined) return; s += t.val(u); path.push(t.val(u)); const hit = s === 3; if (hit) res.push([...path]);
+    r.step(ln(C_PFR, 'if (sum == target)'), `Node ${t.val(u)}: running sum ${s}${hit ? ' = 3 → <b>record ' + JSON.stringify(path) + '</b>' : ''}.`, [t.snap('tree', { active: [u] }), R('path', path), R('res', res, { done: res.map((_, i) => i) })]);
+    rec(t.L[u], s); rec(t.R[u], s); path.pop(); };
+  rec(0, 0);
+  ANIM['Paths from Root with a Specified Sum'] = W('Backtracking', C_PFR, r.steps);
+}
+
+const C_SN = `
+private int dfs(TreeNode n, int cur) {
+    if (n == null) return 0;
+    cur = cur * 10 + n.val;
+    if (n.left == null && n.right == null) return cur;
+    return dfs(n.left, cur) + dfs(n.right, cur);
+}`;
+{
+  const t = make([4, 9, 0, 5, 1]);
+  ANIM['Sum Root to Leaf Numbers'] = W('Append a digit', C_SN, preStory(t, {
+    intro: 'Going down appends a digit: <code>cur = cur·10 + val</code>. Leaves contribute their number.',
+    init: st => { st.cur = {}; st.sum = 0; return [A('total', [0])]; },
+    fn: (u, st, badge) => { const p = t.par[u]; st.cur[u] = (p >= 0 ? st.cur[p] : 0) * 10 + t.val(u); badge[u] = st.cur[u]; if (t.leaf(u)) st.sum += st.cur[u];
+      return { line: t.leaf(u) ? ln(C_SN, 'return cur') : ln(C_SN, 'cur = cur'), say: t.leaf(u) ? `Leaf: number <b>${st.cur[u]}</b> added. Total ${st.sum}.` : `Node ${t.val(u)}: number so far ${st.cur[u]}.`, lanes: [A('total', [st.sum], { done: [0] })] }; },
+    endLine: ln(C_SN, 'return dfs'), end: st => `Sum = 495 + 491 + 40 = <b>${st.sum}</b>.`
+  }));
+}
+
+const C_SSL = `
+private String dfs(TreeNode n, String suffix) {
+    if (n == null) return null;
+    String cur = (char) ('a' + n.val) + suffix;
+    if (n.left == null && n.right == null) return cur;
+    String l = dfs(n.left, cur), r = dfs(n.right, cur);
+    if (l == null) return r;
+    if (r == null) return l;
+    return l.compareTo(r) <= 0 ? l : r;
+}`;
+{
+  const t = make([0, 1, 2, 3, 4, 3, 4]);
+  ANIM['Smallest String Starting From Leaf'] = W('Prepend letters', C_SSL, preStory(t, {
+    intro: 'Prepend each node\'s letter to the text carried down, so a leaf already holds its <b>leaf-to-root</b> string.',
+    init: st => { st.s = {}; st.leaves = []; return [R('leaf strings', [])]; },
+    fn: (u, st, badge) => { const p = t.par[u]; st.s[u] = String.fromCharCode(97 + t.val(u)) + (p >= 0 ? st.s[p] : ''); badge[u] = st.s[u]; if (t.leaf(u)) st.leaves.push(st.s[u]);
+      return { line: t.leaf(u) ? ln(C_SSL, 'return cur;') : ln(C_SSL, 'String cur'), say: t.leaf(u) ? `Leaf string <b>${st.s[u]}</b>.` : `Node → "${st.s[u]}".`, lanes: [R('leaf strings', st.leaves)] }; },
+    endLine: ln(C_SSL, 'return l.compareTo'), end: st => `Smallest: <b>${[...st.leaves].sort()[0]}</b>.`
+  }));
+}
+
+const C_PP = `
+private int dfs(TreeNode n, int mask) {
+    if (n == null) return 0;
+    mask ^= 1 << n.val;
+    if (n.left == null && n.right == null) return (mask & (mask - 1)) == 0 ? 1 : 0;
+    return dfs(n.left, mask) + dfs(n.right, mask);
+}`;
+{
+  const t = make([2, 3, 1, 3, 1, null, 1]);
+  ANIM['Pseudo-Palindromic Paths in a Binary Tree'] = W('Toggle bits', C_PP, preStory(t, {
+    intro: 'XOR a bit per digit. At a leaf the path can form a palindrome iff at most one bit is on.',
+    init: st => { st.m = {}; st.good = 0; return [A('good paths', [0])]; },
+    fn: (u, st, badge) => { const p = t.par[u]; st.m[u] = (p >= 0 ? st.m[p] : 0) ^ (1 << t.val(u)); badge[u] = (st.m[u] >>> 0).toString(2); const leaf = t.leaf(u), ok = leaf && (st.m[u] & (st.m[u] - 1)) === 0; if (ok) st.good++;
+      return { line: leaf ? ln(C_PP, 'mask & (mask - 1)') : ln(C_PP, 'mask ^='), say: leaf ? `Leaf mask ${(st.m[u] >>> 0).toString(2)} → ${ok ? 'at most one odd digit → <b>good</b>' : 'several odd digits → no'}.` : `Node ${t.val(u)}: toggle bit ${t.val(u)} → ${(st.m[u] >>> 0).toString(2)}.`, cls: ok ? { done: [u] } : {}, lanes: [A('good paths', [st.good], { done: [0] })] }; },
+    endLine: ln(C_PP, 'return dfs'), end: st => `<b>${st.good}</b> pseudo-palindromic paths.`
+  }));
+}
+
+const C_GLP = `
+int[] l = dfs(n.left, distance, pairs), r = dfs(n.right, distance, pairs);
+for (int a = 0; a < distance; a++) for (int b = 0; b < distance; b++)
+    if (a + b + 2 <= distance) pairs[0] += l[a] * r[b];
+for (int d = 0; d < distance; d++) cnt[d + 1] = l[d] + r[d];`;
+{
+  const t = make([1, 2, 3, 4, 5, 6, 7]), D = 3;
+  ANIM['Number of Good Leaf Nodes Pairs'] = W('Distance histograms', C_GLP, postStory(t, {
+    intro: 'distance = 3. Every node returns a histogram: how many leaves lie exactly d edges below it. At a node, a left leaf at <code>a</code> and a right leaf at <code>b</code> are <code>a + b + 2</code> apart.',
+    init: st => { st.h = {}; st.pairs = 0; return [A('pairs', [0])]; },
+    fn: (u, st, badge) => { if (t.leaf(u)) { st.h[u] = [1, 0, 0, 0]; badge[u] = '[1]'; return { line: ln(C_GLP, 'int[] l'), say: `Leaf ${t.val(u)}: histogram [1, 0, 0, 0] (itself at distance 0).`, lanes: [A('pairs', [st.pairs], { done: [0] })] }; }
+      const l = st.h[t.L[u]], r = st.h[t.R[u]]; let add = 0; for (let a = 0; a < D; a++) for (let b = 0; b < D; b++) if (a + b + 2 <= D) add += l[a] * r[b]; st.pairs += add; const h = [0, 0, 0, 0]; for (let d = 0; d < D; d++) h[d + 1] = l[d] + r[d]; st.h[u] = h; badge[u] = '[' + h.join(',') + ']';
+      return { line: ln(C_GLP, 'pairs[0] +='), say: `Node ${t.val(u)}: left ${JSON.stringify(l)} × right ${JSON.stringify(r)} → ${add} new good pair(s). Histogram shifts to ${JSON.stringify(h)}.`, lanes: [A('pairs', [st.pairs], { done: [0] })] }; },
+    endLine: ln(C_GLP, 'for (int d'), end: st => `Good pairs = <b>${st.pairs}</b> (siblings 4–5 and 6–7).`
+  }));
+}
+
+const C_DLV = `
+public TreeNode removeLeafNodes(TreeNode root, int target) {
+    if (root == null) return null;
+    root.left = removeLeafNodes(root.left, target);
+    root.right = removeLeafNodes(root.right, target);
+    return root.left == null && root.right == null && root.val == target ? null : root;
+}`;
+{
+  const r = recorder(), a0 = make([1, 2, 3, 2, null, 2, 4]), a1 = make([1, 2, 3, null, null, 2, 4]), a2 = make([1, null, 3, 2, 4]), a3 = make([1, null, 3, null, 4]);
+  r.step(0, 'Delete leaves equal to 2, then keep deleting nodes that <b>became</b> leaves equal to 2. Children are cleaned first.', [a0.snap('tree')]);
+  r.step(ln(C_DLV, 'root.left = removeLeafNodes'), 'Left subtree: the leaf 2 (under the other 2) is removed.', [a0.snap('tree', { bad: [3] })]);
+  r.step(ln(C_DLV, 'return root.left == null'), 'Back at the left 2: it is now a leaf with value 2, so it is removed as well.', [a1.snap('tree', { bad: [1] })]);
+  r.step(ln(C_DLV, 'root.right = removeLeafNodes'), 'Right subtree: the leaf 2 under node 3 is removed; the leaf 4 stays.', [a2.snap('tree', { bad: [3] })]);
+  r.step(ln(C_DLV, 'return root.left == null'), 'Final tree: 1 → 3 → 4.', [a3.snap('tree', { done: a3.ids })]);
+  ANIM['Delete Leaves With a Given Value'] = W('Post-order cleanup', C_DLV, r.steps);
+}
+
+const C_PRN = `
+public TreeNode pruneTree(TreeNode root) {
+    if (root == null) return null;
+    root.left = pruneTree(root.left);
+    root.right = pruneTree(root.right);
+    return root.left == null && root.right == null && root.val == 0 ? null : root;
+}`;
+{
+  const r = recorder(), a0 = make([1, 0, 1, 0, 0, 0, 1]), a1 = make([1, null, 1, null, 1]);
+  r.step(0, 'Remove every subtree without a 1. Process the children first, then decide for the node.', [a0.snap('tree')]);
+  r.step(ln(C_PRN, 'root.left = pruneTree'), 'Left subtree 0 → (0, 0): all zeros → the whole branch disappears.', [a0.snap('tree', { bad: [1, 3, 4] })]);
+  r.step(ln(C_PRN, 'root.right = pruneTree'), 'Right subtree: its left leaf 0 goes, the leaf 1 stays, so 1 keeps its right child.', [a0.snap('tree', { bad: [5], done: [2, 6] })]);
+  r.step(ln(C_PRN, 'return root.left == null'), 'Result: [1, null, 1, null, 1].', [a1.snap('tree', { done: a1.ids })]);
+  ANIM['Binary Tree Pruning'] = W('Post-order prune', C_PRN, r.steps);
+}
+
+const C_DNF = `
+private TreeNode dfs(TreeNode n, Set<Integer> del, List<TreeNode> forest) {
+    if (n == null) return null;
+    n.left = dfs(n.left, del, forest);
+    n.right = dfs(n.right, del, forest);
+    if (!del.contains(n.val)) return n;
+    if (n.left != null) forest.add(n.left);
+    if (n.right != null) forest.add(n.right);
+    return null;
+}`;
+{
+  const t = make([1, 2, 3, 4, 5, 6, 7]), r = recorder(), forest = [];
+  r.step(0, 'Delete values 3 and 5. A deleted node returns <code>null</code> to its parent and hands its surviving children over as new forest roots.', [t.snap('tree'), R('forest roots', forest)]);
+  const bad = [];
+  t.post().forEach(u => { const v = t.val(u), del = v === 3 || v === 5;
+    if (del) { bad.push(u); [t.L[u], t.R[u]].forEach(c => { if (c !== undefined) forest.push(t.val(c)); }); }
+    r.step(del ? ln(C_DNF, 'forest.add(n.left)') : ln(C_DNF, 'return n;'), del ? `${v} is deleted. Surviving children join the forest: [${forest.join(', ')}].` : `${v} stays.`, [t.snap('tree', { active: [u], bad: [...bad] }), R('forest roots', forest)]); });
+  forest.unshift(1); r.step(ln(C_DNF, 'return null'), `Root 1 survived, so it is a root too. Forest roots: <b>${forest.join(', ')}</b>.`, [t.snap('tree', { bad }), R('forest roots', forest, { done: forest.map((_, i) => i) })]);
+  ANIM['Delete Nodes And Return Forest'] = W('Post-order', C_DNF, r.steps);
+}
+
+const C_FL = `
+private int height(TreeNode n, List<List<Integer>> res) {
+    if (n == null) return -1;
+    int h = 1 + Math.max(height(n.left, res), height(n.right, res));
+    if (h == res.size()) res.add(new ArrayList<>());
+    res.get(h).add(n.val);
+    return h;
+}`;
+{
+  const t = make([1, 2, 3, 4, 5]);
+  ANIM['Find Leaves Of Binary Tree'] = W('Group by height', C_FL, postStory(t, {
+    intro: 'A node is peeled in round <b>height</b> (leaf = 0). One post-order pass drops every value into its height bucket.',
+    init: st => { st.h = {}; st.res = []; return [R('rounds', [])]; },
+    fn: (u, st, badge) => { const l = t.L[u] === undefined ? -1 : st.h[t.L[u]], r = t.R[u] === undefined ? -1 : st.h[t.R[u]]; const h = 1 + Math.max(l, r); st.h[u] = h; (st.res[h] = st.res[h] || []).push(t.val(u)); badge[u] = 'h' + h;
+      return { line: ln(C_FL, 'res.get(h).add'), say: `Node ${t.val(u)} has height ${h} → goes to round ${h}.`, lanes: [R('rounds', st.res)] }; },
+    endLine: ln(C_FL, 'return h'), end: st => `Rounds: ${JSON.stringify(st.res)}.`
+  }));
+}
+
+const C_FD = `
+private String serialize(TreeNode n, Map<String, Integer> seen, List<TreeNode> res) {
+    if (n == null) return "#";
+    String key = "(" + serialize(n.left, seen, res) + "," + n.val + "," + serialize(n.right, seen, res) + ")";
+    if (seen.merge(key, 1, Integer::sum) == 2) res.add(n);
+    return key;
+}`;
+{
+  const t = make([1, 2, 3, 4, null, 2, 4, null, null, 4]), seen = {}, found = [];
+  ANIM['Find Duplicate Subtrees'] = W('Serialize and count', C_FD, postStory(t, {
+    intro: 'Serialize every subtree (post-order, with <code>#</code> for null). The second time a string appears, report that node.',
+    init: st => { st.k = {}; return [R('duplicates', [])]; },
+    fn: (u, st, badge) => { const key = `(${t.L[u] === undefined ? '#' : st.k[t.L[u]]},${t.val(u)},${t.R[u] === undefined ? '#' : st.k[t.R[u]]})`; st.k[u] = key; seen[key] = (seen[key] || 0) + 1; badge[u] = 'x' + seen[key]; if (seen[key] === 2) found.push(t.val(u) + ':' + key);
+      return { line: ln(C_FD, 'if (seen.merge'), say: `Node ${t.val(u)} → <code>${key}</code>, seen ${seen[key]}×${seen[key] === 2 ? ' → <b>duplicate, report</b>' : ''}.`, cls: seen[key] === 2 ? { bad: [u] } : {}, lanes: [R('duplicates', found)] }; },
+    endLine: ln(C_FD, 'return key'), end: () => `Duplicates: the subtree 2→4 and the leaf 4.`
+  }));
+}
+
+const C_FLIP = `
+public boolean flipEquiv(TreeNode a, TreeNode b) {
+    if (a == null || b == null) return a == b;
+    if (a.val != b.val) return false;
+    return (flipEquiv(a.left, b.left) && flipEquiv(a.right, b.right)) || (flipEquiv(a.left, b.right) && flipEquiv(a.right, b.left));
+}`;
+{
+  const a = make([1, 2, 3, 4, 5]), b = make([1, 3, 2, null, null, 5, 4]), r = recorder();
+  r.step(0, 'Trees A and B. B looks different but may be A with some children swapped.', [a.snap('A'), b.snap('B')]);
+  r.step(ln(C_FLIP, 'a.val != b.val'), 'Roots 1 and 1 match. Try the straight pairing first: A.left=2 vs B.left=3.', [a.snap('A', { active: [0, 1] }), b.snap('B', { active: [0, 1] })]);
+  r.step(ln(C_FLIP, 'return (flipEquiv'), '2 ≠ 3, so the straight pairing fails. Try the crossed pairing: A.left=2 with B.right=2, A.right=3 with B.left=3.', [a.snap('A', { done: [0], warn: [1, 2] }), b.snap('B', { done: [0], warn: [1, 2] })]);
+  r.step(ln(C_FLIP, 'return (flipEquiv'), 'Below the 2: children (4, 5) vs (5, 4) → again crossed. Everything matches → <b>true</b>.', [a.snap('A', { done: a.ids }), b.snap('B', { done: b.ids })]);
+  ANIM['Flip Equivalent Binary Trees'] = W('Straight or crossed', C_FLIP, r.steps);
+}
+
+const C_ST = `
+public boolean isSameTree(TreeNode p, TreeNode q) {
+    if (p == null || q == null) return p == q;
+    return p.val == q.val && isSameTree(p.left, q.left) && isSameTree(p.right, q.right);
+}`;
+{
+  const a = make([1, 2, 3]), b = make([1, 2, 4]), r = recorder();
+  r.step(0, 'Walk both trees in lockstep.', [a.snap('p'), b.snap('q')]);
+  r.step(ln(C_ST, 'p.val == q.val'), '1 == 1 → continue with the left children.', [a.snap('p', { active: [0] }), b.snap('q', { active: [0] })]);
+  r.step(ln(C_ST, 'isSameTree(p.left'), 'Left children 2 == 2; both of their subtrees are null → true.', [a.snap('p', { done: [0], active: [1] }), b.snap('q', { done: [0], active: [1] })]);
+  r.step(ln(C_ST, 'isSameTree(p.right'), 'Right children 3 vs 4 → values differ → <b>false</b>.', [a.snap('p', { done: [0, 1], bad: [2] }), b.snap('q', { done: [0, 1], bad: [2] })]);
+  ANIM['Same Tree'] = W('Lockstep', C_ST, r.steps);
+}
+
+const C_SY = `
+private boolean mirror(TreeNode a, TreeNode b) {
+    if (a == null || b == null) return a == b;
+    return a.val == b.val && mirror(a.left, b.right) && mirror(a.right, b.left);
+}`;
+{
+  const t = make([1, 2, 2, 3, 4, 4, 3]), r = recorder();
+  r.step(0, 'Fold the tree along the vertical axis: outer pairs with outer, inner with inner.', [t.snap('tree')]);
+  r.step(ln(C_SY, 'a.val == b.val'), 'Compare the children of the root: 2 and 2 are mirror partners.', [t.snap('tree', { active: [1, 2] })]);
+  r.step(ln(C_SY, 'mirror(a.left, b.right)'), 'Outer pair: left.left (3) with right.right (3).', [t.snap('tree', { done: [1, 2], active: [3, 6] })]);
+  r.step(ln(C_SY, 'mirror(a.right, b.left)'), 'Inner pair: left.right (4) with right.left (4). All pairs equal → <b>symmetric</b>.', [t.snap('tree', { done: [1, 2, 3, 6], active: [4, 5] })]);
+  ANIM['Symmetric Tree'] = W('Mirror pairs', C_SY, r.steps);
+}
+
+const C_SUB = `
+public boolean isSubtree(TreeNode root, TreeNode subRoot) {
+    if (root == null) return subRoot == null;
+    return same(root, subRoot) || isSubtree(root.left, subRoot) || isSubtree(root.right, subRoot);
+}`;
+{
+  const big = make([3, 4, 5, 1, 2]), sub = make([4, 1, 2]), r = recorder();
+  r.step(0, 'Is the small tree (4, 1, 2) an exact subtree of the big one?', [big.snap('big'), sub.snap('sub')]);
+  r.step(ln(C_SUB, 'same(root, subRoot)'), 'Start at the root 3: 3 ≠ 4, no match.', [big.snap('big', { bad: [0] }), sub.snap('sub')]);
+  r.step(ln(C_SUB, 'isSubtree(root.left'), 'Start at 4: values 4, 1, 2 line up exactly → <b>true</b>.', [big.snap('big', { done: [1, 3, 4] }), sub.snap('sub', { done: sub.ids })]);
+  ANIM['Subtree of Another Tree'] = W('Try every start', C_SUB, r.steps);
+}
+
+const C_FOLD = `
+private boolean mirror(TreeNode a, TreeNode b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    return mirror(a.left, b.right) && mirror(a.right, b.left);
+}`;
+{
+  const t = make([10, 7, 15, null, 9, 11]), r = recorder();
+  r.step(0, 'Values do not matter, only the <b>shape</b>. The left subtree must look like the right subtree flipped.', [t.snap('tree')]);
+  r.step(ln(C_FOLD, 'mirror(a.left, b.right)'), '7 has only a right child (9). 15 has only a left child (11). Mirror: 7.left(null) vs 15.right(null) ✓.', [t.snap('tree', { active: [1, 2] })]);
+  r.step(ln(C_FOLD, 'mirror(a.right, b.left)'), '7.right (9) vs 15.left (11): both exist and are leaves → <b>foldable</b>.', [t.snap('tree', { done: [1, 2], active: [3, 4] })]);
+  ANIM['Foldable Binary Tree'] = W('Shape mirror', C_FOLD, r.steps);
+}
+
+const C_LS = `
+private void leaves(TreeNode n, List<Integer> out) {
+    if (n == null) return;
+    if (n.left == null && n.right == null) out.add(n.val);
+    leaves(n.left, out);
+    leaves(n.right, out);
+}`;
+{
+  const a = make([3, 5, 1, 6, 2, 9, 8, null, null, 7, 4]), b = make([3, 5, 1, 6, 7, 4, 2, null, null, null, null, null, null, 9, 8]), r = recorder();
+  const la = a.pre().filter(u => a.leaf(u)), lb = b.pre().filter(u => b.leaf(u));
+  r.step(0, 'Collect the leaf sequence of each tree, left to right.', [a.snap('A'), b.snap('B')]);
+  r.step(ln(C_LS, 'out.add'), `Tree A leaves: <b>${vals(a, la).join(', ')}</b>.`, [a.snap('A', { warn: la }), b.snap('B'), R('A leaves', vals(a, la))]);
+  r.step(ln(C_LS, 'leaves(n.right'), `Tree B leaves: <b>${vals(b, lb).join(', ')}</b>. Identical sequences → leaf-similar.`, [a.snap('A', { warn: la }), b.snap('B', { warn: lb }), R('A leaves', vals(a, la)), R('B leaves', vals(b, lb))]);
+  ANIM['Leaf-Similar Trees'] = W('Compare leaf lists', C_LS, r.steps);
+}
+
+const C_MG = `
+public TreeNode mergeTrees(TreeNode a, TreeNode b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    a.val += b.val;
+    a.left = mergeTrees(a.left, b.left);
+    a.right = mergeTrees(a.right, b.right);
+    return a;
+}`;
+{
+  const a = make([1, 3, 2, 5]), b = make([2, 1, 3, null, 4, null, 7]), m = make([3, 4, 5, 5, 4, null, 7]), r = recorder();
+  r.step(0, 'Lay the trees on top of each other.', [a.snap('A'), b.snap('B')]);
+  r.step(ln(C_MG, 'a.val += b.val'), 'Roots overlap: 1 + 2 = 3. Left children overlap: 3 + 1 = 4. Right children overlap: 2 + 3 = 5.', [a.snap('A', { active: [0, 1, 2] }), b.snap('B', { active: [0, 1, 2] })]);
+  r.step(ln(C_MG, 'if (a == null) return b'), 'Where only one tree has a node, that subtree is reused as is: A\'s 5 stays, B\'s 4 and 7 move over.', [m.snap('merged', { warn: [3, 4, 6] })]);
+  r.step(ln(C_MG, 'return a;'), 'Merged tree: [3, 4, 5, 5, 4, null, 7].', [m.snap('merged', { done: m.ids })]);
+  ANIM['Merge Two Binary Trees'] = W('Overlay', C_MG, r.steps);
+}
+
+const C_BAL = `
+private int height(TreeNode n) {
+    if (n == null) return 0;
+    int l = height(n.left);
+    if (l == -1) return -1;
+    int r = height(n.right);
+    if (r == -1 || Math.abs(l - r) > 1) return -1;
+    return 1 + Math.max(l, r);
+}`;
+{
+  const t = make([1, 2, 2, 3, 3, null, null, 4, 4]);
+  ANIM['Balanced Binary Tree'] = W('Height or −1', C_BAL, postStory(t, {
+    intro: 'Return the height, or <b>−1</b> as soon as a node has subtrees whose heights differ by more than 1.',
+    init: st => { st.h = {}; return []; },
+    fn: (u, st, badge) => { const L = t.L[u], R2 = t.R[u], l = L === undefined ? 0 : st.h[L], r = R2 === undefined ? 0 : st.h[R2]; let h; if (l === -1 || r === -1 || Math.abs(l - r) > 1) h = -1; else h = 1 + Math.max(l, r); st.h[u] = h; badge[u] = h;
+      return { line: h === -1 ? ln(C_BAL, 'return -1;', 2) : ln(C_BAL, 'return 1 + Math.max'), say: h === -1 ? `Node ${t.val(u)}: heights ${l} and ${r} ${l === -1 || r === -1 ? '(alarm from below)' : 'differ by more than 1'} → <b>−1</b>.` : `Node ${t.val(u)}: heights ${l}, ${r} → height ${h}.`, cls: h === -1 ? { bad: [u] } : {} }; },
+    endLine: ln(C_BAL, 'int l = height'), end: st => `Root returned ${st.h[0]} → ${st.h[0] === -1 ? '<b>not balanced</b>' : 'balanced'}. The −1 travelled up from node 2.`
+  }));
+}
+
+const C_EB = `
+public boolean evaluateTree(TreeNode root) {
+    if (root.left == null) return root.val == 1;
+    boolean l = evaluateTree(root.left), r = evaluateTree(root.right);
+    return root.val == 2 ? l || r : l && r;
+}`;
+{
+  const t = make([2, 1, 3, null, null, 0, 1]);
+  ANIM['Evaluate Boolean Binary Tree'] = W('Post-order evaluation', C_EB, postStory(t, {
+    intro: 'Leaves are values (1 = true, 0 = false); 2 means OR, 3 means AND.',
+    init: st => { st.v = {}; return []; },
+    fn: (u, st, badge) => { if (t.L[u] === undefined) { st.v[u] = t.val(u) === 1; badge[u] = st.v[u] ? 'T' : 'F'; return { line: ln(C_EB, 'return root.val == 1'), say: `Leaf ${t.val(u)} → ${st.v[u]}.` }; }
+      const l = st.v[t.L[u]], r = st.v[t.R[u]]; st.v[u] = t.val(u) === 2 ? l || r : l && r; badge[u] = st.v[u] ? 'T' : 'F';
+      return { line: ln(C_EB, 'return root.val == 2'), say: `${t.val(u) === 2 ? 'OR' : 'AND'}(${l}, ${r}) = <b>${st.v[u]}</b>.` }; },
+    endLine: ln(C_EB, 'boolean l'), end: st => `Whole tree = <b>${st.v[0]}</b>.`
+  }));
+}
+
+const C_SLL = `
+private int dfs(TreeNode n, boolean isLeft) {
+    if (n == null) return 0;
+    if (n.left == null && n.right == null) return isLeft ? n.val : 0;
+    return dfs(n.left, true) + dfs(n.right, false);
+}`;
+{
+  const t = make([3, 9, 20, null, null, 15, 7]);
+  ANIM['Sum of Left Leaves'] = W('isLeft flag', C_SLL, preStory(t, {
+    intro: 'Each call is told whether the node is a <b>left</b> child. A leaf counts only with the flag set.',
+    init: st => { st.sum = 0; return [A('sum', [0])]; },
+    fn: (u, st, badge) => { const left = t.par[u] >= 0 && t.L[t.par[u]] === u; badge[u] = left ? 'L' : t.par[u] >= 0 ? 'R' : 'root'; const leaf = t.leaf(u); if (leaf && left) st.sum += t.val(u);
+      return { line: leaf ? ln(C_SLL, 'return isLeft') : ln(C_SLL, 'return dfs(n.left'), say: leaf ? `Leaf ${t.val(u)} is a ${left ? '<b>left</b> child → add ' + t.val(u) : 'right child → 0'}. Sum ${st.sum}.` : `Node ${t.val(u)} → recurse with flags (left=true, right=false).`, lanes: [A('sum', [st.sum], { done: [0] })] }; },
+    endLine: ln(C_SLL, 'if (n == null)'), end: st => `Sum of left leaves = <b>${st.sum}</b>.`
+  }));
+}
+
+const C_BIN = `
+private int dfs(TreeNode n, int cur) {
+    if (n == null) return 0;
+    cur = (cur << 1) | n.val;
+    if (n.left == null && n.right == null) return cur;
+    return dfs(n.left, cur) + dfs(n.right, cur);
+}`;
+{
+  const t = make([1, 0, 1, 0, 1, 0, 1]);
+  ANIM['Sum of Root To Leaf Binary Numbers'] = W('Shift and add', C_BIN, preStory(t, {
+    intro: 'Going down appends one binary digit: <code>cur = cur &lt;&lt; 1 | bit</code>.',
+    init: st => { st.cur = {}; st.sum = 0; return [A('sum', [0])]; },
+    fn: (u, st, badge) => { const p = t.par[u]; st.cur[u] = ((p >= 0 ? st.cur[p] : 0) << 1) | t.val(u); badge[u] = st.cur[u].toString(2); if (t.leaf(u)) st.sum += st.cur[u];
+      return { line: t.leaf(u) ? ln(C_BIN, 'return cur') : ln(C_BIN, 'cur = (cur'), say: t.leaf(u) ? `Leaf: ${st.cur[u].toString(2)}₂ = <b>${st.cur[u]}</b>. Sum ${st.sum}.` : `Node: path bits ${st.cur[u].toString(2)}.`, lanes: [A('sum', [st.sum], { done: [0] })] }; },
+    endLine: ln(C_BIN, 'return dfs'), end: st => `Sum = <b>${st.sum}</b> (100₂ + 101₂ + 110₂ + 111₂ = 4 + 5 + 6 + 7).`
+  }));
+}
+
+const C_LLT = `
+public boolean isSubPath(ListNode head, TreeNode root) {
+    if (root == null) return false;
+    return match(head, root) || isSubPath(head, root.left) || isSubPath(head, root.right);
+}
+private boolean match(ListNode l, TreeNode n) {
+    if (l == null) return true;
+    if (n == null || n.val != l.val) return false;
+    return match(l.next, n.left) || match(l.next, n.right);
+}`;
+{
+  const t = make([1, 4, 4, null, 2, 2, null, 1, null, 6, 8, null, null, null, null, 1, 3]), r = recorder(), list = [4, 2, 8];
+  r.step(0, 'List 4 → 2 → 8. Try to start the match at every tree node and walk <b>downward</b>.', [t.snap('tree'), A('list', list)]);
+  r.step(ln(C_LLT, 'match(head, root)'), 'Start at root 1: 1 ≠ 4 → no.', [t.snap('tree', { bad: [0] }), A('list', list, { active: [0] })]);
+  r.step(ln(C_LLT, 'isSubPath(head, root.left)'), 'Start at the left 4 (first): 4 == 4 ✓, go down to its child 2: 2 == 2 ✓, then its child 1: 1 ≠ 8 ✗ — this start fails.', [t.snap('tree', { done: [1, 4], bad: [7] }), A('list', list, { done: [0, 1], bad: [2] })]);
+  r.step(ln(C_LLT, 'match(l.next, n.left)'), 'Start at the right 4: 4 ✓ → child 2 ✓ → child 6 ✗ or 8 ✓. The path 4 → 2 → 8 exists → <b>true</b>.', [t.snap('tree', { done: [2, 5, 10] }), A('list', list, { done: [0, 1, 2] })]);
+  ANIM['Linked List in Binary Tree'] = W('Match downward', C_LLT, r.steps);
+}
+
+const C_FLAT = `
+private void reverse(TreeNode n, TreeNode[] prev) {
+    if (n == null) return;
+    reverse(n.right, prev);
+    reverse(n.left, prev);
+    n.right = prev[0];
+    n.left = null;
+    prev[0] = n;
+}`;
+{
+  const t = make([1, 2, 5, 3, 4, null, 6]), order = [], f = u => { if (u === undefined) return; f(t.R[u]); f(t.L[u]); order.push(u); }; f(0);
+  ANIM['Flatten Binary Tree to Linked List'] = W('Reverse preorder', C_FLAT, nodeStory(t, order, {
+    intro: 'Visit <b>right, left, node</b>. The node visited just before is its successor in preorder, so link <code>n.right = prev</code>.',
+    lanes0: st => { st.chain = []; return [R('chain built (front → back)', [])]; },
+    step: (u, k, st) => { const prev = k === 0 ? null : order[k - 1]; st.chain.unshift(t.val(u)); return { line: ln(C_FLAT, 'n.right = prev[0]'), say: `Node ${t.val(u)}: right → ${prev === null ? 'null' : t.val(prev)}, left → null.`, cls: { done: order.slice(0, k) }, lanes: [R('chain built (front → back)', st.chain)] }; },
+    end: st => ({ line: ln(C_FLAT, 'prev[0] = n'), say: `Preorder chain: <b>${st.chain.join(' → ')}</b>.`, cls: { done: t.ids }, lanes: [R('chain', st.chain, { done: st.chain.map((_, i) => i) })] })
+  }));
+}
+
+const C_MOD = `
+public TreeNode modifyTreeSplice(TreeNode root) {
+    if (root == null) return null;
+    modifyTreeSplice(root.left);
+    modifyTreeSplice(root.right);
+    TreeNode oldRight = root.right;
+    root.right = root.left;
+    root.left = null;
+    TreeNode t = root;
+    while (t.right != null) t = t.right;
+    t.right = oldRight;
+    return root;
+}`;
+{
+  const t = make([1, 2, 3, 4, 5]), r = recorder();
+  r.step(0, 'Flatten both children first, then splice the flat left chain between the node and its flat right chain.', [t.snap('tree')]);
+  r.step(ln(C_MOD, 'modifyTreeSplice(root.left)'), 'Left child 2 flattens its own children: chain 2 → 4 → 5.', [t.snap('tree', { warn: [1, 3, 4] }), R('flat(2)', [2, 4, 5])]);
+  r.step(ln(C_MOD, 'modifyTreeSplice(root.right)'), 'Right child 3 is a leaf: chain 3.', [t.snap('tree', { warn: [2] }), R('flat(3)', [3])]);
+  r.step(ln(C_MOD, 'root.right = root.left'), 'At the root: move the left chain to the right side, clear left.', [t.snap('tree', { active: [0] }), R('1 → flat(2)', [1, 2, 4, 5])]);
+  r.step(ln(C_MOD, 't.right = oldRight'), 'Walk to the end of that chain (5) and attach the old right chain (3): <b>1 → 2 → 4 → 5 → 3</b>.', [t.snap('tree', { done: t.ids }), R('preorder chain', [1, 2, 4, 5, 3], { done: [0, 1, 2, 3, 4] })]);
+  ANIM['Modify Tree for Preorder Using Only Right Pointers'] = W('Post-order splice', C_MOD, r.steps);
+}
+
+const C_MBT = `
+for (int v : nums) {
+    TreeNode cur = new TreeNode(v), last = null;
+    while (!st.isEmpty() && st.peek().val < v) last = st.pop();
+    cur.left = last;
+    if (!st.isEmpty()) st.peek().right = cur;
+    st.push(cur);
+}`;
+{
+  const nums = [3, 2, 1, 6, 0, 5], r = recorder(), st = [], final = make([6, 3, 5, null, 2, 0, null, null, 1]);
+  r.step(0, 'Keep a stack of the right spine in decreasing order. A bigger value pops smaller nodes and adopts the last popped one as its <b>left child</b>.', [A('nums', nums), S('stack', [])]);
+  nums.forEach((v, i) => { const popped = []; while (st.length && st[st.length - 1] < v) popped.push(st.pop()); const leftTxt = popped.length ? `adopts ${popped[popped.length - 1]} as its left child` : 'has no left child'; const top = st.length ? st[st.length - 1] : null; st.push(v);
+    r.step(ln(C_MBT, 'cur.left = last'), `Read ${v}: popped [${popped.join(', ')}] → ${leftTxt}${top !== null ? '; becomes the right child of ' + top : '; it becomes the new bottom of the stack'}.`, [A('nums', nums, { active: [i], done: nums.map((_, j) => j).filter(j => j < i) }), S('stack', [...st])]); });
+  r.step(ln(C_MBT, 'st.push(cur)'), 'The bottom of the stack (6) is the root: [6, 3, 5, null, 2, 0, null, null, 1].', [final.snap('result', { done: final.ids })]);
+  ANIM['Maximum Binary Tree'] = W('Monotonic stack', C_MBT, r.steps);
+}
+
+const C_CKL = `
+private void paths(TreeNode n, List<TreeNode> path, int k, Set<TreeNode> hit) {
+    if (n == null) return;
+    path.add(n);
+    if (n.left == null && n.right == null && path.size() - 1 - k >= 0) hit.add(path.get(path.size() - 1 - k));
+    paths(n.left, path, k, hit);
+    paths(n.right, path, k, hit);
+    path.remove(path.size() - 1);
+}`;
+{
+  const t = make([1, 2, 3, 4, 5, 6, 7]), r = recorder(), hit = new Set();
+  r.step(0, 'k = 1. At every leaf look <b>one step back</b> in the current path; a set removes duplicates.', [t.snap('tree'), R('hit', [])]);
+  [[3, [1, 2, 4]], [4, [1, 2, 5]], [5, [1, 3, 6]], [6, [1, 3, 7]]].forEach(([u, p]) => { const target = p[p.length - 2]; hit.add(target);
+    r.step(ln(C_CKL, 'hit.add'), `Leaf ${t.val(u)}, path ${p.join(' → ')}: the node 1 above the leaf is <b>${target}</b>. Set = {${[...hit].join(', ')}}.`, [t.snap('tree', { active: [u], warn: [...hit].map(x => x - 1) }), R('hit', [...hit])]); });
+  r.step(ln(C_CKL, 'path.remove'), `Distinct nodes at distance 1 from a leaf: <b>${hit.size}</b> (nodes 2 and 3, each counted once although each has two leaves).`, [t.snap('tree', { done: [1, 2] }), R('hit', [...hit], { done: [0, 1] })]);
+  ANIM['Count the Nodes at Distance K from Leaf'] = W('Path + set', C_CKL, r.steps);
+}

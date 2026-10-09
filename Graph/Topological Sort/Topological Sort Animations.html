@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Topological Sort Animations</title>
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/graph-kit.js"></script>
+<script>
+const { lane, graph, grid, tree, recorder, mount, ln } = BrainAnim;
+const { range, C, EC, Q, S, A, story, adjOf } = GK;
+const bits = a => a.map(b => (b ? 1 : 0));
+
+// Generic Kahn stepper. o: N, E [[a,b]], ids (default all), code, lnInit, lnPoll, lnRelax, lnPush, intro, outro, vals (per-node values shown as badges), hook(u, v, vals) -> extra text, name
+function kahn(o) {
+  const ids = o.ids || Object.keys(o.N), r = recorder(), ind = {}, adj = {}, order = [], gone = [];
+  ids.forEach(i => { ind[i] = 0; adj[i] = []; }); o.E.forEach(([a, b]) => { adj[a].push(String(b)); ind[b]++; });
+  const q = ids.filter(i => ind[i] === 0), vals = o.vals || {};
+  const view = (act, ecls) => [graph(o.name || 'dependency graph (badge = remaining prerequisites)', o.N, o.E, { directed: true, cls: C({ done: gone, active: act !== undefined ? [act] : [], warn: q }), ecls, badge: Object.fromEntries(ids.map(i => [i, o.vals ? vals[i] : ind[i]])) }), Q('queue (indegree 0)', q.slice()), A('order so far', order, { showIdx: false })];
+  r.step(ln(o.code, o.lnInit), o.intro || 'Count incoming edges (prerequisites left). Nodes with none can go first: queue them.', view(), {});
+  while (q.length) {
+    const u = q.shift(); order.push(u); gone.push(u);
+    r.step(ln(o.code, o.lnPoll), `Remove ${u}: it is next in the order. Each node it points to has one prerequisite fewer.`, view(u), {});
+    for (const v of adj[u]) { ind[v]--; const extra = o.hook ? o.hook(u, v, vals) : ''; const z = ind[v] === 0; if (z) q.push(v); r.step(ln(o.code, o.lnRelax), `${u} → ${v}: ${v} now has ${ind[v]} prerequisite${ind[v] === 1 ? '' : 's'} left${extra ? '. ' + extra : ''}${z ? '. Zero: queue it' : ''}.`, view(u, EC({ hot: [[u, v]] })), {}); }
+  }
+  const cyc = order.length < ids.length;
+  r.step(0, o.outro ? o.outro(order, cyc) : (cyc ? `Only ${order.length} of ${ids.length} nodes could be removed: the rest sit on a cycle (each waits for another). No valid order.` : `Every node removed: order <b>${order.join(' → ')}</b>.`), view(), {});
+  return { steps: r.steps, order };
+}
+
+const C_KAHN = `
+public List<Integer> topoKahn(int V, List<List<Integer>> adj) {
+    int[] indegree = new int[V];
+    for (List<Integer> out : adj) for (int v : out) indegree[v]++;
+    Queue<Integer> que = new ArrayDeque<>();
+    for (int i = 0; i < V; i++) if (indegree[i] == 0) que.add(i);
+    List<Integer> order = new ArrayList<>();
+    while (!que.isEmpty()) {
+        int u = que.poll();
+        order.add(u);
+        for (int v : adj.get(u)) if (--indegree[v] == 0) que.add(v);
+    }
+    return order.size() == V ? order : new ArrayList<>();
+}`;
+const N6 = { 5: [0, 0], 4: [0, 2], 2: [1.6, 0], 0: [1.6, 1], 3: [3.2, 0.5], 1: [3.2, 2] }, E6 = [[5, 2], [5, 0], [4, 0], [4, 1], [2, 3], [3, 1]];
+function topoKahn() { return kahn({ N: N6, E: E6, code: C_KAHN, lnInit: 'indegree[v]++', lnPoll: 'int u = que.poll()', lnRelax: 'if (--indegree[v] == 0)' }).steps; }
+const C_TDFS = `
+private void finish(List<List<Integer>> adj, int u, boolean[] visited, Deque<Integer> stack) {
+    visited[u] = true;
+    for (int v : adj.get(u)) if (!visited[v]) finish(adj, v, visited, stack);
+    stack.push(u);                       // after everything it points to is placed
+}`;
+function topoDfs() {
+  const adj = adjOf(6, E6, true), r = recorder(), vis = Array(6).fill(false), stack = [], path = [];
+  const V = (act) => [graph('DFS (green = finished and pushed)', N6, E6, { directed: true, cls: C({ done: stack.slice(), active: act !== undefined ? [act] : [], warn: path.slice(0, -1) }) }), S('call stack', path), A('result stack (top = first in order)', stack.slice().reverse(), { showIdx: false })];
+  r.step(ln(C_TDFS, 'visited[u] = true'), 'DFS idea: a node can be placed <b>after</b> everything it points to has been placed, so push it when it finishes; the final stack, read from the top, is a topological order.', V(), {});
+  (function go(u) { vis[u] = true; path.push(u); r.step(ln(C_TDFS, 'visited[u] = true'), `Enter ${u}.`, V(u), {}); for (const v of adj[u]) if (!vis[v]) go(v); path.pop(); stack.push(u); r.step(ln(C_TDFS, 'stack.push(u)'), `${u} is finished (all its successors are done): push it. The stack read top-down starts: ${stack.slice().reverse().join(', ')}.`, V(u), {}); })(5);
+  for (const s of [4, 0, 1, 2, 3]) if (!vis[s]) { (function go(u) { vis[u] = true; path.push(u); for (const v of adj[u]) if (!vis[v]) go(v); path.pop(); stack.push(u); })(s); r.step(ln(C_TDFS, 'for (int v : adj.get(u))'), `Restart from the unvisited node ${s}: it finishes and is pushed.`, V(s), {}); }
+  r.step(0, `Topological order (top of stack first): <b>${stack.slice().reverse().join(' → ')}</b>. Every edge points forward.`, V(), {});
+  return r.steps;
+}
+
+const C_CS = `
+int taken = 0;
+while (!que.isEmpty()) {
+    int u = que.poll();
+    taken++;
+    for (int v : adj.get(u)) if (--indegree[v] == 0) que.add(v);
+}
+return taken == numCourses;       // some course left over ⇒ a cycle of prerequisites`;
+function courseSchedule() {
+  const N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2], 3: [3.2, 1] }, ok = kahn({ N, E: [[0, 1], [0, 2], [1, 3], [2, 3]], code: C_CS, lnInit: 'int taken = 0', lnPoll: 'taken++', lnRelax: 'if (--indegree[v] == 0)', name: 'courses: u → v means take u before v', outro: o => `All 4 courses can be taken: <b>true</b>.` }).steps;
+  const bad = kahn({ N, E: [[0, 1], [1, 2], [2, 1], [1, 3]], code: C_CS, lnInit: 'int taken = 0', lnPoll: 'taken++', lnRelax: 'if (--indegree[v] == 0)', name: 'courses with a cycle 1 → 2 → 1', outro: (o, c) => `Only ${o.length} of 4 courses can be taken: 1 and 2 each wait for the other, so they never reach zero (and 3 waits for 1). <b>false</b>.` }).steps;
+  return [ok, bad];
+}
+const courseOk = () => courseSchedule()[0], courseBad = () => courseSchedule()[1];
+
+const C_CS2 = `
+int[] order = new int[numCourses];
+int count = 0;
+while (!que.isEmpty()) {
+    int u = que.poll();
+    order[count++] = u;                      // the removal order is the study order
+    for (int v : adj.get(u)) if (--indegree[v] == 0) que.add(v);
+}
+return count == numCourses ? order : new int[0];`;
+function courseOrder() { return kahn({ N: { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2], 3: [3.2, 1] }, E: [[0, 1], [0, 2], [1, 3], [2, 3]], code: C_CS2, lnInit: 'int[] order', lnPoll: 'order[count++] = u', lnRelax: 'if (--indegree[v] == 0)', name: 'courses (prerequisites [1,0], [2,0], [3,1], [3,2])', outro: o => `Study order <b>[${o.join(', ')}]</b> (also valid: 0, 2, 1, 3). Same algorithm as Course Schedule, but we keep the order.` }).steps; }
+
+const C_CS4 = `
+for (int i = 0; i < numCourses; i++) mark(adj, i, reach[i]);          // everything reachable from i
+...
+for (int[] q : queries) result.add(reach[q[0]][q[1]]);
+// Kahn version: before.get(v).add(u); before.get(v).addAll(before.get(u));`;
+function courseIV() {
+  const N = { 0: [3, 0], 1: [1.6, 0], 2: [0, 0] }, E = [[2, 1], [1, 0]], r = recorder(), before = [new Set(), new Set(), new Set()], q = [2], gone = [];
+  const ind = [1, 1, 0];
+  const V = (act, ecls) => [graph('prerequisite chain 2 → 1 → 0', N, E, { directed: true, cls: C({ done: gone, active: act !== undefined ? [act] : [] }), ecls }), A('all prerequisites of each course', before.map(s => [...s].join(',') || '—'), { showIdx: true })];
+  r.step(ln(C_CS4, 'before.get(v).add(u)'), 'Queries ask "is u a prerequisite of v, directly or through a chain?" Kahn order lets each course <b>inherit all prerequisites of its parent</b>: when edge u → v is processed, add u and everything u already inherited.', V(), {});
+  const adj = adjOf(3, E, true); while (q.length) { const u = q.shift(); gone.push(u); for (const v of adj[u]) { before[v].add(u); before[u].forEach(x => before[v].add(x)); ind[v]--; if (ind[v] === 0) q.push(v); r.step(ln(C_CS4, 'before.get(v).addAll'), `${u} → ${v}: course ${v} now knows its prerequisites {${[...before[v]].join(', ')}}.`, V(u, EC({ hot: [[u, v]] })), {}); } }
+  r.step(ln(C_CS4, 'result.add'), 'Query (2, 0): 2 ∈ prerequisites(0) = {1, 2} → true. Query (0, 2): 0 ∉ {} → false. DFS from every node or Floyd-Warshall build the same reachability table.', V(), {});
+  return r.steps;
+}
+
+const C_ALIEN = `
+for (int i = 0; i + 1 < words.length; i++) {
+    String a = words[i], b = words[i + 1];
+    if (a.length() > b.length() && a.startsWith(b)) return "";       // "abc" before "ab" is impossible
+    for (int k = 0; k < Math.min(a.length(), b.length()); k++) {
+        if (a.charAt(k) != b.charAt(k)) {                            // first difference gives one rule: a[k] before b[k]
+            if (adj.get(a.charAt(k)).add(b.charAt(k))) indegree.merge(b.charAt(k), 1, Integer::sum);
+            break;
+        }
+    }
+}
+...Kahn on the letters...`;
+function alien() {
+  const words = ['wrt', 'wrf', 'er', 'ett', 'rftt'], r = recorder(), E = [];
+  const N = { w: [0, 1], r: [1.6, 0], e: [1.6, 2], t: [3.2, 0.5], f: [3.2, 2] };
+  const V = (act) => [A('words (already sorted by the alien alphabet)', words, { showIdx: true, active: act || [] }), graph('letter order rules found so far', N, E, { directed: true })];
+  r.step(0, 'Words are sorted in an unknown alphabet. Only the <b>first differing letter</b> of two adjacent words tells us anything: the letter in the earlier word comes first. Each such pair is an edge; then topologically sort the letters.', V(), {});
+  const rules = [[0, 1, 't', 'f'], [1, 2, 'w', 'e'], [2, 3, 'r', 't'], [3, 4, 'e', 'r']];
+  rules.forEach(([i, j, a, b]) => { E.push([a, b]); r.step(ln(C_ALIEN, 'if (adj.get(a.charAt(k))'), `"${words[i]}" vs "${words[j]}": first difference ${a} ≠ ${b} → rule ${a} before ${b}.`, V([i, j]), {}); });
+  const res = kahn({ N, E, code: C_ALIEN, lnInit: 'Kahn on the letters', lnPoll: 'Kahn on the letters', lnRelax: 'Kahn on the letters', name: 'letters (badge = rules pointing at it)', outro: o => `Alphabet order <b>${o.join('')}</b>. If two orders were possible any one is accepted; if the rules form a cycle (e.g. "z","x","z") or a longer word precedes its own prefix, the answer is "".` });
+  return r.steps.concat(res.steps);
+}
+const C_BM = `
+List<Integer> rows = topo(k, rowConditions), cols = topo(k, colConditions);
+if (rows.isEmpty() || cols.isEmpty()) return new int[0][];          // a cycle in either direction: impossible
+int[] rowOf = new int[k + 1], colOf = new int[k + 1];
+for (int i = 0; i < k; i++) { rowOf[rows.get(i)] = i; colOf[cols.get(i)] = i; }
+for (int v = 1; v <= k; v++) matrix[rowOf[v]][colOf[v]] = v;`;
+function buildMatrix() {
+  const r = recorder(), N = { 1: [0, 0], 2: [1.6, 0], 3: [3.2, 0] }, N2 = { 1: [0, 0], 2: [1.6, 0], 3: [3.2, 0] };
+  r.step(0, 'k = 3. rowConditions [[1,2],[3,2]]: 1 above 2, 3 above 2. colConditions [[2,1],[3,2]]: 2 left of 1, 3 left of 2. Rows and columns are <b>independent</b> problems: sort each topologically.', [graph('row rule: a above b', N, [[1, 2], [3, 2]], { directed: true }), graph('column rule: a left of b', N2, [[2, 1], [3, 2]], { directed: true })], {});
+  const a = kahn({ N, E: [[1, 2], [3, 2]], code: C_BM, lnInit: 'List<Integer> rows', lnPoll: 'List<Integer> rows', lnRelax: 'List<Integer> rows', name: 'rows (badge = prerequisites left)', outro: o => `Row order top to bottom: ${o.join(', ')}.` });
+  const b = kahn({ N: N2, E: [[3, 2], [2, 1]], code: C_BM, lnInit: 'List<Integer> rows', lnPoll: 'List<Integer> rows', lnRelax: 'List<Integer> rows', name: 'columns (badge = prerequisites left)', outro: o => `Column order left to right: ${o.join(', ')}.` });
+  const rows = a.order.map(Number), cols = b.order.map(Number), m = Array.from({ length: 3 }, () => Array(3).fill(0)); rows.forEach((v, i) => { m[i][cols.indexOf(v)] = v; });
+  const last = recorder(); last.step(ln(C_BM, 'matrix[rowOf[v]][colOf[v]]'), `Number v goes to (its position in the row order, its position in the column order): rows ${rows.join(',')}, columns ${cols.join(',')}.`, [grid('the matrix', m, { cls: () => 'done' })], {});
+  return r.steps.concat(a.steps, b.steps, last.steps);
+}
+const C_RCP = `
+Queue<String> que = new ArrayDeque<>(Arrays.asList(supplies));
+List<String> result = new ArrayList<>();
+while (!que.isEmpty()) {
+    String item = que.poll();
+    for (String recipe : usedBy.getOrDefault(item, List.of())) {
+        if (missing.merge(recipe, -1, Integer::sum) == 0) { result.add(recipe); que.add(recipe); }   // all ingredients present
+    }
+}`;
+function recipes() {
+  const N = { yeast: [0, 0], flour: [0, 1.6], meat: [0, 3.2], bread: [2.2, 0.8], sandwich: [4.4, 1.6] }, E = [['yeast', 'bread'], ['flour', 'bread'], ['bread', 'sandwich'], ['meat', 'sandwich']], r = recorder(), have = ['yeast', 'flour', 'meat'], missing = { bread: 2, sandwich: 2 }, q = ['yeast', 'flour', 'meat'], made = [];
+  const V = (act, ecls) => [graph('ingredients → recipes (badge = ingredients still missing)', N, E, { directed: true, cls: C({ done: made, active: act !== undefined ? [act] : [], warn: q }), ecls, badge: { bread: missing.bread, sandwich: missing.sandwich } }), Q('items we can use now', q.slice()), A('recipes made', made, { showIdx: false })];
+  r.step(ln(C_RCP, 'Queue<String> que'), 'Supplies: yeast, flour, meat. A recipe is ready when every ingredient is available. A recipe can be an ingredient of another recipe, so this is a dependency graph: Kahn with "missing ingredients" as the indegree.', V(), {});
+  const usedBy = { yeast: ['bread'], flour: ['bread'], bread: ['sandwich'], meat: ['sandwich'] };
+  while (q.length) { const it = q.shift(); for (const rec of usedBy[it] || []) { missing[rec]--; const ready = missing[rec] === 0; if (ready) { made.push(rec); q.push(rec); } r.step(ln(C_RCP, 'missing.merge(recipe'), `Item ${it} is available: ${rec} now misses ${missing[rec]} ingredient(s)${ready ? ' → <b>can be made</b>, and it becomes an available item' : ''}.`, V(it, EC({ hot: [[it, rec]] })), {}); } }
+  r.step(0, `Possible recipes: <b>${made.join(', ')}</b>. A recipe whose ingredient is missing from supplies (or part of a cycle of recipes) never reaches zero.`, V(), {});
+  return r.steps;
+}
+const C_COLOR = `
+for (int v : adj.get(u)) {
+    for (int c = 0; c < 26; c++) count[v][c] = Math.max(count[v][c], count[u][c]);     // best path into v so far
+    if (--indegree[v] == 0) que.add(v);
+}
+...
+count[u][colors.charAt(u) - 'a']++;                // when u is processed it adds its own colour
+return visited == n ? best : -1;`;
+function colorValue() {
+  const colors = 'abaca', E = [[0, 1], [0, 2], [2, 3], [3, 4]], N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2], 3: [3.2, 2], 4: [4.8, 2] }, r = recorder(), cnt = Array.from({ length: 5 }, () => ({})), ind = [0, 1, 1, 1, 1], adj = adjOf(5, E, true); let best = 0; const q = [0], gone = [];
+  const V = (act) => [graph('colours: ' + colors.split('').map((c, i) => `${i}${c}`).join(' '), N, E, { directed: true, cls: C({ done: gone, active: act !== undefined ? [act] : [] }), badge: Object.fromEntries(cnt.map((m, i) => [i, Object.entries(m).map(([k, v]) => k + v).join('')]).filter(([, t]) => t)) }), A('best colour count so far', [best])];
+  r.step(0, 'On a DAG, process nodes in topological order and carry, for every node, the best count of each colour over all paths <b>ending</b> there. A node first adds its own colour. If not all nodes can be processed, there is a cycle: −1.', V(), {});
+  while (q.length) { const u = q.shift(); gone.push(u); cnt[u][colors[u]] = (cnt[u][colors[u]] || 0) + 1; best = Math.max(best, ...Object.values(cnt[u])); r.step(ln(C_COLOR, 'count[u][colors.charAt(u)'), `Process ${u} ('${colors[u]}'): colour counts on the best path into it ${JSON.stringify(cnt[u]).replace(/"/g, '')}. Best overall ${best}.`, V(u), {});
+    for (const v of adj[u]) { for (const [k, x] of Object.entries(cnt[u])) cnt[v][k] = Math.max(cnt[v][k] || 0, x); ind[v]--; if (ind[v] === 0) q.push(v); r.step(ln(C_COLOR, 'count[v][c] = Math.max'), `Pass ${u}'s counts to ${v} (keep the maximum over incoming paths).`, V(u), {}); } }
+  r.step(0, `All 5 nodes processed: no cycle. Best: path 0 → 2 → 3 → 4 has colours a, a, c, a: <b>${best}</b> a's.`, V(), { answer: best });
+  return r.steps;
+}
+const C_MHT = `
+while (remaining > 2) {
+    remaining -= leaves.size();
+    List<Integer> next = new ArrayList<>();
+    for (int leaf : leaves) {
+        int neighbour = adj.get(leaf).iterator().next();
+        adj.get(neighbour).remove(leaf);
+        if (adj.get(neighbour).size() == 1) next.add(neighbour);       // it just became a leaf
+    }
+    leaves = next;
+}
+return leaves;`;
+function mht() {
+  const E = [[3, 0], [3, 1], [3, 2], [3, 4], [5, 4]], N = { 0: [0, 0], 1: [0, 1.2], 2: [0, 2.4], 3: [1.6, 1.2], 4: [3.2, 1.2], 5: [4.8, 1.2] }, adj = {}; range(0, 5).forEach(i => { adj[i] = new Set(); }); E.forEach(([a, b]) => { adj[a].add(b); adj[b].add(a); });
+  const r = recorder(), gone = []; let leaves = range(0, 5).filter(i => adj[i].size === 1), remaining = 6;
+  const V = () => [graph('tree', N, E, { cls: C({ ghost: gone, warn: leaves }) }), A('current leaves', leaves, { showIdx: false }), A('nodes remaining', [remaining])];
+  r.step(0, 'The best roots are the <b>centres</b> of the tree (one or two nodes), the middle of its longest path. Find them by peeling the outer layer of leaves repeatedly, like Kahn on degrees.', V(), {});
+  while (remaining > 2) { remaining -= leaves.length; const next = []; leaves.forEach(l => { const nb = [...adj[l]][0]; adj[nb].delete(l); gone.push(l); if (adj[nb].size === 1) next.push(nb); }); const was = leaves; leaves = next; r.step(ln(C_MHT, 'remaining -= leaves.size()'), `Peel leaves {${was.join(', ')}}. ${remaining} node(s) remain; new leaves: {${leaves.join(', ') || 'none'}}.`, V(), {}); }
+  r.step(ln(C_MHT, 'return leaves'), `Two nodes left: <b>{${leaves.join(', ')}}</b>. Rooted at 3 or 4 the height is 3 (the minimum); rooted anywhere else it is 4.`, [graph('answer', N, E, { cls: C({ done: leaves, ghost: gone }) })], {});
+  return r.steps;
+}
+
+const C_PC = `
+int semesters = 0, taken = 0;
+while (!que.isEmpty()) {
+    semesters++;                                       // one wave of courses = one semester
+    for (int size = que.size(); size > 0; size--) {
+        int u = que.poll();
+        taken++;
+        for (int v : adj.get(u)) if (--indegree[v] == 0) que.add(v);
+    }
+}
+return taken == n ? semesters : -1;`;
+function pc1() {
+  const N = { 1: [0, 0], 2: [0, 1.6], 3: [1.6, 0.8], 4: [3.2, 0.8] }, E = [[1, 3], [2, 3], [3, 4]], r = recorder(), ind = { 1: 0, 2: 0, 3: 2, 4: 1 }; let q = ['1', '2'], sem = 0; const gone = [], adj = { 1: ['3'], 2: ['3'], 3: ['4'], 4: [] };
+  const V = (tag) => [graph('courses (badge = prerequisites left)', N, E, { directed: true, cls: C({ done: gone, warn: q }), badge: ind }), Q('this semester', q.slice()), A('semesters', [sem])];
+  r.step(ln(C_PC, 'int semesters = 0'), 'Unlimited courses per semester, but a course needs its prerequisites finished in an <i>earlier</i> semester. So process Kahn <b>one wave at a time</b>: each wave is one semester; the number of waves is the longest prerequisite chain.', V(), {});
+  while (q.length) { sem++; const next = []; for (const u of q) { gone.push(u); for (const v of adj[u]) { ind[v]--; if (ind[v] === 0) next.push(v); } } r.step(ln(C_PC, 'semesters++'), `Semester ${sem}: take {${q.join(', ')}}. Newly available: {${next.join(', ') || 'none'}}.`, V(), {}); q = next; }
+  r.step(ln(C_PC, 'return taken == n'), `All 4 courses taken in <b>${sem}</b> semesters (chain 1 → 3 → 4). If a cycle left courses untaken the answer would be −1.`, V(), {});
+  return r.steps;
+}
+const C_PC3 = `
+for (int i = 0; i < n; i++) if (indegree[i] == 0) { que.add(i); finish[i] = time[i]; }
+while (!que.isEmpty()) {
+    int u = que.poll();
+    answer = Math.max(answer, finish[u]);
+    for (int v : adj.get(u)) {
+        finish[v] = Math.max(finish[v], finish[u] + time[v]);       // wait for the slowest prerequisite
+        if (--indegree[v] == 0) que.add(v);
+    }
+}`;
+function pc3() {
+  const N = { 1: [0, 0], 2: [0, 1.6], 3: [1.8, 0.8] }, E = [[1, 3], [2, 3]], time = { 1: 3, 2: 2, 3: 5 }, r = recorder(), fin = { 1: 3, 2: 2, 3: 0 }, ind = { 1: 0, 2: 0, 3: 2 }; const gone = [];
+  const V = (act) => [graph('courses (badge = earliest finish month)', N, E, { directed: true, cls: C({ done: gone, active: act !== undefined ? [act] : [] }), badge: Object.fromEntries(Object.entries(fin).map(([k, v]) => [k, v || '·'])) }), A('duration', [3, 2, 5], { showIdx: true })];
+  r.step(ln(C_PC3, 'if (indegree[i] == 0)'), 'Courses take 3, 2 and 5 months. Everything unrelated runs in parallel, so a course finishes at (the <b>slowest</b> prerequisite finish) + its own duration. That is the longest path in a DAG, found with Kahn.', V(), {});
+  for (const u of [1, 2]) { gone.push(u); fin[3] = Math.max(fin[3], fin[u] + time[3]); ind[3]--; r.step(ln(C_PC3, 'finish[v] = Math.max'), `Process course ${u} (finishes at month ${fin[u]}): course 3 can finish no earlier than ${fin[u]} + 5 = ${fin[u] + 5}. finish[3] = ${fin[3]}.`, V(u), {}); }
+  r.step(ln(C_PC3, 'answer = Math.max'), `Course 3 finishes at month <b>${fin[3]}</b>: it must wait for course 1 (3 months), not course 2 (2 months). The answer is the maximum finish time over all courses.`, V(3), { answer: 8 });
+  return r.steps;
+}
+const C_SORT = `
+int[] g = group.clone();  int groups = m;
+for (int i = 0; i < n; i++) if (g[i] == -1) g[i] = groups++;               // ungrouped items become singleton groups
+...
+for (int b : beforeItems.get(i)) {
+    itemAdj.get(b).add(i);  itemIn[i]++;
+    if (g[b] != g[i]) { groupAdj.get(g[b]).add(g[i]); groupIn[g[i]]++; }     // dependency between groups
+}
+List<Integer> itemOrder = topo(...), groupOrder = topo(...);
+// output: for each group in groupOrder, its items in itemOrder`;
+function sortItems() {
+  const r = recorder(), N = { A: [0, 0], B: [2, 0], C: [4, 0] };
+  r.step(ln(C_SORT, 'groups++'), 'Each item belongs to a group (or none), items of a group must be placed <b>contiguously</b>, and some items must come before others. Make every ungrouped item its own group, then sort at two levels: (1) the order of groups, (2) the order of items inside each group.', [A('item → group', ['g0', 'g1', 'g1', 'g0'], { showIdx: true })], {});
+  const gres = kahn({ N, E: [['A', 'B'], ['B', 'C']], code: C_SORT, lnInit: 'groupIn', lnPoll: 'groupIn', lnRelax: 'groupIn', name: 'groups: an item in A must precede an item in B, B before C', outro: o => `Group order ${o.join(' → ')}.` });
+  const items = kahn({ N: { 0: [0, 0], 1: [1.8, 0], 2: [3.6, 0], 3: [5.4, 0] }, E: [[0, 1], [1, 2]], code: C_SORT, lnInit: 'itemIn', lnPoll: 'itemIn', lnRelax: 'itemIn', name: 'items (dependencies between items)', outro: o => `Item order ${o.join(', ')}.` });
+  const last = recorder(); last.step(ln(C_SORT, 'groupOrder'), 'Walk the groups in group order and, inside each, list its items in item order. If either graph has a cycle, return an empty answer.', [A('final order', [0, 1, 2, 3], { done: [0, 1, 2, 3], showIdx: false })], {});
+  return r.steps.concat(gres.steps, items.steps, last.steps);
+}
+
+mount({
+  title: "Topological Sort Animations",
+  sub: "A <b>topological order</b> lists the nodes of a directed acyclic graph so every edge points forward. <b>Kahn</b>: count prerequisites (in-degree), queue the nodes with none, remove them and lower their successors; fewer nodes removed than exist means a <b>cycle</b>. <b>DFS</b>: push a node after all its successors, read the stack backwards. Process Kahn <i>by waves</i> for \"minimum rounds\", carry a value for \"longest path\" DP, and run it on the reversed graph for \"who is safe\".",
+  problems: [
+    { name: "Topological Sort (BFS - Kahn's Algorithm)", hook: "Getting dressed: put on socks before shoes; keep doing whatever has nothing left to wait for.", mantra: "INDEGREE 0 \u21d2 GO; LOWER THE REST", statement: "Given a directed acyclic graph, list the vertices so that every edge u \u2192 v has u before v.",
+      anims: [{ name: "Kahn", code: C_KAHN, steps: topoKahn() },
+      { name: "DFS", code: C_TDFS, steps: topoDfs() }],
+      recall: [["How does Kahn detect a cycle?", "Nodes on a cycle never reach in-degree 0, so fewer than V are removed."], ["Is the order unique?", "No; any order that respects all edges is valid."]], links: [["Course Schedule", 1]] },
+    { name: "Course Schedule", hook: "Can you finish every course, or are two courses each waiting for the other?", mantra: "ALL COURSES REMOVED \u21d4 NO CYCLE", statement: "Prerequisites [a, b] mean b before a. Can all courses be finished?",
+      anims: [{ name: "Possible", code: C_CS, steps: courseOk() },
+      { name: "Cycle", code: C_CS, steps: courseBad() }],
+      recall: [["Why does a leftover course mean impossible?", "It waits for something that waits (eventually) for it."], ["Edge direction?", "b \u2192 a for the pair [a, b]."]], links: [["Course Schedule II", 2]] },
+    { name: "Course Schedule II", hook: "Not just \"can you finish\" but \"in which order\": the order courses leave the queue is the study plan.", mantra: "REMOVAL ORDER = STUDY ORDER", statement: "Return a valid order of the courses, or an empty array if impossible.",
+      anims: [{ name: "Walkthrough", code: C_CS2, steps: courseOrder() }],
+      recall: [["Why reverse the DFS finish order?", "A course finishes after everything that depends on it, so the last finisher goes first."], ["Many valid answers?", "Yes, any valid order is accepted."]], links: [["Course Schedule", 1]] },
+    { name: "Course Schedule IV", hook: "Is course A a hidden ancestor of course B? Let every course inherit the prerequisites of its parents.", mantra: "CHILD INHERITS PARENT + PARENT'S PREREQUISITES", statement: "Answer queries \"is u a prerequisite (direct or indirect) of v?\" for a prerequisite DAG.",
+      anims: [{ name: "Walkthrough", code: C_CS4, steps: courseIV() }],
+      recall: [["Which is simplest for n \u2264 100?", "Floyd-Warshall on booleans."], ["Why topological order helps?", "A parent's set is final before it is passed to children."]], links: [["Course Schedule II", 2]] },
+    { name: "Alien Dictionary", hook: "A dictionary in an unknown language: the first letter where two neighbouring words differ reveals one ordering rule.", mantra: "FIRST DIFFERING LETTER \u21d2 EDGE; PREFIX TRAP \u21d2 \"\"", statement: "Words are sorted in an alien alphabet. Return a valid letter order, or \"\" if the list is inconsistent.",
+      anims: [{ name: "Walkthrough", code: C_ALIEN, steps: alien() }],
+      recall: [["Why only adjacent words?", "Sortedness is transitive: adjacent pairs imply the rest."], ["Why stop after the first difference?", "Later letters carry no information about the alphabet."]], links: [["Course Schedule II", 2]] },
+    { name: "Build a Matrix With Conditions", hook: "Rows and columns are independent puzzles: solve each as an ordering and read positions off.", mantra: "SORT ROWS, SORT COLUMNS, PLACE v AT (rowPos, colPos)", statement: "Place 1..k in a k \u00d7 k matrix so that listed numbers are above / left of others. Return the matrix or an empty one.",
+      anims: [{ name: "Walkthrough", code: C_BM, steps: buildMatrix() }],
+      recall: [["Why can rows and columns be solved separately?", "A number has one row and one column and the conditions mention only one of them at a time."], ["Does every number get its own row and column?", "Yes, the matrix is k \u00d7 k with each of 1..k once, a permutation matrix."]], links: [["Course Schedule II", 2]] },
+    { name: "Find All Possible Recipes from Given Supplies", hook: "A recipe becomes available once every ingredient is on the shelf, and recipes can be ingredients too.", mantra: "MISSING-INGREDIENT COUNT IS THE INDEGREE", statement: "Given recipes with ingredients and initial supplies, return all recipes that can be made.",
+      anims: [{ name: "Walkthrough", code: C_RCP, steps: recipes() }],
+      recall: [["Why start from supplies, not zero in-degree?", "Supplies are available items; recipes only become available when their ingredients are."], ["What about cyclic recipes?", "They never reach 0 and are never made."]], links: [["Course Schedule", 1]] },
+    { name: "Largest Color Value in a Directed Graph", hook: "Walk the DAG in dependency order carrying a tally of colours: each node keeps the best tally over all paths ending there.", mantra: "count[v][c] = max over parents; ADD OWN COLOUR WHEN PROCESSED", statement: "Each node has a colour. Return the largest number of same-coloured nodes on any path, or \u22121 if the graph has a cycle.",
+      anims: [{ name: "Walkthrough", code: C_COLOR, steps: colorValue() }],
+      recall: [["Why not enumerate paths?", "There can be exponentially many; the DP shares work."], ["Why does Kahn also give the cycle test?", "Nodes on a cycle are never processed."]], links: [["Parallel Courses III", 10]] },
+    { name: "Minimum Height Trees", hook: "Peel the tree like an onion: the last one or two nodes in the middle are the best roots.", mantra: "REMOVE ALL LEAVES UNTIL \u2264 2 NODES REMAIN", statement: "Among all rootings of an undirected tree, return the roots that give the minimum height.",
+      anims: [{ name: "Walkthrough", code: C_MHT, steps: mht() }],
+      recall: [["Why at most two answers?", "A longest path has either one middle node or two."], ["Why stop at 2 nodes?", "Peeling further would remove the answer."]], links: [] },
+    { name: "Parallel Courses", hook: "Take everything you can each semester; the number of semesters is the length of the longest prerequisite chain.", mantra: "ONE KAHN WAVE = ONE SEMESTER", statement: "Courses with prerequisites; any number can be taken per semester once their prerequisites were finished in earlier semesters. Return the minimum semesters, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_PC, steps: pc1() }],
+      recall: [["Why layers and not the plain order?", "Courses in the same layer can be studied together, so they count as one semester."], ["What is the answer in graph terms?", "The number of nodes on the longest path."]], links: [["Parallel Courses III", 10], ["Course Schedule", 1]] },
+    { name: "Parallel Courses III", hook: "Unlimited parallel study: a course ends when its slowest prerequisite ends plus its own length.", mantra: "finish[v] = max(finish[u]) + time[v]", statement: "Each course takes time[i] months; courses with no dependency run in parallel. Return the minimum months to finish all.",
+      anims: [{ name: "Walkthrough", code: C_PC3, steps: pc3() }],
+      recall: [["Why max over prerequisites?", "You can only start when all of them are done."], ["Where does the answer come from?", "The maximum finish time over all courses."]], links: [["Parallel Courses", 9], ["Largest Color Value in a Directed Graph", 7]] },
+    { name: "Sort Items by Groups Respecting Dependencies", hook: "Sort the teams first, then sort the people inside each team.", mantra: "TOPO THE GROUPS, TOPO THE ITEMS, GROUP BY GROUP", statement: "Items belong to groups (or none). Items of a group must be contiguous, and beforeItems[i] must come before item i. Return an order or an empty array.",
+      anims: [{ name: "Walkthrough", code: C_SORT, steps: sortItems() }],
+      recall: [["Why make ungrouped items singleton groups?", "It lets every item live in the group graph."], ["Why is item order enough inside a group?", "The item sort already respects all dependencies; restricting it to one group keeps the relative order."]], links: [["Course Schedule II", 2], ["Build a Matrix With Conditions", 5]] }
+  ]
+});
+
+</script>
+</body>
+</html>

@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HashMap Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, recorder, mount, ln } = BrainAnim;
+const M = (name, m, hl) => { const ks = [...m.keys()]; return lane(name, ks.map(k => `${k}: ${m.get(k)}`), { active: hl === undefined ? [] : [ks.indexOf(hl)] }); };
+const story = (list) => { const r = recorder(); for (const [line, say, lanes, vars] of list) r.step(line, say, lanes, vars); return r.steps; };
+// Scans an array, step(x, i, map) mutates and returns [line, say, vars]
+function scan(intro, arr, map, step, extra = () => [], end) {
+  const r = recorder(); r.step(0, intro, [lane('input', arr), M('map', map), ...extra()]);
+  arr.forEach((x, i) => { const [line, say, vars] = step(x, i); r.step(line, say, [lane('input', arr, { active: [i] }), M('map', map, x), ...extra()], vars); });
+  if (end) r.step(end[0], end[1](), [lane('input', arr), M('map', map), ...extra()]);
+  return r.steps;
+}
+
+const C_GOOD = `
+Map<Integer, Integer> seen = new HashMap<>();
+int c = 0;
+for (int x : nums) c += seen.merge(x, 1, Integer::sum) - 1;   // pairs with every earlier copy`;
+function good() { const m = new Map(); let c = 0; return scan(`Each new x forms a pair with every earlier equal x. "Pairs before me" = count so far.`, [1, 2, 3, 1, 1, 3], m, x => { const before = m.get(x) || 0; m.set(x, before + 1); c += before; return [ln(C_GOOD, 'pairs with every'), `${x}: ${before} earlier copies → +${before}.`, { pairs: c }]; }, () => [], [0, () => `Total <b>${c}</b>.`]); }
+
+const C_BAD = `
+for (int j = 0; j < nums.length; j++) {
+    int key = nums[j] - j, good = seen.getOrDefault(key, 0);   // good pair ⇔ same nums[i] − i
+    bad += j - good;                                           // all earlier minus the good ones
+    seen.put(key, good + 1);
+}`;
+function bad() { const a = [4, 1, 3, 3], m = new Map(); let b = 0; return scan(`Rearrange j − i == nums[j] − nums[i] into <b>nums[i] − i == nums[j] − j</b>: a good pair shares a key. Count the complement.`, a, m, (x, j) => { const k = x - j, g = m.get(k) || 0; b += j - g; m.set(k, g + 1); return [ln(C_BAD, 'all earlier minus'), `key ${x}−${j} = ${k}: ${j} earlier, ${g} good → +${j - g} bad.`, { bad: b }]; }, () => [], [0, () => `Answer <b>${b}</b>.`]); }
+
+const C_NICE = `
+int key = x - rev(x);            // a + rev(b) == b + rev(a)  ⇔  a − rev(a) == b − rev(b)
+res += seen.getOrDefault(key, 0);
+seen.merge(key, 1, Integer::sum);`;
+function nice() { const a = [42, 11, 1, 97], m = new Map(), rev = x => +String(x).split('').reverse().join(''); let c = 0; return scan(`Move everything about i to one side: the condition becomes <b>equal keys x − rev(x)</b>.`, a, m, x => { const k = x - rev(x), b = m.get(k) || 0; c += b; m.set(k, b + 1); return [ln(C_NICE, 'res +='), `${x} − ${rev(x)} = ${k} → +${b}.`, { pairs: c }]; }, () => [], [0, () => `Answer <b>${c}</b>.`]); }
+
+const C_TRIP = `
+for (int x : nums) {
+    right.merge(x, -1, Integer::sum);                         // x leaves the right side
+    res += left.get(2·x) × right.get(2·x);                    // x is the middle
+    left.merge(x, 1, Integer::sum);                           // x joins the left side
+}`;
+function trip() { const a = [8, 4, 2, 8, 4], L = new Map(), R = new Map(); a.forEach(x => R.set(x, (R.get(x) || 0) + 1)); let c = 0; const r = recorder(); r.step(0, `Fix the <b>middle</b> j: count 2·nums[j] on its left × on its right. Two maps slide along.`, [lane('nums', a), M('left', L), M('right', R)]); a.forEach((x, j) => { R.set(x, R.get(x) - 1); const add = (L.get(2 * x) || 0) * (R.get(2 * x) || 0); c += add; r.step(ln(C_TRIP, 'x is the middle'), `middle ${x}: left has ${L.get(2 * x) || 0}×${2 * x}, right has ${R.get(2 * x) || 0} → +${add}.`, [lane('nums', a, { active: [j] }), M('left', L), M('right', R)], { triplets: c }); L.set(x, (L.get(x) || 0) + 1); }); r.step(0, `Total <b>${c}</b> special triplets.`, [lane('nums', a), M('left', L), M('right', R)]); return r.steps; }
+
+const C_DIV = `
+for (int x : arr) cnt[((x % k) + k) % k]++;     // normalise negatives
+if (cnt[0] % 2 != 0) return false;
+for (int r = 1; r < k; r++) if (cnt[r] != cnt[k - r]) return false;`;
+function div() { return story([[0, `[1,2,3,4,5,10,6,7,8,9], k = 5. Pairs work by <b>remainder</b>: r pairs with k − r; 0 pairs with 0.`, [lane('arr', [1, 2, 3, 4, 5, 10, 6, 7, 8, 9])]], [ln(C_DIV, 'normalise negatives'), `Remainder counts: r0:2, r1:2, r2:2, r3:2, r4:2. ((x % k) + k) % k handles negative numbers.`, [lane('cnt[r]', [2, 2, 2, 2, 2], { showIdx: true })]], [ln(C_DIV, 'cnt[r] != cnt[k - r]'), `r1 = r4, r2 = r3, r0 even → <b>true</b>. (Same idea as Pair Sum Divisibility in HashSet.)`, [lane('cnt[r]', [2, 2, 2, 2, 2], { showIdx: true, done: [0, 1, 2, 3, 4] })]]]); }
+
+const C_DBL = `
+TreeMap ordered by |x| (smallest absolute value first)
+for (int x : cnt.keySet()) {
+    int c = cnt.get(x);  if (c == 0) continue;
+    int need = cnt.getOrDefault(2 * x, 0);
+    if (need < c) return false;          // every x must find a 2x
+    cnt.put(2 * x, need - c);
+}`;
+function dbl() { return story([[0, `[4,−2,2,−4]. The element with the smallest |x| can only be the <b>smaller half</b> of a pair, so match it with 2x first.`, [lane('sorted by |x|', [-2, 2, -4, 4])]], [ln(C_DBL, 'every x must find'), `−2 takes −4, 2 takes 4 → all matched → <b>true</b>.`, [lane('pairs', ['(−2, −4)', '(2, 4)'], { done: [0, 1] })]]]); }
+
+const C_BTF = `
+Arrays.sort(a);
+for (int i ...) {
+    long ways = 1;                                     // a single-node tree
+    for (int j < i) if (a[i] % a[j] == 0 && dp has a[i] / a[j])
+        ways += dp[a[j]] * dp[a[i] / a[j]];            // left child × right child
+    dp.put(a[i], ways);
+}`;
+function btf() { return story([[0, `[2,4,5,10]. Root x can have children (a, b) with a·b = x. Count trees by root, smallest first.`, [lane('sorted', [2, 4, 5, 10])]], [ln(C_BTF, 'left child × right child'), `dp[2]=1, dp[4]=1+dp2·dp2=2, dp[5]=1, dp[10]=1+dp2·dp5+dp5·dp2=3.`, [lane('dp', ['2:1', '4:2', '5:1', '10:3'])]], [0, `Total 1+2+1+3 = <b>7</b>.`, [lane('answer', [7], { done: [0] })]]]); }
+
+const C_BULL = `
+if (s == g) { bulls++; continue; }
+if (cnt[s]++ < 0) cows++;      // the guess already offered this digit
+if (cnt[g]-- > 0) cows++;      // the secret already offered this digit`;
+function bull() { return story([[0, `secret 1807, guess 7810. Same position = bull. Others: a shared counter (secret +1, guess −1) — when they cancel, it is a cow.`, [lane('secret', [1, 8, 0, 7]), lane('guess', [7, 8, 1, 0])]], [ln(C_BULL, 'bulls++'), `Position 1: 8 = 8 → 1 bull.`, [lane('secret', [1, 8, 0, 7], { done: [1] })]], [ln(C_BULL, 'cows++'), `1, 0, 7 all appear on both sides elsewhere → 3 cows → <b>"1A3B"</b>.`, [lane('result', ['1A3B'], { done: [0] })]]]); }
+
+const C_EQ2 = `
+for (int i = 0; i < n; i++) {
+    cnt[i % 2][s1.charAt(i) - 'a']++;     // swaps keep the index parity
+    cnt[i % 2][s2.charAt(i) - 'a']--;
+}
+all counts must be 0`;
+function eq2() { return story([[0, `Swaps with j − i even never change a character's <b>parity class</b>, and inside a class any order is reachable.`, [lane('s1', [...'abcdba'], { showIdx: true }), lane('s2', [...'cabdab'], { showIdx: true })]], [ln(C_EQ2, 'keep the index parity'), `Even positions: {a,c,b} vs {c,b,a} ✓; odd: {b,d,a} vs {a,d,b} ✓ → <b>true</b>.`, [lane('even', ['a c b', 'c b a'], { done: [0, 1] }), lane('odd', ['b d a', 'a d b'], { done: [0, 1] })]]]); }
+const C_EQ1 = `
+return pairOk(s1[0], s1[2], s2[0], s2[2]) && pairOk(s1[1], s1[3], s2[1], s2[3]);`;
+function eq1() { return story([[ln(C_EQ1, 'pairOk'), `Length 4, swaps (0,2) and (1,3): each pair must match as an unordered pair. "abcd" vs "cdab": {a,c}={c,a}, {b,d}={d,b} → <b>true</b>.`, [lane('s1', [...'abcd']), lane('s2', [...'cdab'])]]]); }
+
+const C_CLOSE = `
+List<Integer> v = pos.get(nums[q]);              // sorted indices of this value
+if (sz == 1) → -1;
+int p = Collections.binarySearch(v, q);
+check v[(p+1) % sz] and v[(p-1+sz) % sz]: distance min(d, n − d) on the circle`;
+function close() { return story([[0, `[1,3,1,4,1,3,2] is circular. Group indices by value; the closest equal element is a <b>neighbour</b> in that list (with wrap-around).`, [lane('nums', [1, 3, 1, 4, 1, 3, 2], { showIdx: true }), lane('pos[1]', [0, 2, 4]), lane('pos[3]', [1, 5])]], [ln(C_CLOSE, 'on the circle'), `Query 0 (value 1): neighbours 2 (d=2) and 4 (d=4, circle 3) → <b>2</b>. Query 5 (value 3): neighbour 1 → d=4, circle 7−4=3 → <b>3</b>. Query 3 (value 4): alone → −1.`, [lane('answers', [2, -1, 3], { done: [0, 1, 2] })]]]); }
+
+const C_COV = `
+row x → [min y, max y], column y → [min x, max x]
+covered ⇔ minY[x] < y < maxY[x]  &&  minX[y] < x < maxX[y]`;
+function cov() { return story([[0, `A building is covered if there is another building left, right, above and below it. Only the <b>extremes</b> of each row and column matter.`, [grid('buildings (3×3)', [['', 'B', ''], ['B', 'B', 'B'], ['', 'B', '']])]], [ln(C_COV, 'covered'), `(2,2): row 2 spans y 1..3 and column 2 spans x 1..3 → strictly inside both → <b>1 covered</b>.`, [grid('buildings', [['', 'B', ''], ['B', '★', 'B'], ['', 'B', '']], { cls: (i, j) => (i === 1 && j === 1 ? 'done' : '') })]]]); }
+
+const C_SC2 = `
+if (lower) lastLower[c] = i;
+else if (firstUpper[c] == -1) firstUpper[c] = i;
+special ⇔ both exist && lastLower[c] < firstUpper[c]`;
+function sc2() { return story([[0, `"aaAbcBC": a letter is special if every lowercase copy comes before the first uppercase one.`, [lane('word', [...'aaAbcBC'], { showIdx: true })]], [ln(C_SC2, 'special ⇔'), `a: last lower 1 &lt; first upper 2 ✓; b: 3 &lt; 5 ✓; c: 4 &lt; 6 ✓ → <b>3</b>.`, [lane('lastLower / firstUpper', ['a 1/2', 'b 3/5', 'c 4/6'], { done: [0, 1, 2] })]]]); }
+
+const C_CSS = `
+for (char c : s.toCharArray()) cnt[c - 'a']++;
+for (char c : order.toCharArray()) while (cnt[c - 'a']-- > 0) sb.append(c);   // in custom order
+for (int c = 0; c < 26; c++) while (cnt[c]-- > 0) sb.append((char) ('a' + c));  // the rest`;
+function css() { return story([[0, `order "cba", s "abcd". Count s's letters.`, [lane('counts', ['a:1', 'b:1', 'c:1', 'd:1'])]], [ln(C_CSS, 'in custom order'), `Pour in order's sequence: c, b, a; then the rest: d → <b>"cbad"</b>.`, [lane('result', [...'cbad'], { done: [0, 1, 2] })]]]); }
+
+const C_DEST = `
+out.merge(p.get(0), 1, Integer::sum);      // has an outgoing road
+out.putIfAbsent(p.get(1), 0);
+the city with out-degree 0 is the destination`;
+function dest() { return story([[ln(C_DEST, 'outgoing road'), `Out-degree map: London 1, New York 1, Lima 1, Sao Paulo 0.`, [lane('out-degree', ['London:1', 'New York:1', 'Lima:1', 'Sao Paulo:0'], { done: [3] })]], [ln(C_DEST, 'out-degree 0'), `Destination <b>Sao Paulo</b>. (HashSet version: the set of sources.)`, [lane('answer', ['Sao Paulo'], { done: [0] })]]]); }
+
+const C_ERC = `
+Map<List<Integer>, Integer> rows: count each row by its CONTENT
+for each column: c += rows.getOrDefault(column as list, 0)`;
+function erc() { return story([[0, `Use a whole row as a <b>map key</b> (List<Integer> has value equality).`, [grid('grid', [[3, 1, 2, 2], [1, 4, 4, 5], [2, 4, 2, 2], [2, 4, 2, 2]])]], [ln(C_ERC, 'getOrDefault'), `Column 0 = [3,1,2,2] matches row 0 (×1); column 2 = [2,4,2,2] matches rows 2 and 3 (×2) → <b>3</b>.`, [grid('grid', [[3, 1, 2, 2], [1, 4, 4, 5], [2, 4, 2, 2], [2, 4, 2, 2]], { cls: (i, j) => (j === 0 || j === 2 ? 'warn' : i === 0 || i >= 2 ? 'done' : '') })]]]); }
+
+const C_BRK = `
+if (s.charAt(i) != '(') { sb.append(s.charAt(i)); continue; }
+int j = s.indexOf(')', i);
+sb.append(m.getOrDefault(s.substring(i + 1, j), "?"));   // key → value or "?"
+i = j;`;
+function brk() { return story([[0, `"(name)is(age)yearsold" with knowledge {name: bob, age: two}.`, [lane('s', ['(name)', 'is', '(age)', 'yearsold'])]], [ln(C_BRK, 'key → value'), `Replace each bracket with its value (or "?") → <b>bobistwoyearsold</b>.`, [lane('result', ['bob', 'is', 'two', 'yearsold'], { done: [0, 2] })]]]); }
+
+const C_PAT = `
+static String normal(String s) {            // "first-seen index" form
+    for (char c : s) sb.append('a' + first.computeIfAbsent(c, k -> first.size()));
+}
+keep words with normal(word) == normal(pattern)`;
+function pat() { return story([[0, `Rename every letter by the order it first appears: "mee" → "abb", "abb" → "abb".`, [lane('words', ['abc', 'deq', 'mee', 'aqq', 'dkd', 'ccc'])]], [ln(C_PAT, 'first-seen index'), `Normal forms: abc, abc, abb, abb, aba, aaa. Pattern "abb" → <b>[mee, aqq]</b>.`, [lane('normal form', ['abc', 'abc', 'abb', 'abb', 'aba', 'aaa'], { done: [2, 3] })]]]); }
+
+const C_PLAY = `
+losses.putIfAbsent(winner, 0);
+losses.merge(loser, 1, Integer::sum);       // TreeMap → sorted output
+zero = losses == 0, one = losses == 1`;
+function play() { return story([[ln(C_PLAY, 'TreeMap'), `Track losses per player (winners with 0). TreeMap keeps players sorted.`, [lane('losses', ['1:0', '2:0', '3:2', '4:1', '5:1', '6:2', '7:1', '8:1', '9:2', '10:0'])]], [ln(C_PLAY, 'zero ='), `→ <b>[[1,2,10], [4,5,7,8]]</b>.`, [lane('zero losses', [1, 2, 10], { done: [0, 1, 2] }), lane('one loss', [4, 5, 7, 8], { done: [0, 1, 2, 3] })]]]); }
+
+const C_SUB = `
+1s: use an odd count of 1s (1, 1, 1 …)
+for other x: while cnt[cur] >= 2 { len += 2; cur = cur * cur; }    // climb x, x², x⁴ …
+len += cnt has cur ? 1 : -1                                        // the peak needs one copy`;
+function sub() { return story([[0, `Pattern x, x², x⁴, …, peak, …, x², x. Each non-peak level needs <b>two</b> copies.`, [lane('nums', [5, 4, 1, 2, 2])]], [ln(C_SUB, 'climb'), `x = 2: two 2s → climb to 4 (one copy = peak) → [2, 4, 2] length <b>3</b>.`, [lane('chain', [2, 4, 2], { done: [0, 1, 2] })]], [ln(C_SUB, 'odd count of 1s'), `1 is special: 1² = 1. Use an odd number of 1s.`, [lane('ones', [1])]]]); }
+
+const C_COL = `
+Integer old = ballColor.put(ball, color);
+if (old != null && colorCount.merge(old, -1, Integer::sum) == 0) colorCount.remove(old);
+colorCount.merge(color, 1, Integer::sum);
+res[i] = colorCount.size();                   // distinct colours in use`;
+function col() { const bc = new Map(), cc = new Map(); const q = [[1, 4], [2, 5], [1, 3], [3, 4]]; const r = recorder(); r.step(0, `Two maps: ball → colour, colour → how many balls. Distinct colours = size of the second map.`, [M('ball → colour', bc), M('colour → count', cc)]); q.forEach(([b, c]) => { const o = bc.get(b); bc.set(b, c); if (o !== undefined) { cc.set(o, cc.get(o) - 1); if (!cc.get(o)) cc.delete(o); } cc.set(c, (cc.get(c) || 0) + 1); r.step(ln(C_COL, 'distinct colours'), `ball ${b} → colour ${c}${o !== undefined ? ` (was ${o})` : ''} → <b>${cc.size}</b> colours.`, [M('ball → colour', bc, b), M('colour → count', cc, c)]); }); return r.steps; }
+
+const C_JUDGE = `
+for (int[] t : trust) { score[t[0]]--; score[t[1]]++; }    // trusting costs, being trusted pays
+the judge has score n − 1`;
+function judge() { return story([[ln(C_JUDGE, 'trusting costs'), `n = 3, trust [1→3, 2→3]. Score: 1: −1, 2: −1, 3: +2.`, [lane('score', [-1, -1, 2], { showIdx: true })]], [ln(C_JUDGE, 'n − 1'), `Score 2 = n − 1 → judge <b>3</b>.`, [lane('score', [-1, -1, 2], { done: [2] })]]]); }
+
+const C_HAND = `
+while (!cnt.isEmpty()) {
+    int start = cnt.firstKey();                   // the smallest card MUST start a group
+    for (int v = start; v < start + groupSize; v++) consume one v (fail if missing);
+}`;
+function hand() { const m = new Map([[1, 1], [2, 2], [3, 2], [4, 1], [6, 1], [7, 1], [8, 1]]); return story([[0, `[1,2,3,6,2,3,4,7,8], groupSize 3. The <b>smallest</b> remaining card cannot be in the middle of a group, so it starts one.`, [M('TreeMap counts', m)]], [ln(C_HAND, 'smallest card'), `1 → take 1,2,3. Then 2 → take 2,3,4. Then 6 → 6,7,8 → <b>true</b>.`, [lane('groups', ['1 2 3', '2 3 4', '6 7 8'], { done: [0, 1, 2] })]]]); }
+
+const C_ISO = `
+if (st[a] == 0 && ts[b] == 0) { st[a] = b; ts[b] = a; }      // new pairing
+else if (st[a] != b || ts[b] != a) return false;               // conflict either way`;
+function iso() { return story([[0, `"paper" vs "title": a one-to-one letter mapping must hold in <b>both</b> directions.`, [lane('s', [...'paper']), lane('t', [...'title'])]], [ln(C_ISO, 'new pairing'), `p↔t, a↔i, e↔l, r↔e consistent → <b>true</b>. "badc"/"baba": d→b conflicts with a→b → false.`, [lane('pairs', ['p↔t', 'a↔i', 'e↔l', 'r↔e'], { done: [0, 1, 2, 3] })]]]); }
+
+const C_COUP = `
+valid ⇔ isActive && businessLine ∈ {electronics, grocery, pharmacy, restaurant}
+         && code non-empty && code matches [A-Za-z0-9_]+
+sort by (business line rank, code)`;
+function coup() { return story([[ln(C_COUP, 'valid ⇔'), `"SAVE20"/restaurant ✓, ""/grocery ✗ (empty), "PHARMA5"/pharmacy ✓, "SAVE@20" ✗ (@).`, [lane('codes', ['SAVE20', '""', 'PHARMA5', 'SAVE@20'], { done: [0, 2], bad: [1, 3] })]], [ln(C_COUP, 'sort by'), `pharmacy ranks before restaurant → <b>[PHARMA5, SAVE20]</b>.`, [lane('result', ['PHARMA5', 'SAVE20'], { done: [0, 1] })]]]); }
+
+const C_LUCKY = `
+for (int x : arr) cnt[x]++;
+for (int v = 500; v >= 1; v--) if (cnt[v] == v) return v;   // largest first`;
+function lucky() { return story([[ln(C_LUCKY, 'largest first'), `[1,2,2,3,3,3]: 1 occurs once, 2 twice, 3 three times → all lucky; scan from the top → <b>3</b>.`, [lane('value:count', ['1:1', '2:2', '3:3'], { done: [2] })]]]); }
+
+const C_DOM = `
+int key = Math.min(d[0], d[1]) * 10 + Math.max(d[0], d[1]);   // [1,2] and [2,1] → 12
+pairs += cnt[key]++;`;
+function dom() { const a = ['[1,2]', '[1,2]', '[1,1]', '[1,2]', '[2,2]'], keys = [12, 12, 11, 12, 22], m = new Map(); let p = 0; const r = recorder(); r.step(0, `Normalise each domino to (min, max) so [1,2] and [2,1] share a key.`, [lane('dominoes', a)]); keys.forEach((k, i) => { const b = m.get(k) || 0; p += b; m.set(k, b + 1); r.step(ln(C_DOM, 'pairs +='), `${a[i]} → key ${k}: +${b}.`, [lane('dominoes', a, { active: [i] }), M('counts', m, k)], { pairs: p }); }); r.step(0, `Total <b>${p}</b> equivalent pairs.`, [lane('dominoes', a), M('counts', m)]); return r.steps; }
+
+const C_LBS = `
+case 1: one letter → longest run
+case 2: two letters a,b (segments without the third) → first index of each (ca − cb)
+case 3: all three → first index of each key (ca − cb, ca − cc)
+equal key seen at j < i  ⇒  s[j+1..i] is balanced`;
+function lbs() { return story([[0, `"abbac": balanced = every letter present appears equally often. Split into cases by <b>which</b> letters appear.`, [lane('s', [...'abbac'], { showIdx: true })]], [ln(C_LBS, 'case 2'), `Letters a,b only (stop at c): prefix diff a−b: 0,1,0,−1,0 → diff 0 first at −1, again at index 3 → "abba" length 4.`, [lane('a−b', [1, 0, -1, 0], { showIdx: true, done: [3] })]], [ln(C_LBS, 'equal key'), `Answer <b>4</b>. Same trick as "equal 0s and 1s": equal difference ⇒ the part between is balanced.`, [lane('answer', [4], { done: [0] })]]]); }
+
+const C_LCS = `
+for (int x : seen.keySet()) {
+    if (seen.containsKey(x - 1)) continue;          // not the start of a run
+    int len = 1;
+    while (seen.containsKey(x + len)) len++;
+    best = Math.max(best, len);
+}`;
+function lcs() { return story([[ln(C_LCS, 'not the start'), `[100,4,200,1,3,2]: only 100, 200 and 1 have no predecessor → only they start walking.`, [lane('starts', [100, 200, 1], { warn: [2] })]], [ln(C_LCS, 'while'), `1 → 2 → 3 → 4 → length <b>4</b>.`, [lane('run', [1, 2, 3, 4], { done: [0, 1, 2, 3] })]]]); }
+
+const C_LPW = `
+for (String w : words) {
+    String rev = reverse(w);
+    if (waiting.get(rev) > 0) { len += 4; waiting.merge(rev, -1, Integer::sum); }   // pair found
+    else waiting.merge(w, 1, Integer::sum);
+}
++2 if a leftover "xx" word exists (it can sit in the middle)`;
+function lpw() { const w = ['lc', 'cl', 'gg'], m = new Map(); let len = 0; const r = recorder(); r.step(0, `Pair each word with its reverse on the opposite side; one self-palindrome ("gg") can sit in the middle.`, [lane('words', w)]); w.forEach((x, i) => { const rv = x[1] + x[0]; if ((m.get(rv) || 0) > 0) { len += 4; m.set(rv, m.get(rv) - 1); } else m.set(x, (m.get(x) || 0) + 1); r.step(ln(C_LPW, rv === x ? 'waiting.merge(w' : 'pair found'), `${x} → length ${len}.`, [lane('words', w, { active: [i] }), M('waiting', m)]); }); r.step(ln(C_LPW, 'middle'), `"gg" left over → +2 → <b>6</b> ("lc gg cl").`, [lane('palindrome', ['lc', 'gg', 'cl'], { done: [0, 1, 2] })]); return r.steps; }
+
+const C_MIR = `
+for (int j = 0; j < nums.length; j++) {
+    Integer i = lastRev.get(nums[j]);          // did an earlier number reverse into me?
+    if (i != null) best = Math.min(best, j - i);
+    lastRev.put(reverse(nums[j]), j);          // latest index wins (closest)
+}`;
+function mir() { const a = [12, 21, 45, 33, 54], m = new Map(); let best = Infinity; return scan(`Store each number's <b>reverse</b> with its latest index; a later number equal to a stored reverse is a mirror pair.`, a, m, (x, j) => { const i = m.get(x); if (i !== undefined) best = Math.min(best, j - i); m.set(+String(x).split('').reverse().join(''), j); return [ln(C_MIR, i !== undefined ? 'best = Math.min' : 'latest index'), i !== undefined ? `${x} matches index ${i} → distance ${j - i}.` : `store reverse(${x}).`, { best: best === Infinity ? '—' : best }]; }, () => [], [0, () => `Answer <b>${best}</b>.`]); }
+
+const C_THREE = `
+l.add(k);                                   // indices of nums[k]
+if (l.size() >= 3) best = Math.min(best, k - l.get(l.size() - 3));   // 3 consecutive copies
+return 2 * best;                            // |i−j| + |j−k| + |k−i| = 2(k−i)`;
+function three() { return story([[0, `[1,2,1,1,3]. The distance of i<j<k is |i−j|+|j−k|+|k−i| = <b>2(k − i)</b>, so only three consecutive occurrences matter.`, [lane('nums', [1, 2, 1, 1, 3], { showIdx: true })]], [ln(C_THREE, '3 consecutive'), `Value 1 at 0, 2, 3 → k − i = 3 → <b>6</b>.`, [lane('nums', [1, 2, 1, 1, 3], { showIdx: true, done: [0, 2, 3] })]]]); }
+
+const C_SPLIT = `
+Boyer–Moore: cand, votes → the dominant element
+for (int i = 0; i < n - 1; i++) {
+    if (nums.get(i) == cand) left++;
+    if (left * 2 > i + 1 && (total - left) * 2 > n - i - 1) return i;   // dominant on both sides
+}`;
+function split() { return story([[ln(C_SPLIT, 'Boyer–Moore'), `[2,1,3,1,1,1,7,1,2,1]: the dominant element (Boyer–Moore vote) is 1 (6 of 10). Only it can dominate both halves.`, [lane('nums', [2, 1, 3, 1, 1, 1, 7, 1, 2, 1], { showIdx: true })]], [ln(C_SPLIT, 'dominant on both'), `Split after index 4: left [2,1,3,1,1] has 3 of 5 ones ✓, right has 3 of 5 ✓ → <b>4</b>.`, [lane('nums', [2, 1, 3, 1, 1, 1, 7, 1, 2, 1], { showIdx: true, done: [0, 1, 2, 3, 4] })]]]); }
+
+const C_P1 = `
+for (int i = 0; i < word.length(); i++) pushes += i / 8 + 1;   // 8 keys per "layer"`;
+function p1() { return story([[ln(C_P1, '8 keys per'), `8 keys (2..9). Distinct letters: the first 8 cost 1 push, the next 8 cost 2… "xycdefghij" (10 letters) → 8·1 + 2·2 = <b>12</b>.`, [lane('cost per letter', [1, 1, 1, 1, 1, 1, 1, 1, 2, 2])]]]); }
+const C_P2 = `
+Arrays.sort(cnt);                                             // frequencies
+for (int i = 0; i < 26; i++) pushes += cnt[25 - i] * (i / 8 + 1);   // most frequent get cheap slots`;
+function p2() { return story([[ln(C_P2, 'most frequent'), `With repeats, give the <b>most frequent</b> letters the 1-push slots (greedy by frequency).`, [lane('sorted counts → cost', ['i:6→1', 'a:2→1', '…', '9th→2'])]]]); }
+
+const C_NB = `
+static boolean balanced(int x) { every digit d occurs exactly d times }
+precompute ALL balanced numbers ≤ 1224444 once, then binary-search the first > n`;
+function nb() { return story([[0, `Balanced: digit d occurs exactly d times (22, 122, 212, 221, 333, 1333 …). Only a few hundred exist below 1224444.`, [lane('balanced numbers', [1, 22, 122, 212, 221, 333, 1333, 3133])]], [ln(C_NB, 'binary-search'), `n = 1000 → first balanced > 1000 = <b>1333</b>.`, [lane('balanced numbers', [1, 22, 122, 212, 221, 333, 1333, 3133], { done: [6] })]]]); }
+
+const C_MS = `
+waiting[c] = words whose NEXT needed letter is c
+for (char c : s) {
+    take bucket waiting[c], clear it
+    each word advances one letter: finished → count, else move to waiting[next letter]
+}`;
+function ms() { return story([[0, `s = "abcde", words a, bb, acd, ace. Instead of scanning s per word, put each word in a <b>bucket by the letter it is waiting for</b>.`, [lane('waiting', ['a: [a, acd, ace]', 'b: [bb]'])]], [ln(C_MS, 'advances one letter'), `'a' arrives: "a" done; acd → wait c; ace → wait c. 'b': bb → wait b. 'c': acd → d, ace → e. 'd': acd done. 'e': ace done.`, [lane('done', ['a', 'acd', 'ace'], { done: [0, 1, 2] })]], [0, `Answer <b>3</b>, one pass over s.`, [lane('answer', [3], { done: [0] })]]]); }
+
+const C_PPM = `
+rev = map(reversed word → index)
+for each word w and each cut: left = w[0..cut), right = w[cut..)
+    left is a reversed word && right is a palindrome  →  pair (i, j)
+    right is a reversed word && left is a palindrome  →  pair (j, i)`;
+function ppm() { return story([[0, `Words abcd, dcba, lls, s, sssll. Store every word <b>reversed</b> in a map.`, [lane('reversed', ['dcba→0', 'abcd→1', 'sll→2', 's→3', 'llsss→4'])]], [ln(C_PPM, 'right is a palindrome'), `"lls" cut "ll|s": right "s" is a reversed word (3) and left "ll" is a palindrome → "s"+"lls" → [3, 2].`, [lane('pairs', ['[0,1]', '[1,0]', '[3,2]', '[2,4]'], { done: [2] })]]]); }
+
+const C_RAB = `
+for each answer x with count c: groups = ceil(c / (x + 1)), each group has x + 1 rabbits`;
+function rab() { return story([[ln(C_RAB, 'groups'), `[1,1,2]: two rabbits say "1 other" → one group of 2. One says "2 others" → a group of 3 (2 unseen). Total <b>5</b>.`, [lane('answer : count → rabbits', ['1:2 → 2', '2:1 → 3'], { done: [0, 1] })]]]); }
+
+const C_RED = `
+count every letter across all words; each count must be divisible by words.length`;
+function red() { return story([[ln(C_RED, 'divisible'), `["abc","aabc","bc"]: a:3, b:3, c:3, n = 3 → every count divisible → <b>true</b>.`, [lane('counts', ['a:3', 'b:3', 'c:3'], { done: [0, 1, 2] })]]]); }
+
+const C_RES = `
+adjacency map from the pairs; an END has exactly one neighbour
+res[0] = end, res[1] = its neighbour;
+res[i] = the neighbour of res[i-1] that is not res[i-2]`;
+function res() { return story([[ln(C_RES, 'END has exactly one'), `pairs [2,1],[3,4],[3,2]: adj 1:{2}, 2:{1,3}, 3:{4,2}, 4:{3}. Ends: 1 and 4.`, [lane('adjacency', ['1:[2]', '2:[1,3]', '3:[4,2]', '4:[3]'], { done: [0, 3] })]], [ln(C_RES, 'not res[i-2]'), `Walk from 1, never stepping back → <b>[1,2,3,4]</b>.`, [lane('result', [1, 2, 3, 4], { done: [0, 1, 2, 3] })]]]); }
+
+const C_TC = `
+long[] cnt per letter
+each round: nx[c + 1] = cnt[c]; nx[0] = cnt[25]; nx[1] += cnt[25];   // 'z' → "ab"`;
+function tc() { return story([[0, `"abcyy", t = 2. The string grows; its <b>letter counts</b> stay 26 numbers.`, [lane('counts', ['a:1', 'b:1', 'c:1', 'y:2'])]], [ln(C_TC, "'z' → \"ab\""), `Round 1: b,c,d,z,z. Round 2: c,d,e and each z → "ab" → length 3 + 4 = <b>7</b>.`, [lane('length', [5, 5, 7], { done: [2] })]]]); }
+
+const C_UO = `
+counts = map(value → occurrences); unique ⇔ new HashSet<>(counts.values()).size() == counts.size()`;
+function uo() { return story([[ln(C_UO, 'unique ⇔'), `[1,2,2,1,1,3]: counts 1→3, 2→2, 3→1 → all different → <b>true</b>.`, [lane('counts', ['1:3', '2:2', '3:1'], { done: [0, 1, 2] })]]]); }
+
+const C_ALIEN = `
+rank[order[i]] = i;
+compare adjacent words: first differing letter decides by rank; else the shorter word comes first`;
+function alien() { return story([[0, `order "worldabc…". Only <b>adjacent</b> words need checking.`, [lane('words', ['word', 'world', 'row'])]], [ln(C_ALIEN, 'first differing'), `"word" vs "world": first difference d vs l; rank(l)=3 &lt; rank(d)=4 → "world" should come first → <b>false</b>.`, [lane('word / world', ['w', 'o', 'r', 'd|l'], { bad: [3] })]]]); }
+
+const C_VOW = `
+exact set → first word per lowercase key → first word per devowelled key ("k*t*")`;
+function vow() { return story([[0, `Three maps in priority order: exact, case-insensitive, vowel-insensitive (vowels → *). Keep the <b>first</b> word for each key.`, [lane('keys', ['KiTe → kite → k*t*', 'kite → kite → k*t*', 'hare → hare → h*r*'])]], [ln(C_VOW, 'devowelled'), `"Kite" → case match KiTe. "keti" → k*t* → KiTe. "keet" → k**t → no match → "".`, [lane('answers', ['KiTe', 'KiTe', '""'], { done: [0, 1] })]]]); }
+
+const C_WP = `
+Integer a = first.putIfAbsent(pattern.charAt(i), i), b = first.putIfAbsent(words[i], i);
+if (!Objects.equals(a, b)) return false;     // letter and word first seen at different times`;
+function wp() { return story([[0, `"abba" vs "dog cat cat dog": each letter and each word records where it was <b>first seen</b>.`, [lane('pattern', [...'abba']), lane('words', ['dog', 'cat', 'cat', 'dog'])]], [ln(C_WP, 'first seen at different'), `a/dog both first at 0, b/cat both first at 1 → consistent → <b>true</b>. "dog dog dog dog": b first at 1 but dog first at 0 → false.`, [lane('first seen', ['a:0 dog:0', 'b:1 cat:1'], { done: [0, 1] })]]]); }
+
+const T = (name, hook, mantra, statement, code, steps, recall) => ({ name, hook, mantra, statement, anims: [{ name: 'Walkthrough', code, steps }], recall, links: [] });
+mount({
+  title: 'HashMap Animations',
+  sub: 'A HashMap remembers <b>what you have seen and how often / where</b>. Big trick: rearrange a condition about a pair (i, j) into <b>key(i) == key(j)</b>, then count equal keys as you scan.',
+  problems: [
+    T('Array of Doubled Pairs (954)', 'The smallest |x| can only be the <b>small half</b> of a pair.', 'SORT BY |x|, MATCH x WITH 2x', 'Can arr be reordered into pairs (x, 2x)?', C_DBL, dbl(), [['Why order by absolute value?', 'For negatives, 2x is further from zero too.']]),
+    T('Binary Trees With Factors (823)', 'Each root counts <b>left × right</b> combos of its factor pairs.', 'SORT, dp[x] = 1 + Σ dp[a]·dp[x/a]', 'Count binary trees where each parent = product of its children.', C_BTF, btf(), [['Why sort?', 'Factors are smaller, so their dp is ready.']]),
+    T('Bulls and Cows (299)', 'One shared counter: secret <b>deposits</b>, guess <b>withdraws</b>.', 'BULL = SAME SPOT, COW WHEN COUNTER CANCELS', 'Return "xAyB" for a guess.', C_BULL, bull(), [['Cow formula?', 'Σ min(secretCount[d], guessCount[d]) over non-bulls.']]),
+    T('Pairs Divisible by k (1497)', 'Dance partners by <b>remainder</b>.', 'r ↔ k−r, 0 EVEN', 'Can arr be split into pairs whose sums are divisible by k?', C_DIV, div(), [['Negative numbers?', '((x % k) + k) % k.']]),
+    T('Strings Equal Ops II (2840)', 'Characters can only move between positions of the <b>same parity</b>.', 'EVEN MULTISET == EVEN, ODD == ODD', 'Can s1 become s2 by swapping i, j with j − i even?', C_EQ2, eq2(), [['Why any order inside a class?', 'Adjacent same-parity swaps generate all permutations.']]),
+    T('Closest Equal Queries (3488)', 'On a <b>circular track</b>, the nearest twin is a neighbour in the sorted list of twins.', 'VALUE → SORTED INDICES, CHECK NEIGHBOURS WITH WRAP', 'Min circular distance to another index with the same value.', C_CLOSE, close(), [['Circular distance?', 'min(d, n − d).']]),
+    T('Count Covered Buildings (3531)', 'Only each row\'s and column\'s <b>extremes</b> matter.', 'ROW MIN/MAX Y, COL MIN/MAX X, STRICTLY INSIDE', 'Buildings with neighbours in all four directions.', C_COV, cov(), [['Strict?', 'Yes, a building cannot cover itself.']]),
+    T('Count Nice Pairs (1814)', 'Move all the i-stuff to one side: <b>x − rev(x)</b> must match.', 'KEY = x − rev(x), COUNT EQUAL KEYS', 'Count pairs with a + rev(b) == b + rev(a).', C_NICE, nice(), [['Mod?', '1e9+7, use long.']]),
+    T('Count Bad Pairs (2364)', 'Count the <b>good</b> ones (equal nums[i] − i) and subtract.', 'BAD = ALL − GOOD, KEY nums[i] − i', 'Count pairs with j − i ≠ nums[j] − nums[i].', C_BAD, bad(), [['Total pairs?', 'n(n−1)/2 — or add j − good per step.']]),
+    T('Count Special Triplets (3583)', 'Stand in the <b>middle</b>; count twins of 2x on each side.', 'LEFT MAP × RIGHT MAP AT EACH j', 'Count i<j<k with nums[i] = nums[k] = 2·nums[j].', C_TRIP, trip(), [['Two passes alternative?', 'Prefix counts then suffix counts.']]),
+    T('Special Characters II (3121)', 'All lowercase copies must leave <b>before the first uppercase</b> arrives.', 'LAST LOWER < FIRST UPPER', 'Count special letters.', C_SC2, sc2(), [['What to record?', 'Last lowercase index and first uppercase index.']]),
+    T('Custom Sort String (791)', 'Pour letters out of <b>count buckets</b> in the custom order.', 'COUNT, POUR IN ORDER, THEN THE REST', 'Permute s to follow order.', C_CSS, css(), [['Comparator version?', 'Sort by rank in order (unknown letters last).']]),
+    T('Destination City (HashMap)', 'The last station has <b>no outgoing train</b>.', 'OUT-DEGREE 0', 'Final destination of a path.', C_DEST, dest(), [['HashSet version?', 'Set of sources; find a "to" not in it.']]),
+    T('Equal Row and Column Pairs (2352)', 'A whole row is a <b>key</b>.', 'COUNT ROWS BY CONTENT, LOOK UP COLUMNS', 'Count (row, column) pairs with equal content.', C_ERC, erc(), [['Key type?', 'List<Integer> or a joined String.']]),
+    T('Evaluate Bracket Pairs (1807)', 'Fill in a <b>form letter</b> from a dictionary.', 'MAP, REPLACE (key) OR "?"', 'Replace bracketed keys with their values.', C_BRK, brk(), [['Missing key?', '"?".']]),
+    T('Find and Replace Pattern (890)', 'Rename letters by <b>first appearance</b>: same shape ⇔ same name.', 'NORMAL FORM EQUALITY', 'Words matching a letter pattern (bijection).', C_PAT, pat(), [['Two-map version?', 'word→pattern and pattern→word must both be consistent.']]),
+    T('Players 0 or 1 Losses (2225)', 'A <b>sorted loss sheet</b>.', 'TREEMAP LOSSES, PICK 0 AND 1', 'Players with no losses and exactly one loss.', C_PLAY, play(), [['Why putIfAbsent for winners?', 'So unbeaten players appear with 0.']]),
+    T('Max Elements in Subset (3020)', 'Climb a <b>tower of squares</b>, two copies per floor, one at the top.', 'CLIMB x→x² WHILE COUNT ≥ 2, PEAK NEEDS 1', 'Longest [x, x², …, x², x] subset.', C_SUB, sub(), [['Special case?', '1 (use an odd count).']]),
+    T('Distinct Colors (3160)', 'Two ledgers: ball → colour and colour → how many.', 'BALL→COLOR, COLOR→COUNT, SIZE', 'Distinct colours after each query.', C_COL, col(), [['Why remove zero counts?', 'size() must count only colours in use.']]),
+    T('Find the Town Judge (997)', 'Trusted by everyone, trusts nobody: score <b>n − 1</b>.', 'SCORE = IN − OUT', 'Find the judge.', C_JUDGE, judge(), [['n = 1?', 'Person 1 is the judge.']]),
+    T('Hand of Straights (846)', 'The <b>smallest card</b> must start a run.', 'TREEMAP, TAKE firstKey .. +groupSize', 'Can the hand be split into consecutive groups?', C_HAND, hand(), [['Quick rejection?', 'n % groupSize ≠ 0.']]),
+    T('Isomorphic Strings (205)', 'A <b>one-to-one</b> letter dictionary in both directions.', 'TWO MAPS, ANY CONFLICT → FALSE', 'Are s and t isomorphic?', C_ISO, iso(), [['Why two maps?', 'One direction alone allows two letters to map to the same letter.']]),
+    T('Strings Equal Ops I (2839)', 'Two independent <b>pairs</b> of slots.', 'PAIR (0,2), PAIR (1,3)', 'Length-4 version of Ops II.', C_EQ1, eq1(), [['Generalisation?', 'Ops II (parity multisets).']]),
+    T('Coupon Code Validator (3606)', 'A <b>checklist</b>, then a sort.', 'FILTER, SORT BY (LINE RANK, CODE)', 'Return valid coupon codes in order.', C_COUP, coup(), [['Validity regex?', '[A-Za-z0-9_]+.']]),
+    T('Find Lucky Integer (1394)', 'Value = its own count.', 'COUNT ARRAY, SCAN DOWN', 'Largest lucky integer or −1.', C_LUCKY, lucky(), [['Range?', 'Values ≤ 500.']]),
+    T('Equivalent Domino Pairs (1128)', 'Rotate every domino so the <b>small side</b> is first.', 'KEY = 10·min + max', 'Count equivalent domino pairs.', C_DOM, dom(), [['Why an array?', 'Keys are at most 99.']]),
+    T('Longest Balanced Substring II (3714)', 'Same difference twice ⇒ the part between is balanced.', '1 / 2 / 3 LETTER CASES, FIRST INDEX PER DIFF', 'Longest substring where all present letters appear equally often.', C_LBS, lbs(), [['Why separate cases?', 'A letter that is absent must not be forced to count 0.']]),
+    T('Longest Consecutive (HashMap)', 'Only the <b>first domino</b> starts counting.', 'START IF x−1 MISSING, WALK UP', 'Longest run of consecutive integers in O(n).', C_LCS, lcs(), [['Sort alternative?', 'O(n log n), skip duplicates.']]),
+    T('Longest Palindrome Two-Letter Words (2131)', 'Mirror pairs on both sides, one <b>symmetric word</b> in the middle.', 'PAIR WITH REVERSE (+4), ONE "xx" MIDDLE (+2)', 'Longest palindrome made by concatenating words.', C_LPW, lpw(), [['Only one middle word?', 'Yes, at most one.']]),
+    T('Mirror Pairs Distance', 'Remember each number\'s <b>mirror image</b>; a later number may match it.', 'STORE reverse(x) → LATEST INDEX', 'Min j − i with reverse(nums[i]) == nums[j].', C_MIR, mir(), [['Leading zeros?', 'reverse(120) = 21.']]),
+    T('Min Distance Three Equal (3740/3741)', 'Distance of three = <b>twice the span</b>.', 'THREE CONSECUTIVE OCCURRENCES, 2(k − i)', 'Min distance of three equal elements.', C_THREE, three(), [['Why consecutive?', 'Inner indices do not change k − i, and closer outer ones are better.']]),
+    T('Min Index Valid Split (2780)', 'The <b>dominant</b> element is the only candidate.', 'BOYER–MOORE, SWEEP LEFT COUNT', 'First index where both halves share the dominant element.', C_SPLIT, split(), [['Two-map version?', 'Move counts from right to left one element at a time.']]),
+    T('Min Pushes I (3014)', 'Eight keys = eight <b>cheap seats</b> per layer.', 'i / 8 + 1', 'Distinct letters; minimum pushes.', C_P1, p1(), [['Why 8?', 'Keys 2–9.']]),
+    T('Min Pushes II (3016)', 'Frequent letters get the <b>cheap seats</b>.', 'SORT COUNTS DESC, COST i / 8 + 1', 'Letters may repeat; minimum pushes.', C_P2, p2(), [['Greedy proof?', 'Exchange argument: swapping a frequent letter to a cheaper slot never hurts.']]),
+    T('Next Balanced Number (2048)', 'Only a few hundred <b>balanced numbers</b> exist: precompute.', 'PRECOMPUTE ≤ 1224444, BINARY SEARCH', 'Smallest balanced number > n.', C_NB, nb(), [['Upper bound?', '1224444 for n ≤ 1e6.']]),
+    T('Number of Good Pairs (1512)', 'Each newcomer shakes hands with <b>every earlier twin</b>.', 'ADD COUNT SO FAR', 'Count pairs with equal values.', C_GOOD, good(), [['Formula?', 'Σ c·(c−1)/2.']]),
+    T('Matching Subsequences (792)', 'Words <b>wait in line</b> for the letter they need next.', 'BUCKETS BY NEXT LETTER, ONE PASS OF s', 'How many words are subsequences of s?', C_MS, ms(), [['Binary search version?', 'Positions per letter; next position > prev.']]),
+    T('Palindrome Pairs (HashMap)', 'Cut each word: one part must be a palindrome, the other a <b>reversed word</b>.', 'MAP OF REVERSED WORDS, TRY EVERY CUT', 'All (i, j) with words[i] + words[j] a palindrome.', C_PPM, ppm(), [['Duplicates at cut 0 / n?', 'Use a set or skip one side at the edge.']]),
+    T('Rabbits in Forest (781)', 'An answer x means a <b>team of x + 1</b>.', 'ceil(c / (x+1)) · (x+1)', 'Minimum number of rabbits.', C_RAB, rab(), [['Answer 0?', 'Each such rabbit is its own team.']]),
+    T('Redistribute Characters (1897)', 'Free moves: just check <b>divisibility</b>.', 'COUNT % n == 0', 'Can all strings become equal?', C_RED, red(), [['Order matters?', 'No.']]),
+    T('Restore Array (1743)', 'Pairs are <b>edges of a path</b>; start at an end.', 'ADJACENCY MAP, START AT DEGREE 1, NEVER STEP BACK', 'Rebuild the array from adjacent pairs.', C_RES, res(), [['Which end?', 'Either; both orders are accepted.']]),
+    T('Total Characters After Transformations I (3335)', 'Track the <b>census</b> of letters, not the string.', '26 COUNTS, SHIFT, z → a + b', 'Length after t transformations (mod 1e9+7).', C_TC, tc(), [['Huge t?', 'Matrix power (Part II).']]),
+    T('Unique Number of Occurrences (1207)', 'Counts must be <b>all different</b>.', 'MAP COUNTS, SET OF COUNTS', 'Is every frequency unique?', C_UO, uo(), [['Check?', 'set size == map size.']]),
+    T('Alien Dictionary (953)', 'Translate the alphabet to <b>ranks</b> and compare neighbours.', 'RANK ARRAY, ADJACENT PAIRS', 'Are words sorted in the alien order?', C_ALIEN, alien(), [['Prefix case?', '"apple" after "app" is unsorted.']]),
+    T('Vowel Spellchecker (966)', 'Three <b>sieves</b> of decreasing strictness.', 'EXACT, LOWERCASE, DEVOWEL — FIRST MATCH', 'Correct each query by the spellchecker rules.', C_VOW, vow(), [['Which word to store?', 'The first one per key (putIfAbsent).']]),
+    T('Word Pattern (290)', 'Letter and word must have been <b>introduced at the same moment</b>.', 'FIRST-SEEN INDEX MUST MATCH', 'Does s follow pattern (bijection)?', C_WP, wp(), [['Length mismatch?', 'Return false.']])
+  ]
+});
+</script>
+</body>
+</html>

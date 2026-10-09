@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shortest Paths Animations</title>
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/graph-kit.js"></script>
+<script>
+const { lane, graph, grid, tree, recorder, mount, ln } = BrainAnim;
+const { range, C, EC, Q, S, A, story, adjOf } = GK;
+const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const bits = a => a.map(b => (b ? 1 : 0));
+const GR = (name, m, o = {}) => { const mark = {}; for (const k of ['ghost', 'done', 'warn', 'bad', 'active']) (o[k] || []).forEach(([a, b]) => { mark[a + ',' + b] = k; }); return grid(name, m, { cls: (r, c) => mark[r + ',' + c], tag: o.tag }); };
+const inb = (m, x, y) => x >= 0 && x < m.length && y >= 0 && y < m[0].length;
+const fm = d => (d === Infinity || d === undefined ? '∞' : d);
+
+// Generic weighted-graph Dijkstra stepper. o: name, N, E [[a,b,w]], directed, src, code, lnInit, lnPoll, lnRelax, target, intro, outro
+function dij(o) {
+  const ids = Object.keys(o.N), r = recorder(), dist = {}, done = [], pq = [[0, String(o.src)]], adj = {}, par = {};
+  ids.forEach(i => { dist[i] = Infinity; adj[i] = []; }); dist[o.src] = 0;
+  o.E.forEach(([a, b, w]) => { adj[a].push([String(b), w]); if (!o.directed) adj[b].push([String(a), w]); });
+  const view = (act, ecls) => [graph(o.name || 'graph (badge = best distance so far)', o.N, o.E, { directed: !!o.directed, cls: C({ done, active: act !== undefined ? [act] : [] }), badge: Object.fromEntries(ids.filter(i => dist[i] < Infinity).map(i => [i, dist[i]])), ecls }), Q('min-heap (dist@node)', pq.slice().sort((a, b) => a[0] - b[0]).map(x => `${x[0]}@${x[1]}`)), A('dist[]', ids.map(i => fm(dist[i])), { showIdx: false })];
+  r.step(ln(o.code, o.lnInit), o.intro || `Distance 0 for the source ${o.src}, ∞ for the rest. The heap holds (distance, node) pairs; the smallest is always settled next.`, view(), {});
+  while (pq.length) {
+    pq.sort((a, b) => a[0] - b[0]); const [d, u] = pq.shift();
+    if (d > dist[u]) { r.step(ln(o.code, o.lnPoll), `Stale heap entry ${d}@${u} (a shorter way was found already): skip.`, view(), {}); continue; }
+    done.push(u);
+    r.step(ln(o.code, o.lnPoll), `Settle ${u} at distance ${d}: no unsettled node is closer, and weights are non-negative, so ${d} is final.`, view(u), { settled: done.length });
+    for (const [v, w] of adj[u]) {
+      const nd = d + w;
+      if (nd < dist[v]) { const old = dist[v]; dist[v] = nd; par[v] = u; pq.push([nd, v]); r.step(ln(o.code, o.lnRelax), `Relax ${u} → ${v} (weight ${w}): ${d} + ${w} = ${nd} < ${fm(old)}. Update and push.`, view(u, EC({ hot: [[u, v]] })), {}); }
+      else r.step(ln(o.code, o.lnRelax), `Relax ${u} → ${v} (weight ${w}): ${nd} is not better than ${fm(dist[v])}. No change.`, view(u, EC({ ghost: [[u, v]] })), {});
+    }
+  }
+  r.step(0, o.outro || `Heap empty: every distance is final: ${ids.map(i => i + ':' + fm(dist[i])).join(', ')}.`, view(), {});
+  return { steps: r.steps, dist, par };
+}
+
+// Generic grid Dijkstra stepper. o: m (matrix), start, end, init, next(val, ci, cj, ni, nj) -> new value or null, code, lnPoll, lnRelax, title, show, intro, outro
+function gdij(o) {
+  const r = recorder(), m = o.m, best = m.map(row => row.map(() => Infinity)), done = [], pq = [[o.init, o.start[0], o.start[1]]], show = o.show || (v => fm(v)); best[o.start[0]][o.start[1]] = o.init;
+  const view = (act) => [GR(o.title || 'grid (cell shows the best value found)', m.map((row, i) => row.map((v, j) => (best[i][j] === Infinity ? '·' : show(best[i][j])))), { done, active: act ? [act] : [] }), Q('min-heap (value@(r,c))', pq.slice().sort((a, b) => a[0] - b[0]).map(x => `${show(x[0])}@(${x[1]},${x[2]})`))];
+  r.step(ln(o.code, o.lnPoll), o.intro || 'Same Dijkstra, but a node is a cell and the "distance" is whatever the problem measures. Settle the smallest value first.', view(), {});
+  while (pq.length) {
+    pq.sort((a, b) => a[0] - b[0]); const [v, i, j] = pq.shift(); if (v > best[i][j]) continue;
+    if (i === o.end[0] && j === o.end[1]) { r.step(ln(o.code, o.lnPoll), `The target cell is settled with value <b>${show(v)}</b>: no cheaper way can appear later.`, view([i, j]), {}); done.push([i, j]); return r.steps; }
+    done.push([i, j]);
+    const news = [];
+    for (const d of (o.dirs || D4)) { const x = i + d[0], y = j + d[1]; if (!inb(m, x, y)) continue; const nv = o.next(v, i, j, x, y); if (nv === null || nv === undefined) continue; if (nv < best[x][y]) { best[x][y] = nv; pq.push([nv, x, y]); news.push(`(${x},${y}) = ${show(nv)}`); } }
+    r.step(ln(o.code, o.lnRelax), `Settle (${i},${j}) = ${show(v)}. ${news.length ? 'Improved: ' + news.join(', ') + '.' : 'No neighbour improved.'}`, view([i, j]), {});
+  }
+  r.step(0, o.outro || 'Heap empty.', view(), {});
+  return r.steps;
+}
+
+const C_DIJ = `
+public int[] dijkstraHeap(int n, List<List<int[]>> adj, int source) {
+    int[] dist = new int[n];
+    Arrays.fill(dist, INF);
+    dist[source] = 0;
+    PriorityQueue<int[]> pq = new PriorityQueue<>((a, b) -> a[0] - b[0]);
+    pq.add(new int[]{0, source});
+    while (!pq.isEmpty()) {
+        int[] top = pq.poll();
+        int d = top[0], u = top[1];
+        if (d > dist[u]) continue;
+        for (int[] e : adj.get(u)) {
+            if (d + e[1] < dist[e[0]]) {
+                dist[e[0]] = d + e[1];
+                pq.add(new int[]{dist[e[0]], e[0]});
+            }
+        }
+    }
+    return dist;
+}`;
+const N5 = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2], 3: [3.2, 1], 4: [4.8, 1] };
+function dijkstra() { return dij({ N: N5, E: [[0, 1, 1], [0, 2, 6], [1, 2, 3], [1, 3, 5], [2, 3, 2], [3, 4, 1]], src: 0, code: C_DIJ, lnInit: 'dist[source] = 0', lnPoll: 'int[] top = pq.poll()', lnRelax: 'if (d + e[1] < dist[e[0]])', name: 'undirected weighted graph (badge = distance from 0)' }).steps; }
+
+const C_SPATH = `
+if (top[0] + e[1] < dist[e[0]]) {
+    dist[e[0]] = top[0] + e[1];
+    parent[e[0]] = u;                       // remember how we got here
+    pq.add(new long[]{dist[e[0]], e[0]});
+}
+...
+for (int x = n; ; x = parent[x]) {          // walk the parents back from n
+    path.addFirst(x);
+    if (parent[x] == x) break;
+}`;
+function spath() {
+  const N = { 1: [0, 1], 2: [1.6, 0], 3: [3.2, 1], 4: [1.6, 2], 5: [4.8, 0.5] }, E = [[1, 2, 2], [2, 5, 5], [2, 3, 4], [1, 4, 1], [4, 3, 3], [3, 5, 1]];
+  const res = dij({ N, E, src: 1, code: C_SPATH, lnInit: 'dist[e[0]] = ', lnPoll: 'dist[e[0]] = ', lnRelax: 'parent[e[0]] = u', name: 'graph (badge = distance from 1)', intro: 'Nodes 1..5. Dijkstra from 1, but also remember each node\'s <b>parent</b> (the node that gave its best distance).' });
+  const par = res.par, path = [5]; while (par[path[0]]) path.unshift(+par[path[0]]);
+  const r = recorder(); res.steps.forEach(s => r.steps.push(s));
+  r.step(ln(C_SPATH, 'path.addFirst(x)'), `Walk the parents back from 5: 5 ← ${par[5]} ← ${par[par[5]]} ← 1. Reverse: <b>${path.join(' → ')}</b> with total cost ${res.dist[5]}.`, [graph('shortest path', N, E, { cls: C({ done: path }), ecls: EC({ done: path.slice(1).map((v, i) => [path[i], v]) }) })], {});
+  return r.steps;
+}
+
+const C_NDT = `
+dist[k] = 0;
+pq.add(new int[]{0, k});
+while (!pq.isEmpty()) {
+    int[] top = pq.poll();
+    if (top[0] > dist[top[1]]) continue;
+    for (int[] e : adj.get(top[1])) {
+        if (top[0] + e[1] < dist[e[0]]) { dist[e[0]] = top[0] + e[1]; pq.add(new int[]{dist[e[0]], e[0]}); }
+    }
+}
+// the answer is the largest finite distance`;
+function netDelay() {
+  const N = { 1: [1.6, 0], 2: [0, 1], 3: [1.6, 2], 4: [3.2, 1], 5: [4.8, 1] }, E = [[2, 1, 1], [2, 3, 1], [3, 4, 2], [1, 4, 5], [4, 5, 1]];
+  const res = dij({ N, E, directed: true, src: 2, code: C_NDT, lnInit: 'dist[k] = 0', lnPoll: 'int[] top = pq.poll()', lnRelax: 'if (top[0] + e[1] < dist[e[0]])', name: 'signal network (directed, badge = arrival time from node 2)', intro: 'A signal starts at node k = 2 and flows along directed edges. We need the time until <b>every</b> node has it: the largest shortest distance.' });
+  const r = recorder(); res.steps.forEach(s => r.steps.push(s));
+  r.step(0, `Largest distance = <b>${Math.max(...Object.values(res.dist))}</b> (node 5). If any node stayed at ∞ the answer would be −1.`, [graph('answer', N, E, { directed: true, cls: C({ done: [1, 2, 3, 4], active: [5] }), badge: Object.fromEntries(Object.entries(res.dist)) })], {});
+  return r.steps;
+}
+
+const C_EFF = `
+PriorityQueue<int[]> pq = new PriorityQueue<>((a, b) -> a[0] - b[0]);
+pq.add(new int[]{0, 0, 0});
+while (!pq.isEmpty()) {
+    int[] top = pq.poll();
+    int e = top[0], i = top[1], j = top[2];
+    if (e > effort[i][j]) continue;
+    if (i == m - 1 && j == n - 1) return e;
+    for (int[] d : DIRS) {
+        ...
+        int next = Math.max(e, Math.abs(h[x][y] - h[i][j]));     // a path costs its biggest step
+        if (next < effort[x][y]) { effort[x][y] = next; pq.add(new int[]{next, x, y}); }
+    }
+}`;
+function effort() {
+  const h = [[1, 2, 2], [3, 8, 2], [5, 3, 5]];
+  return gdij({ m: h, start: [0, 0], end: [2, 2], init: 0, next: (v, i, j, x, y) => Math.max(v, Math.abs(h[x][y] - h[i][j])), code: C_EFF, lnPoll: 'int[] top = pq.poll()', lnRelax: 'int next = Math.max', title: 'heights [[1,2,2],[3,8,2],[5,3,5]]; cell shows the smallest possible "biggest step" to reach it', intro: 'The cost of a path is its <b>largest</b> height difference, not the sum. Dijkstra still works: replace "d + w" by "max(d, w)", which also never decreases along a path.', outro: 'Heap empty.' });
+}
+const C_SWIM = `
+public int swimInWaterDijkstra(int[][] grid) {
+    ...
+    best[0][0] = grid[0][0];
+    pq.add(new int[]{grid[0][0], 0, 0});
+    while (!pq.isEmpty()) {
+        int[] top = pq.poll();
+        if (top[1] == n - 1 && top[2] == n - 1) return top[0];
+        ...
+            int t = Math.max(top[0], grid[x][y]);          // wait until the water reaches that cell
+            if (t < best[x][y]) { best[x][y] = t; pq.add(new int[]{t, x, y}); }
+    }
+}`;
+function swim() {
+  const g = [[0, 2, 5], [1, 8, 3], [6, 7, 4]];
+  return gdij({ m: g, start: [0, 0], end: [2, 2], init: 0, next: (v, i, j, x, y) => Math.max(v, g[x][y]), code: C_SWIM, lnPoll: 'int[] top = pq.poll()', lnRelax: 'int t = Math.max', title: 'elevation grid; cell shows the earliest time you can stand on it', intro: 'At time t you can enter cells of height ≤ t. Waiting is free, so the time to reach a cell is the <b>highest cell</b> on the best path: another max-style Dijkstra.', outro: 'Heap empty.' });
+}
+const C_OBS = `
+public int minimumObstacles01Bfs(int[][] grid) {
+    ...
+    Deque<int[]> dq = new ArrayDeque<>();
+    ...
+            int nd = dist[c[0]][c[1]] + grid[x][y];          // entering an obstacle costs 1
+            if (nd < dist[x][y]) {
+                dist[x][y] = nd;
+                if (grid[x][y] == 0) dq.addFirst(new int[]{x, y});   // free move: front
+                else dq.addLast(new int[]{x, y});                   // costly move: back
+            }
+}`;
+function obstacles() {
+  const g = [[0, 1, 1], [1, 1, 0], [1, 1, 0]];
+  return gdij({ m: g, start: [0, 0], end: [2, 2], init: 0, next: (v, i, j, x, y) => v + g[x][y], code: C_OBS, lnPoll: 'Deque<int[]> dq', lnRelax: 'int nd = dist', title: 'grid (1 = obstacle); cell shows obstacles removed so far', intro: 'Edge weight = 1 for entering an obstacle, 0 for an empty cell. Weights are only 0 or 1, so a deque (0-1 BFS) can replace the heap: free moves go to the front, costly ones to the back. The settle order below is the same.', outro: 'Heap empty.' });
+}
+const C_ARROW = `
+for (int k = 0; k < 4; k++) {
+    int x = c[0] + DIRS[k][0], y = c[1] + DIRS[k][1];
+    ...
+    int cost = grid[c[0]][c[1]] == k + 1 ? 0 : 1;           // following the arrow is free, turning it costs 1
+    if (dist[c[0]][c[1]] + cost < dist[x][y]) {
+        dist[x][y] = dist[c[0]][c[1]] + cost;
+        if (cost == 0) dq.addFirst(new int[]{x, y});
+        else dq.addLast(new int[]{x, y});
+    }
+}`;
+function arrows() {
+  const g = [[1, 1, 3], [3, 2, 2], [1, 1, 4]], dirCode = (dx, dy) => (dy === 1 ? 1 : dy === -1 ? 2 : dx === 1 ? 3 : 4);
+  return gdij({ m: g, start: [0, 0], end: [2, 2], init: 0, next: (v, i, j, x, y) => v + (g[i][j] === dirCode(x - i, y - j) ? 0 : 1), code: C_ARROW, lnPoll: 'for (int k = 0; k < 4; k++)', lnRelax: 'int cost = grid', title: 'arrows 1 → 2 ← 3 ↓ 4 ↑ ; cell shows the fewest arrow changes to get there', intro: 'Every cell has an arrow. Moving along your cell\'s arrow costs 0, moving any other way costs 1 (we change that arrow). Shortest path with 0/1 weights.', outro: 'Heap empty.' });
+}
+const C_SAFE = `
+public boolean findSafeWalk(List<List<Integer>> grid, int health) {
+    ...
+    damage[0][0] = grid.get(0).get(0);
+    ...
+            int cost = grid.get(x).get(y);                   // a 1 cell hurts
+            if (damage[c[0]][c[1]] + cost < damage[x][y]) { ... }
+    ...
+    return health - damage[m - 1][n - 1] >= 1;
+}`;
+function safeWalk() {
+  const g = [[0, 1, 0, 0, 0], [0, 1, 0, 1, 0], [0, 0, 0, 1, 0]];
+  return gdij({ m: g, start: [0, 0], end: [2, 4], init: 0, next: (v, i, j, x, y) => v + g[x][y], code: C_SAFE, lnPoll: 'damage[0][0]', lnRelax: 'int cost = grid', title: 'grid (1 = unsafe cell); cell shows the least damage to get there (health 1)', intro: 'Stepping on a 1 costs one health, and we must finish with health ≥ 1. So compute the <b>least total damage</b> to the corner and compare with health − 1.', outro: 'Heap empty.' });
+}
+const C_VIS = `
+int arrive = t + 1;
+if (grid[x][y] > arrive) arrive = grid[x][y] + ((grid[x][y] - arrive) % 2);    // wait, but only in steps of 2
+if (arrive < time[x][y]) {
+    time[x][y] = arrive;
+    pq.add(new int[]{arrive, x, y});
+}`;
+function visitCell() {
+  const g = [[0, 1, 3, 2], [5, 1, 2, 5], [4, 3, 8, 6]];
+  return gdij({ m: g, start: [0, 0], end: [2, 3], init: 0, next: (v, i, j, x, y) => { let a = v + 1; if (g[x][y] > a) a = g[x][y] + ((g[x][y] - a) % 2); return a; }, code: C_VIS, lnPoll: 'int arrive = t + 1', lnRelax: 'if (arrive < time[x][y])', title: 'minimum entry times; cell shows the arrival time found', intro: 'You must move every second and cannot stand still, so if you arrive early you burn time by stepping back and forth, which wastes time <b>in pairs</b>. An early arrival is bumped to the next time of the same parity as when you could first arrive.', outro: 'Heap empty.' });
+}
+const C_LR1 = `
+int arrive = Math.max(top[0], moveTime[x][y]) + 1;     // wait until the room opens, then 1 second to move
+if (arrive < best[x][y]) { best[x][y] = arrive; pq.add(new int[]{arrive, x, y}); }`;
+function lastRoom1() {
+  const g = [[0, 4], [4, 4]];
+  return gdij({ m: g, start: [0, 0], end: [1, 1], init: 0, next: (v, i, j, x, y) => Math.max(v, g[x][y]) + 1, code: C_LR1, lnPoll: 'int arrive = Math.max', lnRelax: 'if (arrive < best[x][y])', title: 'moveTime [[0,4],[4,4]]; cell shows the earliest finish time', intro: 'A room opens at moveTime; entering it takes 1 second. You may wait, so the finish time is max(now, opening) + 1. Waiting is free and time never decreases, so Dijkstra applies.', outro: 'Heap empty.' });
+}
+const C_LR2 = `
+int cost = parity == 0 ? 1 : 2;                         // moves alternate 1 s, 2 s, 1 s, 2 s ...
+...
+int arrive = Math.max(t, moveTime[x][y]) + cost;
+if (arrive < best[x][y][1 - parity]) {
+    best[x][y][1 - parity] = arrive;
+    pq.add(new int[]{arrive, x, y, 1 - parity});
+}`;
+function lastRoom2() {
+  const r = recorder(), g = [[0, 4], [4, 4]], L = (cells, tag) => [GR('rooms (moveTime [[0,4],[4,4]])', g, { done: cells.done || [], active: cells.active || [] }), A('state (time, moves made so far mod 2)', tag, { showIdx: false })];
+  r.step(ln(C_LR2, 'int cost = parity'), 'Now the first move costs 1 second, the second 2, the third 1, … So the cost of a move depends on <b>how many moves you already made</b>: the state is (cell, parity) and each move flips the parity.', L({ active: [[0, 0]] }, ['(t=0, parity 0) at (0,0)']), {});
+  r.step(ln(C_LR2, 'int arrive = Math.max'), 'Move 1 (cost 1): to (0,1) opening at 4: arrive = max(0, 4) + 1 = <b>5</b>, new parity 1. (Same for (1,0).)', L({ done: [[0, 0]], active: [[0, 1], [1, 0]] }, ['(5, parity 1) at (0,1)', '(5, parity 1) at (1,0)']), {});
+  r.step(ln(C_LR2, 'if (arrive < best'), 'Move 2 (cost 2): to (1,1) opening at 4: arrive = max(5, 4) + 2 = <b>7</b>. The destination is settled at 7.', L({ done: [[0, 0], [0, 1], [1, 0]], active: [[1, 1]] }, ['(7, parity 0) at (1,1)']), {});
+  r.step(0, 'Answer <b>7</b> (the version with constant cost 1 gives 6). The parity makes a second copy of every cell.', L({ done: [[0, 0], [0, 1], [1, 0], [1, 1]] }, ['answer 7']), {});
+  return r.steps;
+}
+
+const C_FLT = `
+for (int round = 0; round <= k; round++) {
+    int[] next = cost.clone();                       // relax from the OLD prices only
+    for (int[] f : flights) if (cost[f[0]] != INF && cost[f[0]] + f[2] < next[f[1]]) next[f[1]] = cost[f[0]] + f[2];
+    cost = next;
+}
+return cost[dst] == INF ? -1 : cost[dst];`;
+function flights() {
+  const N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2], 3: [3.2, 1] }, F = [[0, 1, 100], [1, 2, 100], [2, 0, 100], [1, 3, 600], [2, 3, 200]], r = recorder(); let cost = [0, Infinity, Infinity, Infinity];
+  const V = (rd, ecls) => [graph(`flights (badge = cheapest price using ≤ ${rd} flights)`, N, F, { directed: true, cls: C({ active: range(0, 3).filter(i => cost[i] < Infinity) }), badge: Object.fromEntries(range(0, 3).filter(i => cost[i] < Infinity).map(i => [i, cost[i]])), ecls }), A('cost[]', cost.map(fm))];
+  r.step(ln(C_FLT, 'for (int round'), 'src = 0, dst = 3, k = 1 stop ⇒ at most 2 flights. Bellman-Ford with one round per flight: round r finds the cheapest price using at most r flights.', V(0), {});
+  for (let rd = 1; rd <= 2; rd++) { const next = cost.slice(), hot = []; F.forEach(([a, b, w]) => { if (cost[a] < Infinity && cost[a] + w < next[b]) { next[b] = cost[a] + w; hot.push([a, b]); } }); cost = next; r.step(ln(C_FLT, 'cost = next'), `Round ${rd} (flight number ${rd}): improved ${hot.map(e => e.join('→')).join(', ') || 'nothing'}. Relaxing from a <b>copy</b> keeps it to exactly one extra flight per round.`, V(rd, EC({ hot })), {}); }
+  r.step(ln(C_FLT, 'return cost[dst]'), `After 2 rounds cost[3] = <b>${cost[3]}</b> (0→1→3 costs 700; the cheaper 0→1→2→3 = 400 needs 3 flights, too many for k = 1). A plain Dijkstra would wrongly return 400.`, V(2), {});
+  return r.steps;
+}
+const C_PROB = `
+PriorityQueue<double[]> pq = new PriorityQueue<>((a, b) -> Double.compare(b[0], a[0]));   // max-heap
+pq.add(new double[]{1.0, start});
+while (!pq.isEmpty()) {
+    double[] top = pq.poll();
+    ...
+    for (double[] e : adj.get(u)) {
+        double p = top[0] * e[1];
+        if (p > best[(int) e[0]]) { best[(int) e[0]] = p; pq.add(new double[]{p, e[0]}); }
+    }
+}`;
+function maxProb() {
+  const N = { 0: [0, 1], 1: [1.6, 0], 2: [3.2, 1] }, E = [[0, 1, 0.5], [1, 2, 0.5], [0, 2, 0.2]], r = recorder(), best = [1, 0, 0], done = [];
+  const V = (act, ecls) => [graph('probabilities (badge = best chance from 0)', N, E, { cls: C({ done, active: act !== undefined ? [act] : [] }), badge: Object.fromEntries(range(0, 2).filter(i => best[i] > 0).map(i => [i, best[i]])), ecls }), A('best[]', best)];
+  r.step(ln(C_PROB, 'max-heap'), 'Chance of a path = product of edge probabilities, which can only go <i>down</i>. So it mirrors Dijkstra with a max-heap: pop the most likely node, relax by multiplying.', V(), {});
+  const order = [[0, [[1, 0.5], [2, 0.2]]], [1, [[2, 0.5]]]];
+  for (const [u, outs] of order) { done.push(u); const log = outs.map(([v, p]) => { const np = best[u] * p; const imp = np > best[v]; if (imp) best[v] = np; return `${u}→${v}: ${best[u]} × ${p} = ${np}${imp ? ' (better)' : ''}`; }); r.step(ln(C_PROB, 'double p = top[0]'), `Settle ${u} (chance ${best[u]}). ${log.join('; ')}.`, V(u, EC({ hot: outs.map(([v]) => [u, v]) })), {}); }
+  r.step(0, `Best chance 0 → 2 is <b>${best[2]}</b> via 0 → 1 → 2 (0.5 × 0.5 beats the direct 0.2). Unreachable ⇒ 0.`, V(), {});
+  return r.steps;
+}
+const C_WAYS = `
+if (nd < dist[e[0]]) {
+    dist[e[0]] = nd;
+    ways[e[0]] = ways[u];                 // strictly shorter: forget the old count
+    pq.add(new long[]{nd, e[0]});
+} else if (nd == dist[e[0]]) {
+    ways[e[0]] = (ways[e[0]] + ways[u]) % MOD;   // equally short: add the paths
+}`;
+function ways() {
+  const N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2], 3: [3.2, 1] }, E = [[0, 1, 1], [0, 2, 1], [1, 3, 1], [2, 3, 1], [1, 2, 5]], r = recorder(), dist = [0, Infinity, Infinity, Infinity], w = [1, 0, 0, 0], done = [];
+  const V = (act, ecls) => [graph('roads (badge = distance / number of shortest paths)', N, E, { cls: C({ done, active: act !== undefined ? [act] : [] }), badge: Object.fromEntries(range(0, 3).filter(i => dist[i] < Infinity).map(i => [i, `${dist[i]}/${w[i]}`])), ecls }), A('ways[]', w)];
+  r.step(ln(C_WAYS, 'if (nd < dist'), 'Dijkstra also counts shortest paths. A strictly shorter distance resets the count to the parent\'s; an equal distance adds the parent\'s count.', V(), {});
+  const seq = [[0, [[1, 1], [2, 1]]], [1, [[3, 1], [2, 5]]], [2, [[3, 1]]]];
+  for (const [u, outs] of seq) { done.push(u); const log = []; for (const [v, c] of outs) { const nd = dist[u] + c; if (nd < dist[v]) { dist[v] = nd; w[v] = w[u]; log.push(`${v}: ${nd}, ways = ${w[v]}`); } else if (nd === dist[v]) { w[v] += w[u]; log.push(`${v}: tie at ${nd}, ways = ${w[v]}`); } else log.push(`${v}: ${nd} too long`); } r.step(ln(C_WAYS, 'ways[e[0]] = (ways'), `Settle ${u}. ${log.join('; ')}.`, V(u, EC({ hot: outs.map(([v]) => [u, v]) })), {}); }
+  r.step(0, `Two shortest paths of length 2 reach node 3 (via 1 and via 2): answer <b>${w[3]}</b>. Counts stay modulo 10⁹ + 7.`, V(), {});
+  return r.steps;
+}
+const C_SEC = `
+first[1] = 0;
+...
+while (!que.isEmpty() && second[n] == Integer.MAX_VALUE) {
+    int[] cur = que.poll();
+    for (int v : adj.get(cur[0])) {
+        int steps = cur[1] + 1;
+        if (steps < first[v]) { first[v] = steps; que.add(new int[]{v, steps}); }
+        else if (steps > first[v] && steps < second[v]) { second[v] = steps; que.add(new int[]{v, steps}); }
+    }
+}
+return clock(second[n], time, change);`;
+function secondMin() {
+  const N = { 1: [0, 1], 2: [1.6, 0], 3: [1.6, 2], 4: [3.2, 1.6], 5: [4.8, 1.6] }, E = [[1, 2], [1, 3], [1, 4], [3, 4], [4, 5]], adj = adjOf(6, E, false), r = recorder(), f = Array(6).fill(Infinity), s = Array(6).fill(Infinity); f[1] = 0; let q = [[1, 0]];
+  const V = (act) => [graph('city graph (badge = fewest / second-fewest edges)', N, E, { cls: C({ active: act !== undefined ? [act] : [] }), badge: Object.fromEntries(range(1, 5).filter(i => f[i] < Infinity).map(i => [i, `${f[i]}/${fm(s[i])}`])) }), Q('queue (node, edges)', q.map(x => `${x[0]},${x[1]}`))];
+  r.step(ln(C_SEC, 'first[1] = 0'), 'Time depends on the <b>number of edges</b> walked (plus waiting at red lights), so first find the second-smallest number of edges to node 5 (strictly larger than the smallest), then convert to time. Keep two distances per node.', V(1), {});
+  while (q.length && s[5] === Infinity) { const [u, d] = q.shift(); const log = []; for (const v of adj[u]) { const st = d + 1; if (st < f[v]) { f[v] = st; q.push([v, st]); log.push(`${v}: first = ${st}`); } else if (st > f[v] && st < s[v]) { s[v] = st; q.push([v, st]); log.push(`${v}: second = ${st}`); } } r.step(ln(C_SEC, 'int steps = cur[1] + 1'), `Pop (${u}, ${d} edges). ${log.join('; ') || 'nothing new'}.`, V(u), {}); }
+  r.step(ln(C_SEC, 'return clock'), `Node 5: smallest ${f[5]} edges, second smallest <b>${s[5]}</b>. Walk those 3 edges with 3 minutes per edge and a signal that flips every 5 minutes: leave at 0 (green) → 3; leave at 3 (green) → 6; at 6 the light is red (5–10), wait until 10 → 13. Answer <b>13</b>.`, V(5), {});
+  return r.steps;
+}
+const C_ROAD = `
+for (int q = 0; q < queries.length; q++) {
+    adj.get(queries[q][0]).add(queries[q][1]);        // the new one-way road
+    ...BFS from 0...
+    answer[q] = dist[n - 1];
+}`;
+function roadAdd() {
+  const N = { 0: [0, 1], 1: [1.5, 1], 2: [3, 1], 3: [4.5, 1], 4: [6, 1] }, base = [[0, 1], [1, 2], [2, 3], [3, 4]], qs = [[2, 4], [0, 2], [0, 4]], r = recorder(), E = base.slice();
+  const bfs = () => { const d = Array(5).fill(-1); d[0] = 0; const q = [0]; while (q.length) { const u = q.shift(); E.filter(e => e[0] === u).forEach(([, v]) => { if (d[v] < 0) { d[v] = d[u] + 1; q.push(v); } }); } return d; };
+  r.step(0, 'Cities 0 → 1 → 2 → 3 → 4 in a line (distance 4). Each query adds a one-way shortcut; after each one report the shortest distance 0 → 4. Unit edges, so a fresh BFS each time is enough.', [graph('roads', N, E, { directed: true })], {});
+  for (const [u, v] of qs) { E.push([u, v]); const d = bfs(); r.step(ln(C_ROAD, 'answer[q] = dist'), `Add ${u} → ${v}. BFS distances from 0: [${d.join(', ')}]. Shortest to 4 = <b>${d[4]}</b>.`, [graph('roads after the query', N, E, { directed: true, cls: C({ done: [0, 4] }), ecls: EC({ hot: [[u, v]] }), badge: Object.fromEntries(d.map((x, i) => [i, x])) })], { answer: d[4] }); }
+  return r.steps;
+}
+const C_EDGES = `
+long[] fromStart = dijkstra(n, adj, 0), fromEnd = dijkstra(n, adj, n - 1);
+long shortest = fromStart[n - 1];
+...
+boolean forward  = fromStart[u] + w + fromEnd[v] == shortest;
+boolean backward = fromStart[v] + w + fromEnd[u] == shortest;
+answer[i] = forward || backward;`;
+function edgesSP() {
+  const E = [[0, 1, 4], [0, 2, 1], [1, 3, 2], [1, 4, 3], [1, 5, 1], [2, 3, 1], [3, 5, 3], [4, 5, 2]], N = { 0: [0, 1], 1: [2.4, 0], 2: [1.2, 2], 3: [3.6, 2], 4: [3.6, 0], 5: [5, 1] }, r = recorder();
+  const d = (src) => { const x = Array(6).fill(Infinity); x[src] = 0; for (let k = 0; k < 6; k++) E.forEach(([a, b, w]) => { if (x[a] + w < x[b]) x[b] = x[a] + w; if (x[b] + w < x[a]) x[a] = x[b] + w; }); return x; };
+  const a = d(0), b = d(5);
+  r.step(0, 'Which edges lie on <i>some</i> shortest path from 0 to 5? Run Dijkstra from <b>both ends</b>.', [graph('graph', N, E, {})], {});
+  r.step(ln(C_EDGES, 'long[] fromStart'), `From 0: [${a.join(', ')}]. From 5: [${b.join(', ')}]. Shortest 0→5 = ${a[5]}.`, [graph('distance from 0 (badge)', N, E, { cls: C({ active: [0] }), badge: Object.fromEntries(a.map((x, i) => [i, x])) }), graph('distance from 5 (badge)', N, E, { cls: C({ active: [5] }), badge: Object.fromEntries(b.map((x, i) => [i, x])) })], {});
+  const on = [];
+  E.forEach(([u, v, w], i) => { const ok = a[u] + w + b[v] === a[5] || a[v] + w + b[u] === a[5]; if (ok) on.push([u, v]); r.step(ln(C_EDGES, 'answer[i]'), `Edge ${u}–${v} (${w}): ${a[u]} + ${w} + ${b[v]} = ${a[u] + w + b[v]}, reverse ${a[v]} + ${w} + ${b[u]} = ${a[v] + w + b[u]}; shortest is ${a[5]} → <b>${ok ? 'on a shortest path' : 'not on one'}</b>.`, [graph('edges on shortest paths', N, E, { ecls: EC({ done: on, bad: [[u, v]].filter(() => !ok) }) })], {}); });
+  return r.steps;
+}
+
+const C_MOD = `
+long[] minimum = dijkstra(n, edges, source, null);            // every -1 edge counts as 1
+long delta = target - minimum[destination];
+if (delta < 0) return new int[0][];
+...second Dijkstra: a -1 edge u -> v is fixed on first use at
+        w = Math.max(1, delta + minimum[v] - dist[u]);
+...
+if (second[destination] != target) return new int[0][];`;
+function modifyG() {
+  const N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2], 3: [3.2, 1] }, r = recorder(), q = (e0, e1) => [[0, 1, e0], [1, 3, e1], [0, 2, 9], [2, 3, 9]];
+  const V = (name, a, b, cls, ecls) => [graph(name, N, q(a, b), { cls, ecls })];
+  r.step(0, 'Edges 0–1 and 1–3 are modifiable (?). Edges 0–2 and 2–3 are fixed at 9 each. Make the shortest 0 → 3 equal target = 5.', V('edges (? = modifiable)', '?', '?', C({})), {});
+  r.step(ln(C_MOD, 'long[] minimum'), 'Pass 1: every ? counts as 1. Shortest 0 → 3 = 1 + 1 = 2 ≤ 5, so the target is reachable by raising weights: delta = 5 − 2 = 3. (If this minimum were above the target, the answer would be impossible.)', V('pass 1 (? = 1): badge = distance', 1, 1, C({ done: [0, 1, 3] })), {});
+  r.step(ln(C_MOD, 'w = Math.max'), 'Pass 2, edge 0 → 1 met first: w = max(1, delta + minimum[1] − dist[0]) = 3 + 1 − 0 = <b>4</b>. The slack is spent here, so dist[1] = 4.', V('pass 2', 4, '?', C({ active: [1], done: [0] }), EC({ hot: [[0, 1]] })), {});
+  r.step(ln(C_MOD, 'w = Math.max'), 'Edge 1 → 3: w = max(1, 3 + minimum[3] − dist[1]) = 3 + 2 − 4 = 1. Path 0–1–3 = 4 + 1 = <b>5</b> = target, and the fixed route costs 18 > 5.', V('pass 2', 4, 1, C({ done: [0, 1, 3] }), EC({ done: [[0, 1], [1, 3]] })), {});
+  r.step(ln(C_MOD, 'if (second[destination]'), 'Final check: shortest = 5 equals target, so return the edges with ? replaced (4 and 1). Any −1 edge never used would be set to 2·10⁹ so it cannot create a shorter path.', V('answer', 4, 1, C({ done: [0, 1, 3] })), {});
+  return r.steps;
+}
+const C_NRP = `
+int low = Integer.MAX_VALUE, high = 0;       // candidate scores = edge costs
+...
+while (low <= high) {
+    int mid = low + (high - low) / 2;
+    if (feasible(mid, n, k, adj)) { answer = mid; low = mid + 1; }   // can we keep every edge >= mid within budget k?
+    else high = mid - 1;
+}`;
+function netRecovery() {
+  const N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2], 3: [3.2, 1] }, E = [[0, 1, 5], [1, 3, 10], [0, 2, 3], [2, 3, 4]], r = recorder(), k = 10;
+  r.step(0, 'Score of a path = its cheapest edge; total cost must be ≤ k = 10. Maximise the score. "Is score ≥ s possible?" is monotone in s, so binary search s and answer with Dijkstra on edges ≥ s.', [graph('DAG (all nodes online)', N, E, { directed: true })], {});
+  let low = 3, high = 10, ans = -1;
+  while (low <= high) { const mid = (low + high) >> 1; const usable = E.filter(e => e[2] >= mid); const adj = {}; usable.forEach(([a, b, w]) => (adj[a] = adj[a] || []).push([b, w])); const d = [0, 1e9, 1e9, 1e9]; for (let t = 0; t < 4; t++) usable.forEach(([a, b, w]) => { if (d[a] + w < d[b]) d[b] = d[a] + w; }); const ok = d[3] <= k;
+    r.step(ln(C_NRP, 'if (feasible'), `score ≥ ${mid}: usable edges ${usable.map(e => e[0] + '→' + e[1]).join(', ') || 'none'}; cheapest route cost to 3 = ${d[3] >= 1e9 ? '∞' : d[3]} ${ok ? '≤ 10: feasible, try higher' : '> 10 or unreachable: too high'}.`, [graph(`edges with cost ≥ ${mid}`, N, E, { directed: true, ecls: EC({ done: usable.map(e => [e[0], e[1]]), ghost: E.filter(e => e[2] < mid).map(e => [e[0], e[1]]) }) }), A('low, high, mid', [low, high, mid])], { low, high, mid });
+    if (ok) { ans = mid; low = mid + 1; } else high = mid - 1; }
+  r.step(0, `Best score <b>${ans}</b> (path 0 → 2 → 3 with edges 3 and 4, cost 7). The path through the big edges costs 15 > 10.`, [graph('answer', N, E, { directed: true, cls: C({ done: [0, 2, 3] }), ecls: EC({ done: [[0, 2], [2, 3]] }) })], { answer: ans });
+  return r.steps;
+}
+const C_REV = `
+for (int[] e : edges) {
+    adj.get(e[0]).add(new int[]{e[1], e[2]});          // normal edge u -> v costs w
+    adj.get(e[1]).add(new int[]{e[0], 2 * e[2]});      // using it backwards v -> u costs 2w
+}
+...then ordinary Dijkstra from 0 to n - 1`;
+function reversals() {
+  const N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2], 3: [3.2, 1] }, E = [[0, 1, 3], [3, 1, 1], [2, 3, 4], [0, 2, 2]];
+  const aug = []; E.forEach(([a, b, w]) => { aug.push([a, b, w]); aug.push([b, a, 2 * w]); });
+  const res = dij({ N, E: aug, directed: true, src: 0, code: C_REV, lnInit: 'for (int[] e : edges)', lnPoll: 'adj.get(e[0])', lnRelax: 'adj.get(e[1])', name: 'edges plus their reversed copies (cost 2w)', intro: 'A one-way road u → v may be driven backwards at double cost. So give every edge a twin v → u of weight 2w and run plain Dijkstra from 0.' });
+  return res.steps;
+}
+const C_FREE = `
+for (int next = 0; next < n; next++) {
+    if (ring.charAt(next) != key.charAt(idx)) continue;
+    int gap = Math.abs(next - pos), steps = Math.min(gap, n - gap) + 1;     // rotate the short way, then press
+    if (d + steps < dist[next][idx + 1]) { dist[next][idx + 1] = d + steps; pq.add(new int[]{d + steps, next, idx + 1}); }
+}`;
+function freedom() {
+  const ring = 'godding', key = 'gd', n = 7, r = recorder();
+  const cd = (a, b) => Math.min(Math.abs(a - b), n - Math.abs(a - b));
+  r.step(0, 'Ring "godding" (positions 0..6), spell "gd". Pointer at 0. Each letter can sit at several positions, so the state is (ring position, letters spelled).', [A('ring', ring.split(''), { showIdx: true, active: [0] })], {});
+  r.step(ln(C_FREE, 'if (ring.charAt'), 'Letter "g" is at positions 0 and 6. Cost to bring each to 12 o\'clock = shorter way round + 1 press: position 0 costs 0 + 1 = 1; position 6 costs 1 + 1 = 2.', [A('ring', ring.split(''), { showIdx: true, done: [0, 6] }), A('cost to spell g at that spot', [1, 2], { showIdx: false })], {});
+  const opts = [[0, 1, 'g at 0'], [6, 2, 'g at 6']].flatMap(([p, c, lab]) => [3, 4].map(q => [p, q, c + cd(p, q) + 1, lab]));
+  r.step(ln(C_FREE, 'int gap'), `Letter "d" is at positions 3 and 4. Totals: ${opts.map(o => `${o[3]} then d at ${o[1]} = ${o[2]}`).join('; ')}.`, [A('ring', ring.split(''), { showIdx: true, done: [3, 4] })], {});
+  r.step(0, `Best total <b>${Math.min(...opts.map(o => o[2]))}</b>: g at 0 (1) then d at 3 (3 + 1). Greedy "nearest g" can lose; Dijkstra/DP tries every position.`, [A('ring', ring.split(''), { showIdx: true, done: [0, 3] })], {});
+  return r.steps;
+}
+const C_CONV = `
+for (int s = 0; s < 26; s++) d[s] = dijkstra(adj, s);        // letter graph, 26 nodes
+return total(source, target, d);
+...
+long c = d[source.charAt(i) - 'a'][target.charAt(i) - 'a'];
+if (c >= INF) return -1;
+sum += c;`;
+function convI() {
+  const N = { a: [0, 1], b: [1.6, 0], c: [3.2, 1], d: [1.6, 2.2], e: [4.8, 0] }, rules = [['a', 'b', 2], ['b', 'c', 5], ['c', 'b', 5], ['c', 'e', 1], ['e', 'b', 2], ['d', 'e', 20]], r = recorder();
+  r.step(0, 'Rules "x → y at cost c" form a graph on the 26 letters. Convert "abcd" to "acbe": a→a, b→c, c→b, d→e at the cheapest path cost for each differing letter.', [graph('letter graph', N, rules, { directed: true })], {});
+  const rows = [['b', 'c', 5, 'direct'], ['c', 'b', 5, 'direct (or c → e → b = 3!)'], ['d', 'e', 20, 'direct']];
+  const best = { 'b>c': 5, 'c>b': 3, 'd>e': 20 };
+  for (const [x, y] of [['b', 'c'], ['c', 'b'], ['d', 'e']]) r.step(ln(C_CONV, 'long c = d['), `${x} → ${y}: cheapest ${best[x + '>' + y]}${x === 'c' ? ' (c → e costs 1, e → b costs 2: cheaper than the direct 5)' : ''}.`, [graph('letter graph', N, rules, { directed: true, cls: C({ active: [x, y] }) })], {});
+  r.step(0, 'Total 5 + 3 + 20 = <b>28</b>. Dijkstra from every letter or Floyd-Warshall on 26 nodes are equivalent here: only 26³ work.', [graph('letter graph', N, rules, { directed: true, cls: C({ done: ['b', 'c', 'e', 'd'] }) })], {});
+  return r.steps;
+}
+const C_CONV2 = `
+long[] dp = new long[n + 1];  dp[0] = 0;
+for (int i = 0; i < n; i++) {
+    if (source.charAt(i) == target.charAt(i)) dp[i + 1] = Math.min(dp[i + 1], dp[i]);       // skip equal letters
+    for (int len : lengths) {                                                              // or convert a substring
+        Integer a = id.get(source.substring(i, i + len)), b = id.get(target.substring(i, i + len));
+        if (a == null || b == null || d[a][b] >= INF) continue;
+        dp[i + len] = Math.min(dp[i + len], dp[i] + d[a][b]);
+    }
+}`;
+function convII() {
+  const src = 'abcdefgh', tgt = 'acdeeghh', r = recorder(), dp = Array(9).fill(Infinity); dp[0] = 0;
+  r.step(0, 'Rules now rewrite whole <b>substrings</b> ("bcd" → "cde" cost 1, "fgh" → "thh" 3, "thh" → "ghh" 5). Two layers: (1) shortest cost between rule strings (a small graph), (2) a DP over positions deciding where each piece starts.', [A('source', src.split(''), { showIdx: true }), A('target', tgt.split(''), { showIdx: true })], {});
+  const upd = (i, len, c, why) => { if (dp[i] + c < dp[i + len]) dp[i + len] = dp[i] + c; r.step(ln(C_CONV2, len === 0 ? 'skip' : 'dp[i + len]'), why, [A('source', src.split(''), { showIdx: true, active: range(i, i + Math.max(len, 1) - 1) }), A('dp[i] = cost to fix the first i letters', dp.map(fm), { showIdx: true })], {}); };
+  upd(0, 1, 0, 'Position 0: "a" = "a", skip at cost 0: dp[1] = 0.');
+  upd(1, 3, 1, 'Position 1: substring "bcd" → "cde" is a rule (cost 1): dp[4] = 1.');
+  upd(4, 1, 0, 'Position 4: "e" = "e": dp[5] = dp[4] = 1.');
+  upd(5, 3, 8, 'Position 5: "fgh" → "thh" (3) then "thh" → "ghh" (5) = 8 through the string graph: dp[8] = 9.');
+  r.step(0, `Answer dp[8] = <b>${dp[8]}</b>. Pieces must not overlap, which is why this is a DP, and the string graph keeps the number of distinct nodes small.`, [A('dp', dp.map(fm), { showIdx: true, done: [8] })], {});
+  return r.steps;
+}
+
+const C_DESIGN = `
+void addEdge(int[] e) {                 // Floyd version: patch the table, then queries are O(1)
+    int n = d.length;
+    for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) d[i][j] = Math.min(d[i][j], d[i][e[0]] + e[2] + d[e[1]][j]);
+}
+int shortestPath(int node1, int node2) { return d[node1][node2] >= INF ? -1 : (int) d[node1][node2]; }`;
+function designG() {
+  const E = [[0, 2, 5], [0, 1, 2], [1, 2, 1], [3, 0, 3]], N = { 0: [1.6, 1], 1: [3.2, 0], 2: [3.2, 2], 3: [0, 1] }, r = recorder(), I = 1e9;
+  let d = [[0, 2, 3, I], [I, 0, 1, I], [I, I, 0, I], [3, 5, 6, 0]]; const T = (hl) => [graph('graph', N, E, { directed: true, ecls: EC({ hot: hl || [] }) }), grid('all-pairs table d[i][j]', d.map(x => x.map(v => (v >= I ? '∞' : v))), { rowLabels: [0, 1, 2, 3], colLabels: [0, 1, 2, 3], cls: () => '' })];
+  r.step(0, 'Two designs. <b>Dijkstra</b>: store edges, run Dijkstra per query (cheap to add an edge, costly query). <b>Floyd</b>: keep an all-pairs table so queries are lookups, and patch the table in O(n²) per new edge.', T(), {});
+  r.step(ln(C_DESIGN, 'int shortestPath'), 'Query shortestPath(3, 2): d[3][2] = <b>6</b> (3 → 0 → 1 → 2 = 3 + 2 + 1). Query (0, 3): ∞ → −1.', T(), {});
+  E.push([1, 3, 4]); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) d[i][j] = Math.min(d[i][j], d[i][1] + 4 + d[3][j]);
+  r.step(ln(C_DESIGN, 'd[i][j] = Math.min'), 'addEdge(1 → 3, cost 4): every pair may now go i → 1 → 3 → j. After the patch d[0][3] = 2 + 4 = <b>6</b>. Each pair is tried once; no need to re-run all of Floyd-Warshall.', T([[1, 3]]), {});
+  return r.steps;
+}
+const C_CITY = `
+int[][] d = ...all pairs by Floyd-Warshall (or Dijkstra / Bellman-Ford from every city)...
+int best = -1, bestCount = Integer.MAX_VALUE;
+for (int i = 0; i < n; i++) {
+    int count = 0;
+    for (int j = 0; j < n; j++) if (i != j && d[i][j] <= threshold) count++;
+    if (count <= bestCount) { bestCount = count; best = i; }      // <= : the larger index wins ties
+}`;
+function findCity() {
+  const E = [[0, 1, 3], [1, 2, 1], [1, 3, 4], [2, 3, 1]], N = { 0: [0, 1], 1: [1.6, 1], 2: [3.2, 0], 3: [3.2, 2] }, th = 4, I = 99, r = recorder();
+  const d = Array.from({ length: 4 }, (_, i) => Array.from({ length: 4 }, (_, j) => (i === j ? 0 : I))); E.forEach(([a, b, w]) => { d[a][b] = w; d[b][a] = w; });
+  const T = (extra) => [graph('cities', N, E, { cls: extra }), grid('d[i][j] (99 = no path yet)', d.map(x => x.map(v => v)), { rowLabels: [0, 1, 2, 3], colLabels: [0, 1, 2, 3], cls: () => '' })];
+  r.step(0, 'Smallest number of cities reachable within distance 4; ties go to the <b>largest</b> index. Three ways to get all distances: Dijkstra from each city, Bellman-Ford from each, or Floyd-Warshall (easiest for n ≤ 100).', T(), {});
+  for (let k = 0; k < 4; k++) { for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) d[i][j] = Math.min(d[i][j], d[i][k] + d[k][j]); r.step(ln(C_CITY, 'all pairs'), `Allow city ${k} as an intermediate stop: every pair (i, j) tries i → ${k} → j.`, T(C({ active: [k] })), {}); }
+  const counts = d.map((row, i) => row.filter((v, j) => j !== i && v <= th).length);
+  let best = -1, bc = 1e9; counts.forEach((c, i) => { if (c <= bc) { bc = c; best = i; } });
+  r.step(ln(C_CITY, 'if (count <= bestCount)'), `Cities within ${th}: [${counts.join(', ')}]. Smallest count ${bc}; with ties the later index wins: city <b>${best}</b>.`, [A('reachable within threshold', counts), A('winner', [best], { showIdx: false })], { answer: best });
+  return r.steps;
+}
+const C_BF = `
+for (int round = 1; round <= V - 1; round++) {
+    for (int[] e : edges) if (dist[e[0]] != INF && dist[e[0]] + e[2] < dist[e[1]]) dist[e[1]] = dist[e[0]] + e[2];
+}
+for (int[] e : edges) if (dist[e[0]] != INF && dist[e[0]] + e[2] < dist[e[1]]) return new int[]{-1};   // still improving: negative cycle
+return dist;`;
+function bfDist() {
+  const E = [[1, 3, 2], [4, 3, -1], [2, 4, 1], [1, 2, 1], [0, 1, 5]], N = { 0: [0, 1], 1: [1.6, 1], 2: [3.2, 0], 3: [4.8, 1], 4: [3.2, 2] }, r = recorder(); let dist = [0, 1e8, 1e8, 1e8, 1e8];
+  const V = (rd, hot) => [graph('digraph with a negative edge (badge = distance)', N, E, { directed: true, badge: Object.fromEntries(dist.map((x, i) => [i, x >= 1e8 ? '∞' : x]).filter(([, x]) => x !== '∞')), ecls: EC({ hot: hot || [] }) }), A('dist[]', dist.map(x => (x >= 1e8 ? '∞' : x)))];
+  r.step(ln(C_BF, 'for (int round'), 'Dijkstra breaks with negative edges. Bellman-Ford relaxes <b>every edge</b>, V − 1 times: after round r all shortest paths with ≤ r edges are correct.', V(0), {});
+  for (let rd = 1; rd <= 4; rd++) { const hot = []; E.forEach(([a, b, w]) => { if (dist[a] < 1e8 && dist[a] + w < dist[b]) { dist[b] = dist[a] + w; hot.push([a, b]); } }); r.step(ln(C_BF, 'dist[e[1]] = dist'), `Round ${rd}: improved ${hot.map(e => e.join('→')).join(', ') || 'nothing'}.`, V(rd, hot), {}); }
+  r.step(ln(C_BF, 'return new int[]{-1}'), `Round V = 5 would change nothing, so there is no negative cycle. Final distances ${dist.map(x => (x >= 1e8 ? '∞' : x)).join(', ')}; node 3 first got 7 via 1 and then 6 through 2 → 4 → 3 (6 + 1 − 1) thanks to the −1 edge.`, V(5), {});
+  return r.steps;
+}
+const C_NEG = `
+int[] dist = new int[n];                               // every node starts at 0 (virtual source)
+for (int round = 1; round <= n; round++) {
+    for (int[] e : edges) {
+        if (dist[e[0]] + e[2] < dist[e[1]]) {
+            if (round == n) return 1;                  // still improving in round n: negative cycle
+            dist[e[1]] = dist[e[0]] + e[2];
+        }
+    }
+}
+return 0;`;
+function negCycle() {
+  const E = [[0, 1, -1], [1, 2, -2], [2, 0, -3]], N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2] }, r = recorder(), dist = [0, 0, 0];
+  const V = (hot) => [graph('cycle 0 → 1 → 2 → 0 with total weight −6', N, E, { directed: true, ecls: EC({ hot: hot || [] }) }), A('dist[]', dist)];
+  r.step(ln(C_NEG, 'int[] dist'), 'Start every node at 0 (as if a hidden source reached them all for free), then relax all edges n times. Without a negative cycle distances stop improving after n − 1 rounds.', V(), {});
+  for (let rd = 1; rd <= 3; rd++) { const hot = []; E.forEach(([a, b, w]) => { if (dist[a] + w < dist[b]) { dist[b] = dist[a] + w; hot.push([a, b]); } }); r.step(ln(C_NEG, 'dist[e[1]] = dist'), `Round ${rd}: ${hot.length ? 'improved ' + hot.map(e => e.join('→')).join(', ') : 'no change'}. dist = [${dist.join(', ')}].`, V(hot), {}); }
+  r.step(ln(C_NEG, 'return 1'), 'Round 3 = n is <b>still improving</b>: going around the cycle always makes distances smaller, so a negative cycle exists. Answer 1.', V([[0, 1], [1, 2], [2, 0]]), {});
+  return r.steps;
+}
+const C_FW = `
+for (int via = 0; via < n; via++) {
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) matrix[i][j] = Math.min(matrix[i][j], matrix[i][via] + matrix[via][j]);
+    }
+}`;
+function floyd() {
+  const I = 99, d = [[0, 1, 43], [1, 0, 6], [I, I, 0]], r = recorder(), show = () => d.map(x => x.map(v => (v >= I ? '∞' : v)));
+  const T = (act) => [grid('d[i][j] (∞ = no edge)', show(), { rowLabels: [0, 1, 2], colLabels: [0, 1, 2], cls: (a, b) => (act && act.some(c => c[0] === a && c[1] === b) ? 'active' : '') }), A('via', [])];
+  r.step(0, 'All-pairs shortest paths. DP idea: after processing the first k nodes as possible stop-overs, d[i][j] is the best path using only those. The <b>stop-over loop must be outermost</b>.', T(), {});
+  for (let via = 0; via < 3; via++) { const ch = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (d[i][via] + d[via][j] < d[i][j]) { d[i][j] = d[i][via] + d[via][j]; ch.push([i, j]); } r.step(ln(C_FW, 'matrix[i][j] = Math.min'), `Stop-over ${via}: ${ch.length ? 'improved ' + ch.map(c => `d[${c[0]}][${c[1]}] = ${d[c[0]][c[1]]}`).join(', ') : 'no improvement'}.`, T(ch), {}); }
+  r.step(0, 'Result: 0 → 2 is 7 (via 1), 1 → 2 is 6; row 2 stays ∞ (no outgoing edges): the code reports −1 for those. Time O(n³).', T(), {});
+  return r.steps;
+}
+const C_HOUSE = `
+for (int i = 1; i < n; i++) { d[i][i + 1] = 1; d[i + 1][i] = 1; }       // the line
+d[x][y] = Math.min(d[x][y], 1);  d[y][x] = Math.min(d[y][x], 1);        // the extra street
+...Floyd-Warshall...
+for (int i = 1; i <= n; i++) for (int j = 1; j <= n; j++) if (i != j) result[d[i][j] - 1]++;`;
+function houses() {
+  const n = 5, x = 2, y = 4, r = recorder(), cnt = Array(n).fill(0);
+  const dist = (i, j) => Math.min(Math.abs(i - j), Math.abs(i - x) + 1 + Math.abs(j - y), Math.abs(i - y) + 1 + Math.abs(j - x));
+  const N = Object.fromEntries(range(1, n).map(i => [i, [i - 1, i === x || i === y ? 0.6 : 1]])), E = [[1, 2], [2, 3], [3, 4], [4, 5], [2, 4]];
+  r.step(ln(C_HOUSE, 'the extra street'), 'Houses 1..5 on a line, plus a street joining 2 and 4. Count ordered pairs by shortest distance: Floyd-Warshall (or BFS from each house).', [graph('houses', N, E, { ecls: EC({ hot: [[2, 4]] }) }), A('pairs at distance 1..5', cnt)], {});
+  for (let i = 1; i <= n; i++) { for (let j = 1; j <= n; j++) if (i !== j) cnt[dist(i, j) - 1]++; r.step(ln(C_HOUSE, 'result[d[i][j] - 1]++'), `House ${i}: distances to the others are ${range(1, n).filter(j => j !== i).map(j => dist(i, j)).join(', ')}.`, [graph('houses', N, E, { cls: C({ active: [i] }), ecls: EC({ hot: [[2, 4]] }) }), A('pairs at distance 1..5 so far', cnt.slice())], {}); }
+  r.step(0, `Result [${cnt.join(', ')}]: 10 ordered pairs at distance 1, 8 at 2, 2 at 3. The shortcut turns the 3 and 4 distances of 2-5 / 1-5 into 2 and 3.`, [A('answer', cnt, { done: [0, 1, 2] })], {});
+  return r.steps;
+}
+const C_CLOSE = `
+for (int mask = 0; mask < (1 << n); mask++) {                  // each subset of branches kept open
+    int[][] d = copy of base distances;
+    for (int k = 0; k < n; k++) { if (k not in mask) continue;
+        for (i, j in mask) d[i][j] = Math.min(d[i][j], d[i][k] + d[k][j]); }
+    boolean ok = true;
+    for (i < j both in mask) if (d[i][j] > maxDistance) ok = false;
+    if (ok) count++;
+}`;
+function closing() {
+  const E = [[0, 1, 2], [1, 2, 10], [0, 2, 10]], N = { 0: [0, 1], 1: [1.8, 0], 2: [1.8, 2] }, md = 5, r = recorder();
+  r.step(0, 'n ≤ 10, so try every subset of branches to keep (2ⁿ subsets). Roads may only pass through <b>open</b> branches. Keep a subset if all remaining pairs are within 5.', [graph('3 branches, maxDistance 5', N, E, {})], {});
+  const subs = []; let cnt = 0;
+  for (let mask = 0; mask < 8; mask++) { const open = range(0, 2).filter(i => mask >> i & 1); const d = [[0, 2, 10], [2, 0, 10], [10, 10, 0]]; for (const k of open) for (const i of open) for (const j of open) d[i][j] = Math.min(d[i][j], d[i][k] + d[k][j]); let ok = true; for (const i of open) for (const j of open) if (i < j && d[i][j] > md) ok = false; if (ok) cnt++; subs.push(`{${open.join(',')}} ${ok ? '✓' : '✗'}`);
+    r.step(ln(C_CLOSE, 'if (ok) count++'), `Keep ${open.length ? '{' + open.join(', ') + '}' : 'nothing'}: ${open.length < 2 ? 'fewer than two branches, trivially fine' : open.map(i => open.filter(j => j > i).map(j => `d(${i},${j}) = ${d[i][j]}`).join(', ')).filter(Boolean).join('; ') + (ok ? ' ≤ 5: valid' : ' > 5: invalid')}.`, [graph('open branches', N, E, { cls: C({ done: open, ghost: range(0, 2).filter(i => !open.includes(i)) }) }), A('subsets tested (✓ = valid)', subs, { showIdx: false })], { valid: cnt }); }
+  r.step(0, `<b>${cnt}</b> valid subsets: the empty set, 3 singletons and {0,1}; {0,1,2} fails because 1 ↔ 2 needs 10 or 12 through open nodes.`, [A('count', [cnt])], {});
+  return r.steps;
+}
+
+mount({
+  title: "Shortest Paths Animations",
+  sub: "<b>Dijkstra</b>: settle the closest unsettled node (min-heap); needs non-negative weights. Replace \"sum\" by <b>max</b> for \"biggest step\" paths. <b>0-1 BFS</b> for weights 0/1. <b>Bellman-Ford</b>: relax every edge V \u2212 1 times; handles negative weights and detects negative cycles; with a round limit it solves \"at most k edges\". <b>Floyd-Warshall</b>: all pairs, intermediate-node loop outermost. When position is not enough (parity, stops, health), put it in the state.",
+  problems: [
+    { name: "Dijkstra's Algorithm", hook: "A tide rising from the source: the first time it touches a node is that node's final distance.", mantra: "SETTLE THE CLOSEST; RELAX ITS EDGES", statement: "Shortest distance from a source to every node of a graph with non-negative weights.",
+      anims: [{ name: "Walkthrough", code: C_DIJ, steps: dijkstra() }],
+      recall: [["Why does it fail with negative edges?", "A settled node could later be improved through a negative edge, breaking \"closest is final\"."], ["Why skip stale entries?", "The heap may hold several entries per node; only the one matching dist[u] is current."]], links: [["Network Delay Time", 2], ["Distance from the Source (Bellman-Ford Algorithm)", 25]] },
+    { name: "Shortest Path in Weighted Undirected Graph", hook: "Leave a note \"I came from here\" at every node; read the notes backwards to print the route.", mantra: "parent[v] = u ON EVERY IMPROVEMENT", statement: "Print the shortest path from node 1 to node n (or \u22121 if unreachable).",
+      anims: [{ name: "Walkthrough", code: C_SPATH, steps: spath() }],
+      recall: [["Why is the parent array correct?", "Each time a node is improved, its parent is overwritten, so at the end it holds the node of the last (best) improvement."], ["Unreachable?", "dist[n] stays infinite: return [\u22121]."]], links: [["Dijkstra's Algorithm", 0]] },
+    { name: "Network Delay Time", hook: "A rumour from one house: how long until the last house hears it?", mantra: "MAX OF THE SHORTEST DISTANCES", statement: "Directed weighted graph: a signal starts at node k. Return the time for all nodes to receive it, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_NDT, steps: netDelay() }],
+      recall: [["Why the maximum?", "The signal reaches every node, and the last one defines the delay."], ["When \u22121?", "When some node stays at infinity."]], links: [["Dijkstra's Algorithm", 0]] },
+    { name: "Path With Minimum Effort", hook: "A hiker who cares only about the steepest single step.", mantra: "COST = max(previous, this step)", statement: "Find the path from top-left to bottom-right minimising the largest absolute height difference between consecutive cells.",
+      anims: [{ name: "Walkthrough", code: C_EFF, steps: effort() }],
+      recall: [["Why does Dijkstra still work?", "The path cost is monotone non-decreasing as the path grows."], ["Why is binary search valid?", "If a path exists with effort \u2264 e, it exists for any larger e."]], links: [["Swim in Rising Water", 5]] },
+    { name: "Cheapest Flights Within K Stops", hook: "The cheapest route may need more stops than you are allowed, so cost alone is not enough.", mantra: "ONE ROUND = ONE FLIGHT; RELAX FROM A COPY", statement: "Cheapest price from src to dst using at most k stops (k + 1 flights), or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_FLT, steps: flights() }],
+      recall: [["Why relax from a copy?", "Otherwise one round could chain several flights."], ["Why not plain Dijkstra?", "The cheapest path may use too many stops; the constraint is not captured by distance alone."]], links: [["Distance from the Source (Bellman-Ford Algorithm)", 25]] },
+    { name: "Swim in Rising Water", hook: "Water rises; you can wade through anything at or below the water level, so the best route minimises the highest cell crossed.", mantra: "TIME = HIGHEST CELL ON THE PATH", statement: "At time t the water depth is t everywhere and you may enter a cell of elevation \u2264 t. Find the earliest time to reach the bottom-right.",
+      anims: [{ name: "Walkthrough", code: C_SWIM, steps: swim() }],
+      recall: [["Why is Union-Find enough?", "Activating cells by height and asking \"are the corners connected yet\" is a connectivity question."], ["Why start the binary search at max(start, end)?", "You cannot be there before both corners are submerged."]], links: [["Path With Minimum Effort", 3]] },
+    { name: "Path with Maximum Probability", hook: "Success chances multiply and only shrink, so the most likely route is settled first, like the shortest.", mantra: "MAX-HEAP; MULTIPLY INSTEAD OF ADD", statement: "Undirected graph with edge success probabilities. Return the maximum probability of a path from start to end.",
+      anims: [{ name: "Walkthrough", code: C_PROB, steps: maxProb() }],
+      recall: [["Why is it like shortest path?", "Taking \u2212log(p) turns products into sums of non-negative weights."], ["Unreachable?", "Return 0."]], links: [["Dijkstra's Algorithm", 0]] },
+    { name: "Number of Ways to Arrive at Destination", hook: "While you find the shortest distance, keep a tally of how many routes achieve it.", mantra: "SHORTER \u21d2 COPY THE COUNT; EQUAL \u21d2 ADD THE COUNT", statement: "Count the shortest paths from 0 to n \u2212 1 modulo 10\u2079 + 7.",
+      anims: [{ name: "Walkthrough", code: C_WAYS, steps: ways() }],
+      recall: [["Why positive weights matter?", "With zero-weight edges a node could be updated after its count was used."], ["Why long for distances?", "Sums reach 10\u2079 \u00b7 200."]], links: [["Dijkstra's Algorithm", 0]] },
+    { name: "Minimum Obstacle Removal to Reach Corner", hook: "Two kinds of road: free ones go to the front of the queue, costly ones to the back.", mantra: "0-1 BFS: weight 0 \u2192 addFirst, weight 1 \u2192 addLast", statement: "Grid of 0 (empty) and 1 (obstacle). Minimum obstacles to remove to go from the top-left to the bottom-right.",
+      anims: [{ name: "Walkthrough", code: C_OBS, steps: obstacles() }],
+      recall: [["Why does the deque keep order?", "Every queued node is within 1 of the front distance, and 0-edges stay in the same distance layer."], ["Why not plain BFS?", "Weights are not all equal."]], links: [["Minimum Cost to Make at Least One Valid Path in a Grid", 9]] },
+    { name: "Minimum Cost to Make at Least One Valid Path in a Grid", hook: "Follow the signposts for free; changing a signpost costs 1.", mantra: "FOLLOW THE ARROW = 0, ANY OTHER DIRECTION = 1", statement: "Each cell has an arrow. You may change an arrow at cost 1 (once per cell). Return the minimum total cost for the top-left to reach the bottom-right by following arrows.",
+      anims: [{ name: "Walkthrough", code: C_ARROW, steps: arrows() }],
+      recall: [["Why 0/1 weights?", "Following the arrow is free; every other move needs one change."], ["Why is it never worth changing a cell twice?", "A cell is left only once in a shortest path."]], links: [["Minimum Obstacle Removal to Reach Corner", 8]] },
+    { name: "Find a Safe Walk Through a Grid", hook: "Every 1 cell bites a point of health: minimise the bites on the way.", mantra: "LEAST DAMAGE, THEN health \u2212 damage \u2265 1", statement: "Grid of 0 (safe) and 1 (unsafe, costs 1 health). Can you reach the bottom-right with health at least 1?",
+      anims: [{ name: "Walkthrough", code: C_SAFE, steps: safeWalk() }],
+      recall: [["Does the start cell count?", "Yes, if grid[0][0] is 1 the first cell already costs health."], ["Why is it a shortest-path problem?", "Total damage = sum of cell costs along the path."]], links: [["Minimum Obstacle Removal to Reach Corner", 8]] },
+    { name: "Minimum Time to Visit a Cell In a Grid", hook: "You cannot stand still, so early arrivals must burn time in pairs by stepping back and forth.", mantra: "ARRIVE EARLY \u21d2 WAIT IN STEPS OF 2", statement: "You must move every second. A cell may only be entered at time \u2265 grid[i][j]. Return the earliest time to reach the bottom-right, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_VIS, steps: visitCell() }],
+      recall: [["Why the parity adjustment?", "Oscillating changes the time by 2 each round, so the arrival keeps the parity of the first possible time."], ["When is the answer \u22121?", "When you cannot make the very first move (both neighbours need time &gt; 1)."]], links: [["Find Minimum Time to Reach Last Room I", 12]] },
+    { name: "Find Minimum Time to Reach Last Room I", hook: "Rooms open at set times; waiting is allowed, and each step takes one second.", mantra: "finish = max(now, opening) + 1", statement: "moveTime[i][j] is the earliest time you may start moving into (i, j); a move takes 1 second. Return the minimum time to reach the last room.",
+      anims: [{ name: "Walkthrough", code: C_LR1, steps: lastRoom1() }],
+      recall: [["Why not BFS?", "Waiting makes edge costs unequal."], ["Why max(t, moveTime)?", "You must wait until the room opens."]], links: [["Find Minimum Time to Reach Last Room II", 13], ["Minimum Time to Visit a Cell In a Grid", 11]] },
+    { name: "Find Minimum Time to Reach Last Room II", hook: "The cost of the next step depends on how many steps you took: alternate 1 and 2 seconds.", mantra: "STATE = (CELL, MOVES MOD 2)", statement: "Same as Room I but moves alternate between 1 and 2 seconds, starting with 1.",
+      anims: [{ name: "Walkthrough", code: C_LR2, steps: lastRoom2() }],
+      recall: [["Why two states per cell?", "Arriving with different parities leads to different future costs."], ["Can parity be dropped?", "No, it changes costs."]], links: [["Find Minimum Time to Reach Last Room I", 12]] },
+    { name: "Second Minimum Time to Reach Destination", hook: "The second best route may not be a different path, only a longer count of edges: keep two distances per node.", mantra: "FIRST AND SECOND DISTINCT EDGE COUNTS, THEN CLOCK IT", statement: "Edges take <code>time</code> minutes and signals flip every <code>change</code> minutes. Return the second smallest (strictly larger) time to reach node n.",
+      anims: [{ name: "Walkthrough", code: C_SEC, steps: secondMin() }],
+      recall: [["Why a strict second?", "The problem wants a strictly larger time than the minimum."], ["Why can the second path reuse nodes?", "Walking an edge back and forth adds 2 edges, which is usually the second best."]], links: [["Network Delay Time", 2]] },
+    { name: "Shortest Distance After Road Addition Queries I", hook: "A highway of one-way shortcuts: after each new one, re-measure the trip.", mantra: "ADD EDGE, RE-RUN BFS", statement: "Cities 0..n \u2212 1 are in a line (i \u2192 i + 1). Each query adds a road u \u2192 v. After each query return the shortest distance from 0 to n \u2212 1.",
+      anims: [{ name: "Walkthrough", code: C_ROAD, steps: roadAdd() }],
+      recall: [["Why BFS is enough?", "Unit weights."], ["Does the distance only ever decrease?", "Yes, adding edges cannot lengthen the shortest path."]], links: [["Dijkstra's Algorithm", 0]] },
+    { name: "Find Edges in Shortest Paths", hook: "An edge is on a shortest route if getting to its start plus the edge plus getting from its end equals the shortest total.", mantra: "dist0[u] + w + distEnd[v] == shortest", statement: "Return, for each edge, whether it lies on at least one shortest path from node 0 to node n \u2212 1.",
+      anims: [{ name: "Walkthrough", code: C_EDGES, steps: edgesSP() }],
+      recall: [["Why both orientations?", "The graph is undirected; the path may use the edge either way."], ["Why long?", "Distances can exceed int."]], links: [["Dijkstra's Algorithm", 0]] },
+    { name: "Modify Graph Edge Weights", hook: "Spend the whole extra slack on the first adjustable edge the shortest path meets.", mantra: "PASS 1 WITH -1 AS 1; PASS 2 RAISES EACH -1 JUST ENOUGH", statement: "Replace each \u22121 edge weight with a positive value so that the shortest path from source to destination equals target. Return the graph or an empty list.",
+      anims: [{ name: "Walkthrough", code: C_MOD, steps: modifyG() }],
+      recall: [["Why can we not just set every \u22121 to a large value?", "The shortest path might then be too long or use fixed edges only."], ["What if a fixed route is shorter than target?", "No assignment can raise the shortest path to target: return []."]], links: [["Dijkstra's Algorithm", 0]] },
+    { name: "Network Recovery Pathways", hook: "Raise the bar on the weakest link until no affordable route clears it.", mantra: "BINARY SEARCH THE MIN EDGE; DIJKSTRA FOR THE BUDGET", statement: "DAG with online/offline nodes. A path's score is its cheapest edge; its total cost must be \u2264 k. Return the maximum score among valid paths, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_NRP, steps: netRecovery() }],
+      recall: [["Why is it monotone?", "Raising s only removes edges, so feasibility can only get worse."], ["Why Dijkstra?", "We need the cheapest total cost among the allowed edges."]], links: [["Path With Minimum Effort", 3]] },
+    { name: "Minimum Cost Path with Edge Reversals", hook: "A one-way street may be driven backwards at a double fare: give it a twin.", mantra: "ADD v \u2192 u WITH COST 2w, THEN DIJKSTRA", statement: "Directed weighted graph; you may traverse an edge u \u2192 v backwards (v \u2192 u) at cost 2w. Minimum cost from 0 to n \u2212 1.",
+      anims: [{ name: "Walkthrough", code: C_REV, steps: reversals() }],
+      recall: [["Why 2w?", "The problem says a reversed use costs twice the weight."], ["Why does Dijkstra still apply?", "All weights stay positive."]], links: [["Dijkstra's Algorithm", 0]] },
+    { name: "Freedom Trail", hook: "A safe dial: for each letter of the key choose which copy of the letter on the ring to use.", mantra: "STATE = (RING POSITION, KEY INDEX); COST = SHORT ROTATION + 1", statement: "Spell the key by rotating the ring so each letter is at 12 o'clock and pressing. Each rotation step and press costs 1.",
+      anims: [{ name: "Walkthrough", code: C_FREE, steps: freedom() }],
+      recall: [["Why not greedy?", "The nearest copy now can force a long rotation later."], ["Why circular distance?", "The ring can rotate either way."]], links: [] },
+    { name: "Minimum Cost to Convert String I", hook: "Currency exchange between 26 letters: use the cheapest chain of rules.", mantra: "26-NODE GRAPH; SUM THE CHEAPEST CONVERSION PER POSITION", statement: "Convert source to target using rules (original[i] \u2192 changed[i] at cost[i]) that may be chained. Return the minimum cost or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_CONV, steps: convI() }],
+      recall: [["Why precompute all pairs?", "The string can be long but there are only 26 \u00d7 26 letter pairs."], ["Why long?", "Sum over 10\u2075 positions of costs up to 10\u2076."]], links: [["Minimum Cost to Convert String II", 22], ["Find the City With the Smallest Number of Neighbors at a Threshold Distance", 24]] },
+    { name: "Minimum Cost to Convert String II", hook: "Rules now rewrite whole substrings: shortest paths between strings, then a DP on where to cut.", mantra: "DIST BETWEEN RULE STRINGS + dp[i] OVER POSITIONS", statement: "Rules rewrite substrings of equal length. Convert source to target by disjoint non-overlapping rewrites. Minimum cost or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_CONV2, steps: convII() }],
+      recall: [["Why a DP?", "Pieces must be disjoint, so you need the best split of the string."], ["Why is the number of lengths small?", "Only the distinct rule lengths matter (at most about 100)."]], links: [["Minimum Cost to Convert String I", 21]] },
+    { name: "Design Graph With Shortest Path Calculator", hook: "Either keep the map and look up routes on demand, or keep every route precomputed and patch it when a road opens.", mantra: "DIJKSTRA PER QUERY OR FLOYD TABLE PATCHED IN O(n\u00b2)", statement: "A directed weighted graph that supports addEdge and shortestPath(a, b).",
+      anims: [{ name: "Walkthrough", code: C_DESIGN, steps: designG() }],
+      recall: [["Why does the patch suffice?", "A new edge can only help paths that use it exactly once."], ["When is Dijkstra better?", "Few queries and a sparse graph."]], links: [["Floyd Warshall", 27]] },
+    { name: "Find the City With the Smallest Number of Neighbors at a Threshold Distance", hook: "Count each city's neighbours within reach; the loneliest city wins (ties: the biggest index).", mantra: "ALL PAIRS, THEN COUNT d \u2264 threshold", statement: "Return the city with the fewest cities reachable within distanceThreshold (largest index on ties).",
+      anims: [{ name: "Walkthrough", code: C_CITY, steps: findCity() }],
+      recall: [["Which is best for n \u2264 100?", "Floyd-Warshall: shortest code, 10\u2076 operations."], ["Why &lt;= when comparing counts?", "The tie-break wants the city with the greatest number."]], links: [["Floyd Warshall", 27], ["Dijkstra's Algorithm", 0]] },
+    { name: "Distance from the Source (Bellman-Ford Algorithm)", hook: "Ask every road, again and again, \"can you shorten somebody?\"; after V \u2212 1 rounds the answer is final.", mantra: "RELAX ALL EDGES V \u2212 1 TIMES; ONE MORE IMPROVEMENT = NEGATIVE CYCLE", statement: "Shortest distances from a source in a graph that may have negative edges, or {\u22121} if a negative cycle is reachable.",
+      anims: [{ name: "Walkthrough", code: C_BF, steps: bfDist() }],
+      recall: [["Why V \u2212 1 rounds?", "A simple path has at most V \u2212 1 edges."], ["Why not Dijkstra?", "Negative edges break \"closest is final\"."]], links: [["Negative Weight Cycle", 26], ["Cheapest Flights Within K Stops", 4]] },
+    { name: "Negative Weight Cycle", hook: "Going round a loop makes you shorter each lap: distances never settle.", mantra: "STILL IMPROVING IN ROUND n \u21d2 NEGATIVE CYCLE", statement: "Does the weighted directed graph contain a cycle of negative total weight?",
+      anims: [{ name: "Walkthrough", code: C_NEG, steps: negCycle() }],
+      recall: [["Why start every node at 0?", "The cycle may not be reachable from any single source."], ["What does Floyd show?", "d[i][i] &lt; 0 for nodes on a negative cycle."]], links: [["Distance from the Source (Bellman-Ford Algorithm)", 25]] },
+    { name: "Floyd Warshall", hook: "Try every city as a possible stop-over for every pair.", mantra: "via OUTERMOST: d[i][j] = min(d[i][j], d[i][via] + d[via][j])", statement: "All-pairs shortest paths from an adjacency matrix where \u22121 means no edge.",
+      anims: [{ name: "Walkthrough", code: C_FW, steps: floyd() }],
+      recall: [["Why is <code>via</code> the outer loop?", "The recurrence needs the table for the previous set of intermediates."], ["Why replace \u22121 by a big number?", "So the min and the sum behave."]], links: [["Find the City With the Smallest Number of Neighbors at a Threshold Distance", 24]] },
+    { name: "Count the Number of Houses at a Certain Distance I", hook: "A line of houses with one shortcut street: some pairs get closer.", mantra: "LINE + ONE EXTRA EDGE, THEN ALL PAIRS", statement: "Houses 1..n on a line plus one street x\u2013y. For each k count ordered pairs at shortest distance k.",
+      anims: [{ name: "Walkthrough", code: C_HOUSE, steps: houses() }],
+      recall: [["Why BFS is faster?", "Every edge has weight 1."], ["Ordered pairs?", "Both (i, j) and (j, i) are counted."]], links: [["Floyd Warshall", 27]] },
+    { name: "Number of Possible Sets of Closing Branches", hook: "With few branches, try every set to keep open and test whether every pair is still close enough.", mantra: "2\u207f SUBSETS \u00d7 FLOYD INSIDE THE SUBSET", statement: "Choose which branches to close. Count the sets for which every pair of remaining branches is within maxDistance using only open branches.",
+      anims: [{ name: "Walkthrough", code: C_CLOSE, steps: closing() }],
+      recall: [["Why Floyd inside each subset?", "Roads may only pass through branches that stay open."], ["Is the empty set counted?", "Yes, it trivially satisfies the condition."]], links: [["Floyd Warshall", 27]] }
+  ]
+});
+
+</script>
+</body>
+</html>

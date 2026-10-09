@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strings and Subsequences Animations</title>
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const idx = n => Array.from({ length: n }, (_, i) => i);
+const range = (a, b) => idx(Math.max(0, b - a + 1)).map(x => x + a);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+
+// Fills an (m+1) x (n+1) table row by row and records one step per row
+function table2(code, line, a, b, base, cell, rowSay, o = {}) {
+  const m = a.length, n = b.length, r = recorder(), dp = Array.from({ length: m + 1 }, (_, i) => Array.from({ length: n + 1 }, (_, j) => base(i, j)));
+  const labels = { rowLabels: ['∅', ...a], colLabels: ['∅', ...b] };
+  const fmt = t => t.map(row => row.map(v => (o.fmt ? o.fmt(v) : v)));
+  r.step(0, o.intro, [G('dp', fmt(dp), [], labels)]);
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) dp[i][j] = cell(dp, i, j);
+    r.step(ln(code, line), rowSay(dp, i), [G('dp', fmt(dp), range(1, n).map(j => [i, j, a[i - 1] === b[j - 1] ? 'done' : 'active']), labels)]);
+  }
+  return { r, dp, labels, fmt };
+}
+
+const C_LCS = `
+for (int i = 1; i <= m; i++)
+    for (int j = 1; j <= n; j++)
+        dp[i][j] = a.charAt(i - 1) == b.charAt(j - 1)
+                ? dp[i - 1][j - 1] + 1
+                : Math.max(dp[i - 1][j], dp[i][j - 1]);
+return dp[m][n];`;
+{
+  const a = 'abcde', b = 'ace';
+  const { r, dp, labels } = table2(C_LCS, 'dp[i][j] = a.charAt', a, b, () => 0, (d, i, j) => (a[i - 1] === b[j - 1] ? d[i - 1][j - 1] + 1 : Math.max(d[i - 1][j], d[i][j - 1])), (d, i) => `Row '${a[i - 1]}': green cells are matches (diagonal + 1), the rest copy max(up, left).`, { intro: 'a = "abcde", b = "ace". Row 0 and column 0 are empty prefixes (0).' });
+  const path = []; let i = 5, j = 3, out = '';
+  while (i > 0 && j > 0) { if (a[i - 1] === b[j - 1]) { path.push([i, j, 'done']); out = a[i - 1] + out; i--; j--; } else if (dp[i - 1][j] >= dp[i][j - 1]) { path.push([i, j, 'warn']); i--; } else { path.push([i, j, 'warn']); j--; } }
+  r.step(ln(C_LCS, 'return dp[m][n]'), `LCS = <b>${dp[5][3]}</b>; walking back from the corner spells "${out}".`, [G('dp', dp, path, labels)]);
+  ANIM['Longest Common Subsequence'] = W('LCS table', C_LCS, r.steps);
+}
+
+const C_ALL = `
+if (a.charAt(i - 1) == b.charAt(j - 1)) {
+    for (String s : collect(i - 1, j - 1)) res.add(s + a.charAt(i - 1));
+} else {
+    if (dp[i - 1][j] == dp[i][j]) res.addAll(collect(i - 1, j));
+    if (dp[i][j - 1] == dp[i][j]) res.addAll(collect(i, j - 1));
+}`;
+{
+  const a = 'abcabcaa', b = 'acbacba', r = recorder(), m = a.length, n = b.length, dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+  const memo = {}; const col = (i, j) => { if (!i || !j) return new Set(['']); const k = i + ',' + j; if (memo[k]) return memo[k]; const s = new Set(); if (a[i - 1] === b[j - 1]) col(i - 1, j - 1).forEach(x => s.add(x + a[i - 1])); else { if (dp[i - 1][j] === dp[i][j]) col(i - 1, j).forEach(x => s.add(x)); if (dp[i][j - 1] === dp[i][j]) col(i, j - 1).forEach(x => s.add(x)); } return (memo[k] = s); };
+  const all = [...col(m, n)].sort();
+  r.step(0, `a = "${a}", b = "${b}". LCS length ${dp[m][n]}.`, [G('dp', dp, [[m, n, 'active']], { rowLabels: ['∅', ...a], colLabels: ['∅', ...b] })]);
+  r.step(ln(C_ALL, 'if (dp[i - 1][j] == dp[i][j])'), 'At a mismatch both "up" and "left" may keep the length: follow every such branch.', [G('dp', dp, [[m, n, 'active'], [m - 1, n, 'warn'], [m, n - 1, 'warn']], { rowLabels: ['∅', ...a], colLabels: ['∅', ...b] })]);
+  all.forEach((s, k) => r.step(ln(C_ALL, 'res.add(s + a.charAt'), `Found "${s}".`, [R('all LCS', all.slice(0, k + 1), { active: [k] })]));
+  r.step(0, `<b>${all.length}</b> distinct LCS strings, sorted.`, [R('all LCS', all, { done: idx(all.length) })]);
+  ANIM['All Longest Common Subsequences'] = W('Every branch back', C_ALL, r.steps);
+}
+
+const C_SUB = `
+for (int i = 1; i <= a.length(); i++)
+    for (int j = 1; j <= b.length(); j++)
+        if (a.charAt(i - 1) == b.charAt(j - 1)) {
+            dp[i][j] = dp[i - 1][j - 1] + 1;
+            if (dp[i][j] > best) { best = dp[i][j]; end = i; }
+        }
+return a.substring(end - best, end);`;
+{
+  const a = 'ABCDGH', b = 'ACDGHR'; let best = 0, end = 0;
+  const { r, dp, labels } = table2(C_SUB, 'dp[i][j] = dp[i - 1][j - 1] + 1', a, b, () => 0, (d, i, j) => { const v = a[i - 1] === b[j - 1] ? d[i - 1][j - 1] + 1 : 0; if (v > best) { best = v; end = i; } return v; }, (d, i) => `Row '${a[i - 1]}': a match extends the diagonal, a mismatch is 0. Best so far ${best}.`, { intro: 'a = "ABCDGH", b = "ACDGHR". dp[i][j] = common suffix length.' });
+  r.step(ln(C_SUB, 'return a.substring'), `Best <b>${best}</b>, ending at a[${end - 1}] → "${a.slice(end - best, end)}".`, [G('dp', dp, range(0, best - 1).map(k => [end - k, b.indexOf(a[end - 1]) + 1 - k, 'done']), labels)]);
+  ANIM['Longest Common Substring'] = W('Suffix table', C_SUB, r.steps);
+}
+
+const C_REP = `
+for (int i = 1; i <= a.length; i++)
+    for (int j = b.length; j >= 1; j--) {
+        dp[j] = a[i - 1] == b[j - 1] ? dp[j - 1] + 1 : 0;
+        best = Math.max(best, dp[j]);
+    }
+return best;`;
+{
+  const a = [1, 2, 3, 2, 1], b = [3, 2, 1, 4, 7], r = recorder(), dp = Array(6).fill(0); let best = 0;
+  r.step(0, 'a = [1,2,3,2,1], b = [3,2,1,4,7]. One row of common-suffix lengths (index j = first j of b).', [A('dp', dp)]);
+  a.forEach((x, i) => { for (let j = 5; j >= 1; j--) { dp[j] = x === b[j - 1] ? dp[j - 1] + 1 : 0; best = Math.max(best, dp[j]); } r.step(ln(C_REP, 'dp[j] = a[i - 1]'), `a[${i}] = ${x}: row = [${dp.slice(1)}], best ${best}.`, [A('b', b), A('dp', dp.slice(), { active: idx(6).filter(j => dp[j] > 0) })]); });
+  r.step(ln(C_REP, 'return best'), `Answer <b>${best}</b>: [3, 2, 1].`, [R('best', [best], { done: [0] })]);
+  ANIM['Maximum Length of Repeated Subarray'] = W('One row backwards', C_REP, r.steps);
+}
+
+const C_DEL = `
+for (int i = 0; i <= m; i++)
+    for (int j = 0; j <= n; j++) {
+        if (i == 0 || j == 0) dp[i][j] = i + j;
+        else if (a.charAt(i - 1) == b.charAt(j - 1)) dp[i][j] = dp[i - 1][j - 1];
+        else dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1]);
+    }`;
+{
+  const a = 'sea', b = 'eat';
+  const { r, dp, labels } = table2(C_DEL, 'else dp[i][j] = 1 + Math.min', a, b, (i, j) => (i === 0 || j === 0 ? i + j : 0), (d, i, j) => (a[i - 1] === b[j - 1] ? d[i - 1][j - 1] : 1 + Math.min(d[i - 1][j], d[i][j - 1])), (d, i) => `Row '${a[i - 1]}': match → diagonal, else delete one side (1 + min).`, { intro: 'a = "sea", b = "eat". Empty prefix vs i chars: i deletions.' });
+  r.step(0, `Answer <b>${dp[3][3]}</b> = 3 + 3 − 2 · LCS("ea" = 2).`, [G('dp', dp, [[3, 3, 'done']], labels)]);
+  ANIM['Delete Operation for Two Strings'] = W('Deletion grid', C_DEL, r.steps);
+}
+
+const C_ASC = `
+dp[i][j] = a.charAt(i - 1) == b.charAt(j - 1) ? dp[i - 1][j - 1]
+        : Math.min(dp[i - 1][j] + a.charAt(i - 1), dp[i][j - 1] + b.charAt(j - 1));
+return dp[m][n];`;
+{
+  const a = 'sea', b = 'eat', code = c => c.charCodeAt(0);
+  const base = (i, j) => (i === 0 ? [...b.slice(0, j)].reduce((s, c) => s + code(c), 0) : j === 0 ? [...a.slice(0, i)].reduce((s, c) => s + code(c), 0) : 0);
+  const { r, dp, labels } = table2(C_ASC, 'dp[i][j] = a.charAt', a, b, base, (d, i, j) => (a[i - 1] === b[j - 1] ? d[i - 1][j - 1] : Math.min(d[i - 1][j] + code(a[i - 1]), d[i][j - 1] + code(b[j - 1]))), (d, i) => `Row '${a[i - 1]}' (code ${code(a[i - 1])}): delete the cheaper side on a mismatch.`, { intro: 's = 115, e = 101, a = 97, t = 116. Borders are prefix sums of codes.' });
+  r.step(ln(C_ASC, 'return'), `Answer <b>${dp[3][3]}</b>: delete s (115) and t (116).`, [G('dp', dp, [[3, 3, 'done']], labels)]);
+  ANIM['Minimum ASCII Delete Sum for Two Strings'] = W('Weighted deletions', C_ASC, r.steps);
+}
+
+const C_UL = `
+for (int i = 1; i <= a.length; i++) {
+    for (int j = 1; j <= b.length; j++)
+        cur[j] = a[i - 1] == b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+    swap(prev, cur);
+}
+return prev[b.length];`;
+{
+  const a = [1, 4, 2], b = [1, 2, 4];
+  const { r, dp, labels } = table2(C_UL, 'cur[j] = a[i - 1]', a.map(String), b.map(String), () => 0, (d, i, j) => (a[i - 1] === b[j - 1] ? d[i - 1][j - 1] + 1 : Math.max(d[i - 1][j], d[i][j - 1])), (d, i) => `Row ${a[i - 1]}: equal numbers may be joined if earlier lines are left of them on both sides.`, { intro: 'top [1,4,2], bottom [1,2,4]. Non-crossing lines = common subsequence.' });
+  r.step(ln(C_UL, 'return'), `Answer <b>${dp[3][3]}</b>: 1–1 and 4–4 (or 2–2); 4 and 2 would cross.`, [G('dp', dp, [[3, 3, 'done']], labels)]);
+  ANIM['Uncrossed Lines'] = W('LCS in disguise', C_UL, r.steps);
+}
+
+const C_DOT = `
+int pair = a[i - 1] * b[j - 1];
+dp[i][j] = Math.max(Math.max(pair, pair + dp[i - 1][j - 1]),
+                    Math.max(dp[i - 1][j], dp[i][j - 1]));`;
+{
+  const a = [2, 1, -2, 5], b = [3, 0, -6], N = -1e9;
+  const { r, dp, labels } = table2(C_DOT, 'dp[i][j] = Math.max', a.map(String), b.map(String), () => N, (d, i, j) => { const p = a[i - 1] * b[j - 1]; return Math.max(p, p + d[i - 1][j - 1], d[i - 1][j], d[i][j - 1]); }, (d, i) => `Row ${a[i - 1]}: pair alone, pair + diagonal, or skip one side.`, { intro: 'a = [2,1,-2,5], b = [3,0,-6]. Borders are −∞ so at least one pair is taken.', fmt: v => (v <= -1e8 ? '−∞' : v) });
+  r.step(0, `Answer <b>${dp[4][3]}</b>: (2, −2) · (3, −6) = 6 + 12.`, [G('dp', dp.map(x => x.map(v => (v <= -1e8 ? '−∞' : v))), [[4, 3, 'done']], labels)]);
+  ANIM['Max Dot Product of Two Subsequences'] = W('Pair or skip', C_DOT, r.steps);
+}
+
+const C_ED = `
+for (int i = 1; i <= m; i++)
+    for (int j = 1; j <= n; j++)
+        dp[i][j] = a.charAt(i - 1) == b.charAt(j - 1) ? dp[i - 1][j - 1]
+                : 1 + Math.min(dp[i - 1][j - 1], Math.min(dp[i - 1][j], dp[i][j - 1]));
+return dp[m][n];`;
+{
+  const a = 'horse', b = 'ros';
+  const { r, dp, labels } = table2(C_ED, ': 1 + Math.min', a, b, (i, j) => (i === 0 ? j : j === 0 ? i : 0), (d, i, j) => (a[i - 1] === b[j - 1] ? d[i - 1][j - 1] : 1 + Math.min(d[i - 1][j - 1], d[i - 1][j], d[i][j - 1])), (d, i) => `Row '${a[i - 1]}': replace ↖, delete ↑, insert ← (+1); green = free match.`, { intro: 'horse → ros. Border: turning a prefix into empty (deletes) or empty into a prefix (inserts).' });
+  r.step(ln(C_ED, 'return'), `Answer <b>${dp[5][3]}</b>: replace h→r, delete r, delete e.`, [G('dp', dp, [[5, 3, 'done']], labels)]);
+  ANIM['Edit Distance'] = W('Edit grid', C_ED, r.steps);
+}
+
+const C_SCS = `
+while (i > 0 && j > 0) {
+    if (a.charAt(i - 1) == b.charAt(j - 1)) { sb.append(a.charAt(i - 1)); i--; j--; }
+    else if (dp[i - 1][j] >= dp[i][j - 1]) sb.append(a.charAt(--i));
+    else sb.append(b.charAt(--j));
+}
+while (i > 0) sb.append(a.charAt(--i));
+while (j > 0) sb.append(b.charAt(--j));
+return sb.reverse().toString();`;
+{
+  const a = 'abac', b = 'cab', m = 4, n = 3, r = recorder(), dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+  const labels = { rowLabels: ['∅', ...a], colLabels: ['∅', ...b] };
+  r.step(0, 'a = "abac", b = "cab". LCS table first (LCS = "ab", length 2). Answer length 4 + 3 − 2 = 5.', [G('dp', dp, [], labels)]);
+  let i = m, j = n, out = ''; const path = [];
+  while (i > 0 && j > 0) { path.push([i, j, 'active']); if (a[i - 1] === b[j - 1]) { out = a[i - 1] + out; r.step(ln(C_SCS, 'sb.append(a.charAt(i - 1)); i--; j--'), `Match '${a[i - 1]}': write it once.`, [G('dp', dp, path.slice(), labels), R('built (right to left)', [...out])]); i--; j--; } else if (dp[i - 1][j] >= dp[i][j - 1]) { i--; out = a[i] + out; r.step(ln(C_SCS, 'sb.append(a.charAt(--i))'), `Step up: '${a[i]}' only in a, write it.`, [G('dp', dp, path.slice(), labels), R('built (right to left)', [...out])]); } else { j--; out = b[j] + out; r.step(ln(C_SCS, 'sb.append(b.charAt(--j))'), `Step left: '${b[j]}' only in b, write it.`, [G('dp', dp, path.slice(), labels), R('built (right to left)', [...out])]); } }
+  while (i > 0) { i--; out = a[i] + out; } while (j > 0) { j--; out = b[j] + out; }
+  r.step(ln(C_SCS, 'return sb.reverse()'), `Flush the rest → <b>${out}</b>.`, [R('answer', [...out], { done: idx(out.length) })]);
+  ANIM['Shortest Common Supersequence'] = W('Walk the LCS table', C_SCS, r.steps);
+}
+
+const C_LRS = `
+for (int i = 1; i <= n; i++)
+    for (int j = 1; j <= n; j++)
+        dp[i][j] = s.charAt(i - 1) == s.charAt(j - 1) && i != j
+                ? dp[i - 1][j - 1] + 1
+                : Math.max(dp[i - 1][j], dp[i][j - 1]);
+return dp[n][n];`;
+{
+  const s = 'axxzxy', r = recorder(), n = s.length, dp = Array.from({ length: n + 1 }, () => Array(n + 1).fill(0)), lab = { rowLabels: ['∅', ...s], colLabels: ['∅', ...s] };
+  r.step(0, 's = "axxzxy" against itself. The diagonal i == j is forbidden.', [G('dp', dp, range(1, n).map(k => [k, k, 'bad']), lab)]);
+  for (let i = 1; i <= n; i++) { for (let j = 1; j <= n; j++) dp[i][j] = s[i - 1] === s[j - 1] && i !== j ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]); r.step(ln(C_LRS, 'dp[i][j] = s.charAt'), `Row '${s[i - 1]}'.`, [G('dp', dp.map(x => x.slice()), [...range(1, n).map(k => [k, k, 'bad']), ...range(1, n).filter(j => s[j - 1] === s[i - 1] && j !== i).map(j => [i, j, 'done'])], lab)]); }
+  r.step(ln(C_LRS, 'return'), `Answer <b>${dp[n][n]}</b>: "xx" (indexes 1,2 and 2,4).`, [G('dp', dp, [[n, n, 'done']], lab)]);
+  ANIM['Longest Repeating Subsequence'] = W('Self-LCS', C_LRS, r.steps);
+}
+
+const C_DS = `
+long[] ways = new long[t.length() + 1];
+ways[0] = 1;
+for (char c : s.toCharArray())
+    for (int j = t.length(); j >= 1; j--)
+        if (t.charAt(j - 1) == c) ways[j] += ways[j - 1];
+return (int) ways[t.length()];`;
+{
+  const s = 'rabbbit', t = 'rabbit', r = recorder(), w = [1, 0, 0, 0, 0, 0, 0];
+  r.step(0, 's = "rabbbit", t = "rabbit". ways[j] = ways to form t[0..j).', [R('t', ['∅', ...t]), A('ways', w)]);
+  [...s].forEach((c, i) => { const ch = []; for (let j = t.length; j >= 1; j--) if (t[j - 1] === c) { w[j] += w[j - 1]; ch.push(j); } r.step(ln(C_DS, 'ways[j] += ways[j - 1]'), `s[${i}] = '${c}': extend positions ${ch.join(', ')}.`, [R('t', ['∅', ...t]), A('ways', w.slice(), { active: ch })]); });
+  r.step(ln(C_DS, 'return'), `Answer <b>${w[6]}</b>: choose which of the three b's to drop.`, [A('ways', w, { done: [6] })]);
+  ANIM['Distinct Subsequences'] = W('Counting row', C_DS, r.steps);
+}
+
+const C_DS2 = `
+for (char ch : s.toCharArray()) {
+    int c = ch - 'a';
+    long fresh = (total + 1) % MOD;
+    total = (total - endsWith[c] + fresh + MOD) % MOD;
+    endsWith[c] = fresh;
+}
+return (int) total;`;
+{
+  const s = 'aba', r = recorder(), e = { a: 0, b: 0 }; let total = 0;
+  r.step(0, 's = "aba". endsWith[c] = distinct subsequences ending in c.', [R('a / b / total', [e.a, e.b, total])]);
+  [...s].forEach((c, i) => { const fresh = total + 1, old = e[c]; total = total - old + fresh; e[c] = fresh; r.step(ln(C_DS2, 'total = (total - endsWith[c]'), `'${c}': append it to all ${fresh - 1} subsequences + the empty one = ${fresh}; drop the old ${old} ending in '${c}'. total = ${total}.`, [R('a / b / total', [e.a, e.b, total], { active: [c === 'a' ? 0 : 1] })]); });
+  r.step(ln(C_DS2, 'return'), `Answer <b>${total}</b>: a, b, ab, ba, aa, aba.`, [R('total', [total], { done: [0] })]);
+  ANIM['Distinct Subsequences II'] = W('Buckets by last letter', C_DS2, r.steps);
+}
+
+const C_IL = `
+ok[0][0] = true;
+for (int i = 0; i <= m; i++)
+    for (int j = 0; j <= n; j++) {
+        if (i > 0 && ok[i - 1][j] && s1.charAt(i - 1) == s3.charAt(i + j - 1)) ok[i][j] = true;
+        if (j > 0 && ok[i][j - 1] && s2.charAt(j - 1) == s3.charAt(i + j - 1)) ok[i][j] = true;
+    }
+return ok[m][n];`;
+{
+  const s1 = 'aab', s2 = 'axy', s3 = 'aaxaby', m = 3, n = 3, r = recorder(), ok = Array.from({ length: m + 1 }, () => Array(n + 1).fill(false)), lab = { rowLabels: ['∅', ...s1], colLabels: ['∅', ...s2] };
+  const v = () => ok.map(x => x.map(b => (b ? 'T' : '·')));
+  ok[0][0] = true;
+  r.step(ln(C_IL, 'ok[0][0] = true'), 's1 = "aab", s2 = "axy", s3 = "aaxaby". Down = take from s1, right = take from s2.', [G('ok', v(), [[0, 0, 'done']], lab)]);
+  for (let i = 0; i <= m; i++) { for (let j = 0; j <= n; j++) { if (i === 0 && j === 0) continue; ok[i][j] = (i > 0 && ok[i - 1][j] && s1[i - 1] === s3[i + j - 1]) || (j > 0 && ok[i][j - 1] && s2[j - 1] === s3[i + j - 1]); } r.step(ln(C_IL, 'if (i > 0 && ok[i - 1][j]'), `Row ${i}: a cell is reachable if the letter taken matches s3[i + j − 1].`, [G('ok', v(), range(0, n).filter(j => ok[i][j]).map(j => [i, j, 'done']), lab)]); }
+  r.step(ln(C_IL, 'return'), `ok[3][3] = <b>${ok[m][n]}</b>.`, [G('ok', v(), [[m, n, ok[m][n] ? 'done' : 'bad']], lab)]);
+  ANIM['Interleaving String'] = W('Path in a grid', C_IL, r.steps);
+}
+
+const C_WFT = `
+for (String w : words) for (int c = 0; c < L; c++) freq[c][w.charAt(c) - 'a']++;
+ways[0] = 1;
+for (int col = 0; col < L; col++)
+    for (int i = Math.min(m, col + 1); i >= 1; i--)
+        ways[i] = (ways[i] + ways[i - 1] * freq[col][target.charAt(i - 1) - 'a']) % MOD;
+return (int) ways[m];`;
+{
+  const words = ['acca', 'bbbb', 'caca'], tg = 'aba', r = recorder(), w = [1, 0, 0, 0];
+  const freq = idx(4).map(c => { const f = {}; words.forEach(x => { f[x[c]] = (f[x[c]] || 0) + 1; }); return f; });
+  r.step(ln(C_WFT, 'freq[c]'), 'words acca, bbbb, caca; target "aba". Column letter counts: ' + freq.map((f, c) => `col ${c} {${Object.entries(f).map(([k, v]) => k + ':' + v).join(' ')}}`).join(', ') + '.', [A('ways', w)]);
+  for (let col = 0; col < 4; col++) { for (let i = Math.min(3, col + 1); i >= 1; i--) w[i] += w[i - 1] * (freq[col][tg[i - 1]] || 0); r.step(ln(C_WFT, 'ways[i] = (ways[i]'), `Column ${col}: it may supply target[i − 1] for any i ≤ ${Math.min(3, col + 1)} → ways = [${w}].`, [A('ways', w.slice(), { active: range(1, Math.min(3, col + 1)) })]); }
+  r.step(ln(C_WFT, 'return'), `Answer <b>${w[3]}</b>.`, [A('ways', w, { done: [3] })]);
+  ANIM['Number of Ways to Form a Target String Given a Dictionary'] = W('Columns as items', C_WFT, r.steps);
+}
+
+const C_LCP = `
+for (int i = 0; i < n; i++) {
+    if (s[i] != 0) continue;
+    for (int j = i; j < n; j++) if (lcp[i][j] > 0) s[j] = next;
+    next++;
+}
+verify: lcp[i][j] == (s[i] != s[j] ? 0 : lcp[i + 1][j + 1] + 1)`;
+{
+  const lcp = [[4, 0, 2, 0], [0, 3, 0, 1], [2, 0, 2, 0], [0, 1, 0, 1]], r = recorder(), s = Array(4).fill('·');
+  r.step(0, 'Given LCP matrix. lcp[i][j] > 0 means s[i] == s[j].', [G('lcp', lcp)]);
+  let next = 'a';
+  for (let i = 0; i < 4; i++) { if (s[i] !== '·') continue; const grp = []; for (let j = i; j < 4; j++) if (lcp[i][j] > 0) { s[j] = next; grp.push(j); } r.step(ln(C_LCP, 's[j] = next'), `Position ${i} starts a new group {${grp}} → letter '${next}'.`, [G('lcp', lcp, grp.map(j => [i, j, 'active'])), R('s', s.slice())]); next = String.fromCharCode(next.charCodeAt(0) + 1); }
+  r.step(ln(C_LCP, 'verify'), 'Rebuild every lcp[i][j] from the bottom-right: all match → <b>"abab"</b>.', [G('lcp', lcp, idx(4).flatMap(i => idx(4).map(j => [i, j, 'done']))), R('s', s, { done: idx(4) })]);
+  ANIM['Find the String with LCP'] = W('Group then verify', C_LCP, r.steps);
+}
+
+const META = [{"name": "Longest Common Subsequence", "hook": "Two people read their strings left to right and <b>shout when they see the same letter</b>; they may skip letters but never go back.", "mantra": "MATCH → ↖ + 1 · ELSE max(↑, ←)", "statement": "Return the length of the longest subsequence common to both strings (and, as a bonus, one such subsequence).", "recall": [["Why is a match always safe to take?", "Any LCS that skips one of the two equal last chars can be shifted to use them."], ["Why cannot two rows print the LCS?", "Walking back needs the whole table."]], "links": [["Uncrossed Lines", 6], ["Edit Distance", 8], ["Shortest Common Supersequence", 9]]}, {"name": "All Longest Common Subsequences", "hook": "Walk back through the LCS table but <b>follow every branch that keeps the length</b>.", "mantra": "MATCH → APPEND CHAR · ELSE GO ↑ AND/OR ← IF EQUAL", "statement": "Return all distinct longest common subsequences of two strings, sorted lexicographically.", "recall": [["Why a set?", "Different paths can spell the same string."], ["Why memoise cells?", "Many paths share the same sub-cells."]], "links": [["Longest Common Subsequence", 0]]}, {"name": "Longest Common Substring", "hook": "Like LCS, but a mismatch <b>breaks the chain</b>: the cell becomes 0.", "mantra": "MATCH → ↖ + 1 · ELSE 0; ANSWER = MAX CELL", "statement": "Return the length of the longest common substring (contiguous) of two strings, and print one.", "recall": [["Why is the answer not dp[m][n]?", "The common substring can end anywhere."], ["Faster for long strings?", "Suffix automaton or binary search + hashing."]], "links": [["Maximum Length of Repeated Subarray", 3], ["Longest Common Subsequence", 0]]}, {"name": "Maximum Length of Repeated Subarray", "hook": "Common substring on arrays; one row is enough if you <b>scan j backwards</b>.", "mantra": "dp[j] = a[i−1] == b[j−1] ? dp[j−1] + 1 : 0 (j DOWN)", "statement": "Return the maximum length of a subarray that appears in both arrays.", "recall": [["Why backwards?", "dp[j − 1] must still be the previous row."], ["Binary-search alternative?", "Search the length and check with rolling hashes."]], "links": [["Longest Common Substring", 2]]}, {"name": "Delete Operation for Two Strings", "hook": "Whatever survives the deletions is a <b>common subsequence</b>; keep the longest.", "mantra": "ANSWER = m + n − 2 · LCS", "statement": "Return the minimum number of deletions (one character from either string per step) to make the strings equal.", "recall": [["Base row?", "dp[i][0] = i: delete everything."], ["Weighted version?", "Minimum ASCII Delete Sum."]], "links": [["Longest Common Subsequence", 0], ["Minimum ASCII Delete Sum for Two Strings", 5], ["Edit Distance", 8]]}, {"name": "Minimum ASCII Delete Sum for Two Strings", "hook": "Deletions now <b>cost the character code</b>: keep the common subsequence with the heaviest letters.", "mantra": "MATCH → ↖ · ELSE min(↑ + a[i], ← + b[j])", "statement": "Return the lowest ASCII sum of deleted characters to make the two strings equal.", "recall": [["Is it LCS with weights?", "Yes: total − 2 × heaviest common subsequence."], ["Base cases?", "Prefix sums of codes."]], "links": [["Delete Operation for Two Strings", 4], ["Edit Distance", 8]]}, {"name": "Uncrossed Lines", "hook": "Lines between equal numbers that <b>never cross</b> must keep the order on both sides: that is a common subsequence.", "mantra": "SAME TABLE AS LCS", "statement": "Two rows of numbers; draw lines between equal numbers (each number in at most one line) so that no two lines cross. Return the maximum number of lines.", "recall": [["Why exactly LCS?", "Increasing in both rows = subsequence of both."], ["Space?", "Two rows of the LCS table."]], "links": [["Longest Common Subsequence", 0]]}, {"name": "Max Dot Product of Two Subsequences", "hook": "LCS where every pair you take <b>scores a·b</b>, and you must take at least one pair.", "mantra": "dp = max(pair, pair + ↖, ↑, ←)", "statement": "Return the maximum dot product between non-empty subsequences of nums1 and nums2 of the same length.", "recall": [["Why \"pair alone\"?", "The diagonal may be negative; starting fresh can be better."], ["All products negative?", "The answer is the least negative single pair, not 0."]], "links": [["Longest Common Subsequence", 0]]}, {"name": "Edit Distance", "hook": "Three tools: <b>replace ↖, delete ↑, insert ←</b>, each costing 1; a match is free.", "mantra": "MATCH → ↖ · ELSE 1 + min(↖, ↑, ←)", "statement": "Return the minimum number of insertions, deletions and replacements to convert word1 into word2.", "recall": [["Base cases?", "dp[i][0] = i deletions, dp[0][j] = j insertions."], ["Which cell is \"insert\"?", "Left: b gained a character that a did not have."]], "links": [["Delete Operation for Two Strings", 4], ["Longest Common Subsequence", 0]]}, {"name": "Shortest Common Supersequence", "hook": "Write both strings together but <b>share the LCS letters</b> once.", "mantra": "LENGTH = m + n − LCS; WALK BACK: MATCH ONCE, ELSE EMIT THE DROPPED CHAR", "statement": "Return the shortest string that has both str1 and str2 as subsequences (any one if several). The GfG version asks only for the length.", "recall": [["Why m + n − LCS?", "Only the LCS letters can be shared."], ["Why flush at the end?", "One string may still have unmatched prefix letters."]], "links": [["Longest Common Subsequence", 0]]}, {"name": "Longest Repeating Subsequence", "hook": "Compare the string <b>with itself</b>, but a letter may not match its own copy.", "mantra": "LCS(s, s) WITH MATCH ONLY IF i ≠ j", "statement": "Find the longest subsequence that occurs twice in s such that the two occurrences never use the same index at the same position. Return its length (and print one).", "recall": [["Why forbid i == j?", "That would match a character with itself, giving the whole string."], ["Can the two occurrences overlap?", "Yes, as long as positions differ index by index."]], "links": [["Longest Common Subsequence", 0]]}, {"name": "Distinct Subsequences", "hook": "Count the ways to <b>cross out letters of s</b> so that t remains.", "mantra": "ways[j] += ways[j − 1] IF s[i] == t[j − 1] (j DOWN)", "statement": "Count the distinct index subsequences of s that spell t.", "recall": [["Base case?", "ways[0] = 1: the empty t is formed once."], ["Why backwards?", "Each char of s is used at most once per way."]], "links": [["Distinct Subsequences II", 12], ["Number of Ways to Form a Target String Given a Dictionary", 14]]}, {"name": "Distinct Subsequences II", "hook": "Every distinct subsequence is identified by <b>its last letter</b>; a new copy of c replaces the old \"ends in c\" bucket.", "mantra": "fresh = total + 1; total += fresh − endsWith[c]; endsWith[c] = fresh", "statement": "Count the distinct non-empty subsequences of s, modulo 1e9+7.", "recall": [["Why replace, not add?", "The new set ending in c contains the old one."], ["Modulo trap?", "Add MOD before taking % after a subtraction."]], "links": [["Distinct Subsequences", 11]]}, {"name": "Interleaving String", "hook": "A path in the grid: <b>down = take from s1, right = take from s2</b>; each step must match the next letter of s3.", "mantra": "ok[i][j] = (ok[i−1][j] AND s1[i−1] == s3[i+j−1]) OR (ok[i][j−1] AND s2[j−1] == s3[i+j−1])", "statement": "Return true if s3 is formed by interleaving s1 and s2 (keeping each one's order).", "recall": [["First check?", "Lengths must add up."], ["Why is greedy wrong?", "When both strings offer the same letter, the wrong choice may fail later."]], "links": [["Longest Common Subsequence", 0]]}, {"name": "Number of Ways to Form a Target String Given a Dictionary", "hook": "Only <b>the column and the letter</b> matter, not which word: count letters per column first.", "mantra": "ways[i] += ways[i − 1] · freq[col][target[i − 1]] (i DOWN)", "statement": "Words have equal length. Build target left to right; each letter is taken from some word at column k, and later letters must use columns strictly to the right. Count the ways modulo 1e9+7.", "recall": [["Why frequencies?", "Any word with that letter in that column gives a distinct way."], ["Why i downward?", "A column provides at most one letter."]], "links": [["Distinct Subsequences", 11]]}, {"name": "Find the String with LCP", "hook": "<code>lcp[i][j] &gt; 0</code> means <b>s[i] == s[j]</b>: group positions, give letters in order, then check the whole matrix.", "mantra": "BUILD: NEW GROUP → NEXT LETTER · VERIFY: lcp[i][j] = s[i] == s[j] ? lcp[i+1][j+1] + 1 : 0", "statement": "lcp[i][j] is the longest common prefix of the suffixes starting at i and j. Given the matrix, return the lexicographically smallest lowercase string with exactly this matrix, or \"\".", "recall": [["Why verify?", "The input may be inconsistent (wrong diagonal, asymmetric, wrong lengths)."], ["When do letters run out?", "More than 26 groups → \"\"."]], "links": [["Longest Common Substring", 2]]}];
+mount({
+  title: "Strings and Subsequences Animations",
+  sub: "Two strings, one grid: <b>dp[i][j] describes the prefixes a[0..i) and b[0..j)</b>. Each cell looks at its three neighbours: up (drop a char of a), left (drop a char of b), diagonal (use both last chars).",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

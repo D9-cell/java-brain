@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jumps and Reach Animations</title>
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const idx = n => Array.from({ length: n }, (_, i) => i);
+const range = (a, b) => idx(Math.max(0, b - a + 1)).map(x => x + a);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+
+const C_JG = `
+int reach = 0;
+for (int i = 0; i < nums.length; i++) {
+    if (i > reach) return false;
+    reach = Math.max(reach, i + nums[i]);
+}
+return true;`;
+{
+  const a = [3, 2, 1, 0, 4], r = recorder(); let reach = 0;
+  r.step(ln(C_JG, 'int reach'), 'nums = [3,2,1,0,4]. The torch lights indexes up to reach = 0.', [A('nums', a, { done: [0] })]);
+  for (let i = 0; i < a.length; i++) {
+    if (i > reach) { r.step(ln(C_JG, 'if (i > reach)'), `i = ${i} is beyond reach = ${reach}: stuck in the dark → <b>false</b>.`, [A('nums', a, { bad: [i], done: range(0, reach) })]); break; }
+    reach = Math.max(reach, i + a[i]);
+    r.step(ln(C_JG, 'reach = Math.max'), `i = ${i}: reach = max(reach, ${i} + ${a[i]}) = ${reach}.`, [A('nums', a, { active: [i], done: range(0, Math.min(reach, a.length - 1)) })]);
+  }
+  ANIM['Jump Game'] = W('Farthest reach', C_JG, r.steps);
+}
+
+const C_JG2 = `
+int jumps = 0, end = 0, far = 0;
+for (int i = 0; i < nums.length - 1; i++) {
+    far = Math.max(far, i + nums[i]);
+    if (i == end) { jumps++; end = far; }
+}
+return jumps;`;
+{
+  const a = [2, 3, 1, 1, 4], r = recorder(); let jumps = 0, end = 0, far = 0;
+  r.step(ln(C_JG2, 'int jumps'), 'nums = [2,3,1,1,4]. Level 0 is just index 0.', [A('nums', a, { active: [0] })]);
+  for (let i = 0; i < a.length - 1; i++) {
+    far = Math.max(far, i + a[i]);
+    const hit = i === end; if (hit) { jumps++; end = far; }
+    r.step(ln(C_JG2, hit ? 'jumps++' : 'far = Math.max'), hit ? `i = ${i} ends the level: jump #${jumps}, next level ends at ${end}.` : `i = ${i}: far = ${far}.`, [A('nums', a, { active: [i], done: range(i + 1, Math.min(end, a.length - 1)) })]);
+  }
+  r.step(ln(C_JG2, 'return jumps'), `Answer <b>${jumps}</b> (0 → 1 → 4).`, [R('jumps', [jumps], { done: [0] })]);
+  ANIM['Jump Game II'] = W('Greedy levels', C_JG2, r.steps);
+}
+
+const C_JG5 = `
+private int visit(int[] a, int d, int i, int[] memo) {
+    if (memo[i] > 0) return memo[i];
+    int res = 1;
+    for (int dir = -1; dir <= 1; dir += 2)
+        for (int j = i + dir; inside && |j - i| <= d && a[j] < a[i]; j += dir)
+            res = Math.max(res, 1 + visit(a, d, j, memo));
+    return memo[i] = res;
+}`;
+{
+  const a = [6, 4, 14, 6, 8, 13, 9, 7, 10, 6, 12], d = 2, n = a.length, r = recorder(), dp = Array(n).fill(0);
+  const order = idx(n).sort((x, y) => a[x] - a[y]);
+  r.step(0, 'arr = [6,4,14,6,8,13,9,7,10,6,12], d = 2. Solve bars from lowest to highest so every target is final.', [A('arr', a)]);
+  for (const i of order) {
+    dp[i] = 1; const used = [];
+    for (const dir of [-1, 1]) for (let j = i + dir; j >= 0 && j < n && Math.abs(j - i) <= d && a[j] < a[i]; j += dir) { used.push(j); dp[i] = Math.max(dp[i], 1 + dp[j]); }
+    if ([10, 5, 2].includes(i) || a[i] <= 6) r.step(ln(C_JG5, 'res = Math.max'), `Bar ${i} (height ${a[i]}): reachable ${used.length ? used.join(', ') : 'none'} → best = ${dp[i]}.`, [A('arr', a, { active: [i], warn: used }), A('best', dp.map(v => v || '·'))]);
+  }
+  r.step(ln(C_JG5, 'return memo'), `Answer <b>${Math.max(...dp)}</b>: start at index 10 and jump 10 → 8 → 6 → 7 (heights 12 → 10 → 9 → 7).`, [A('best', dp, { done: [dp.indexOf(Math.max(...dp))] })]);
+  ANIM['Jump Game V'] = W('Lowest bars first', C_JG5, r.steps);
+}
+
+const C_JG6 = `
+for (int i = 1; i < n; i++) {
+    if (dq.peekFirst() < i - k) dq.pollFirst();
+    dp[i] = nums[i] + dp[dq.peekFirst()];
+    while (!dq.isEmpty() && dp[dq.peekLast()] <= dp[i]) dq.pollLast();
+    dq.addLast(i);
+}
+return dp[n - 1];`;
+{
+  const a = [1, -1, -2, 4, -7, 3], k = 2, r = recorder(), dp = [1]; let dq = [0];
+  r.step(0, 'nums = [1,-1,-2,4,-7,3], k = 2. dp[0] = 1; the deque keeps indexes with decreasing dp.', [A('dp', dp), R('deque', dq)]);
+  for (let i = 1; i < a.length; i++) {
+    if (dq[0] < i - k) dq.shift();
+    dp[i] = a[i] + dp[dq[0]];
+    while (dq.length && dp[dq[dq.length - 1]] <= dp[i]) dq.pop();
+    dq.push(i);
+    r.step(ln(C_JG6, 'dp[i] = nums[i]'), `i = ${i}: window ${Math.max(0, i - k)}..${i - 1}, best dp there = ${dp[i] - a[i]} → dp[${i}] = ${a[i]} + ${dp[i] - a[i]} = ${dp[i]}. Deque = [${dq}].`, [A('nums', a, { active: [i], warn: range(Math.max(0, i - k), i - 1) }), A('dp', dp), R('deque', dq)]);
+  }
+  r.step(ln(C_JG6, 'return'), `Answer <b>${dp[a.length - 1]}</b> (1 → -1 → 4 → 3).`, [A('dp', dp, { done: [a.length - 1] })]);
+  ANIM['Jump Game VI'] = W('Monotonic deque', C_JG6, r.steps);
+}
+
+const C_JG7 = `
+for (int i = 1; i < n; i++) {
+    if (i - minJump >= 0 && ok[i - minJump]) inWindow++;
+    if (i - maxJump - 1 >= 0 && ok[i - maxJump - 1]) inWindow--;
+    ok[i] = s.charAt(i) == '0' && inWindow > 0;
+}
+return ok[n - 1];`;
+{
+  const s = '011010', lo = 2, hi = 3, r = recorder(), ok = [true]; let w = 0;
+  r.step(0, 's = "011010", minJump 2, maxJump 3. Index i looks back at window [i−3, i−2].', [A('s', [...s], { done: [0] })]);
+  for (let i = 1; i < s.length; i++) {
+    if (i - lo >= 0 && ok[i - lo]) w++;
+    if (i - hi - 1 >= 0 && ok[i - hi - 1]) w--;
+    ok[i] = s[i] === '0' && w > 0;
+    r.step(ln(C_JG7, 'ok[i] ='), `i = ${i}: reachable cells in window = ${w}, s[${i}] = '${s[i]}' → ${ok[i] ? 'reachable' : 'not reachable'}.`, [A('s', [...s], { active: [i], warn: range(Math.max(0, i - hi), i - lo), done: idx(i).filter(x => ok[x]) })]);
+  }
+  r.step(ln(C_JG7, 'return'), `ok[5] = <b>${ok[5]}</b> (0 → 3 → 5).`, [A('s', [...s], { done: idx(6).filter(x => ok[x]) })]);
+  ANIM['Jump Game VII'] = W('Window count', C_JG7, r.steps);
+}
+
+const C_FJ = `
+arrive.get(stones[0]).add(0);
+for (int s : stones)
+    for (int k : arrive.get(s))
+        for (int step = k - 1; step <= k + 1; step++)
+            if (step > 0 && arrive.containsKey(s + step)) arrive.get(s + step).add(step);
+return !arrive.get(last).isEmpty();`;
+{
+  const st = [0, 1, 3, 5, 6, 8, 12, 17], r = recorder(), arr = {}; st.forEach(x => { arr[x] = new Set(); }); arr[0].add(0);
+  const show = () => st.map(x => [...arr[x]].sort((a, b) => a - b).join(',') || '·');
+  r.step(ln(C_FJ, 'add(0)'), 'stones = [0,1,3,5,6,8,12,17]. Stone 0 holds jump size 0 so the first jump is exactly 1.', [R('stone', st), R('sizes', show())]);
+  st.forEach((s, i) => { for (const k of [...arr[s]]) for (let step = k - 1; step <= k + 1; step++) if (step > 0 && arr[s + step]) arr[s + step].add(step); r.step(ln(C_FJ, 'arrive.get(s + step).add'), `Stone ${s}: push every size k as k−1, k, k+1 forward.`, [R('stone', st, { active: [i] }), R('sizes', show(), { active: [i] })]); });
+  r.step(ln(C_FJ, 'return'), `Last stone holds {${[...arr[17]]}} → <b>true</b>.`, [R('sizes', show(), { done: [st.length - 1] })]);
+  ANIM['Frog Jump'] = W('Sizes per stone', C_FJ, r.steps);
+}
+
+const C_MJ = `
+dp[0] = 0;
+for (int j = 1; j < n; j++)
+    for (int i = 0; i < j; i++)
+        if (dp[i] >= 0 && Math.abs(nums[j] - nums[i]) <= target) dp[j] = Math.max(dp[j], dp[i] + 1);
+return dp[n - 1];`;
+{
+  const a = [1, 3, 6, 4, 1, 2], t = 2, r = recorder(), dp = [0, -1, -1, -1, -1, -1];
+  r.step(ln(C_MJ, 'dp[0] = 0'), 'nums = [1,3,6,4,1,2], target 2. dp[j] = most jumps landing on j (−1 = unreachable).', [A('nums', a), A('dp', dp)]);
+  for (let j = 1; j < a.length; j++) {
+    const from = []; for (let i = 0; i < j; i++) if (dp[i] >= 0 && Math.abs(a[j] - a[i]) <= t) { from.push(i); dp[j] = Math.max(dp[j], dp[i] + 1); }
+    r.step(ln(C_MJ, 'dp[j] = Math.max'), `j = ${j}: can come from ${from.length ? from.join(', ') : 'nobody'} → dp[${j}] = ${dp[j]}.`, [A('nums', a, { active: [j], warn: from }), A('dp', dp.slice())]);
+  }
+  r.step(ln(C_MJ, 'return'), `Answer <b>${dp[5]}</b> (0 → 1 → 3 → 5).`, [A('dp', dp, { done: [5] })]);
+  ANIM['Maximum Number of Jumps to Reach the Last Index'] = W('Look-back DP', C_MJ, r.steps);
+}
+
+const C_REF = `
+dp[0] = startFuel;
+for (int i = 0; i < n; i++)
+    for (int t = i; t >= 0; t--)
+        if (dp[t] >= stations[i][0]) dp[t + 1] = Math.max(dp[t + 1], dp[t] + stations[i][1]);
+for (int t = 0; t <= n; t++) if (dp[t] >= target) return t;
+return -1;`;
+{
+  const st = [[10, 60], [20, 30], [30, 30], [60, 40]], target = 100, r = recorder(), dp = [10, 0, 0, 0, 0];
+  r.step(ln(C_REF, 'dp[0] = startFuel'), 'target 100, start fuel 10, stations (pos, fuel) = (10,60) (20,30) (30,30) (60,40). dp[t] = farthest with t stops.', [A('dp[t]', dp)]);
+  st.forEach(([p, f], i) => { for (let t = i; t >= 0; t--) if (dp[t] >= p) dp[t + 1] = Math.max(dp[t + 1], dp[t] + f); r.step(ln(C_REF, 'dp[t + 1] = Math.max'), `Station at ${p} (+${f}): any plan reaching ${p} may stop here → dp = [${dp}].`, [A('dp[t]', dp.slice(), { active: idx(i + 2) })]); });
+  const ans = dp.findIndex(v => v >= target);
+  r.step(ln(C_REF, 'if (dp[t] >= target)'), `First t with dp[t] ≥ 100: <b>${ans}</b> stops (at 10 and 60).`, [A('dp[t]', dp, { done: [ans] })]);
+  ANIM['Minimum Number of Refueling Stops'] = W('DP over stop count', C_REF, r.steps);
+}
+
+const C_CH = `
+for (int r = 0; r < queryRow; r++) {
+    double[] next = new double[r + 2];
+    for (int g = 0; g <= r; g++) {
+        double extra = (row[g] - 1) / 2;
+        if (extra > 0) { next[g] += extra; next[g + 1] += extra; }
+    }
+    row = next;
+}
+return Math.min(1, row[queryGlass]);`;
+{
+  const r = recorder(), rows = [[6]];
+  r.step(0, 'Pour 6 cups into the top glass. Track how much flows into each glass.', [R('row 0', rows[0])]);
+  for (let k = 0; k < 3; k++) { const nx = Array(k + 2).fill(0); rows[k].forEach((v, g) => { const e = (v - 1) / 2; if (e > 0) { nx[g] += e; nx[g + 1] += e; } }); rows.push(nx); r.step(ln(C_CH, 'next[g] += extra'), `Row ${k + 1}: each glass above keeps 1 cup and splits the rest → [${nx}].`, rows.map((x, i) => R('row ' + i, x.map(v => +v.toFixed(3)), { active: i === k + 1 ? idx(x.length) : [] }))); }
+  r.step(ln(C_CH, 'return Math.min'), 'Glass (2, 1) received 1.5 cups → it is full: <b>1.0</b>. Glass (3, 0) got 0.125.', rows.map((x, i) => R('row ' + i, x.map(v => +Math.min(1, v).toFixed(3)), { done: i === 2 ? [1] : [] })));
+  ANIM['Champagne Tower'] = W('Overflow by rows', C_CH, r.steps);
+}
+
+const C_BLD = `
+long space = 1, building = 1;
+for (int i = 2; i <= n; i++) {
+    long ns = (space + building) % MOD, nb = space;
+    space = ns; building = nb;
+}
+long side = (space + building) % MOD;
+return (int) (side * side % MOD);`;
+{
+  const r = recorder(); let sp = 1, b = 1;
+  r.step(ln(C_BLD, 'long space'), 'One plot: it is either empty (S) or a building (B). n = 4.', [R('ends S / ends B', [sp, b])]);
+  for (let i = 2; i <= 4; i++) { const ns = sp + b, nb = sp; sp = ns; b = nb; r.step(ln(C_BLD, 'long ns'), `Plot ${i}: S can follow anything (${sp}); B only follows S (${b}).`, [R('ends S / ends B', [sp, b], { active: [0, 1] })]); }
+  r.step(ln(C_BLD, 'return'), `One side: ${sp + b} layouts. Two independent sides: ${sp + b}² = <b>${(sp + b) ** 2}</b>.`, [R('answer', [(sp + b) ** 2], { done: [0] })]);
+  ANIM['Count possible ways to construct buildings'] = W('Two rolling counts', C_BLD, r.steps);
+}
+
+const C_GG = `
+private int best(int[] cost, int i, int money, int[][] memo) {
+    if (i == cost.length || money <= 0) return 0;
+    int res = best(cost, i + 1, money, memo);
+    if (money >= cost[i])
+        res = Math.max(res, 1 + best(cost, i + 1, money - cost[i] + cost[i] * 9 / 10, memo));
+    return memo[i][money] = res;
+}`;
+{
+  const cost = [10, 9, 5, 8], total = 12, r = recorder(), path = []; let money = total;
+  r.step(0, 'total = 12, cost = [10, 9, 5, 8]. Each purchase needs the full price, then refunds 90% (floored).', [A('cost', cost), R('money', [money])]);
+  const f = (i, m) => { if (i === cost.length || m <= 0) return 0; let res = f(i + 1, m); if (m >= cost[i]) res = Math.max(res, 1 + f(i + 1, m - cost[i] + Math.floor(cost[i] * 9 / 10))); return res; };
+  for (let i = 0; i < cost.length; i++) {
+    const skip = f(i + 1, money), take = money >= cost[i] ? 1 + f(i + 1, money - cost[i] + Math.floor(cost[i] * 9 / 10)) : -1;
+    if (take >= skip && take > 0) { const nm = money - cost[i] + Math.floor(cost[i] * 9 / 10); r.step(ln(C_GG, 'res = Math.max'), `Course ${i} (${cost[i]}): buy → ${take} vs skip → ${skip}. Buy: money ${money} → ${nm}.`, [A('cost', cost, { active: [i], done: path }), R('money', [nm])]); money = nm; path.push(i); }
+    else r.step(ln(C_GG, 'int res = best'), `Course ${i} (${cost[i]}): ${take < 0 ? 'cannot afford' : `buy → ${take} vs skip → ${skip}`}. Skip.`, [A('cost', cost, { bad: [i], done: path }), R('money', [money])]);
+  }
+  r.step(ln(C_GG, 'return memo'), `Answer <b>${path.length}</b> courses.`, [A('cost', cost, { done: path })]);
+  ANIM['Grinding Geek'] = W('Take or skip with money', C_GG, r.steps);
+}
+
+const C_VPS = `
+for (char c : s.toCharArray()) {
+    if (c == '(') { lo++; hi++; }
+    else if (c == ')') { lo--; hi--; }
+    else { lo--; hi++; }
+    if (hi < 0) return false;
+    lo = Math.max(lo, 0);
+}
+return lo == 0;`;
+{
+  const s = '(*))', r = recorder(); let lo = 0, hi = 0;
+  r.step(0, 's = "(*))". [lo, hi] = smallest and largest possible number of open brackets.', [A('s', [...s]), R('[lo, hi]', [lo, hi])]);
+  [...s].forEach((c, i) => { if (c === '(') { lo++; hi++; } else if (c === ')') { lo--; hi--; } else { lo--; hi++; } const rawLo = lo; lo = Math.max(lo, 0); r.step(ln(C_VPS, c === '(' ? "c == '('" : c === ')' ? "c == ')'" : 'else { lo--'), `'${c}': range [${rawLo}, ${hi}]${rawLo < 0 ? ` → clamp lo to 0` : ''}.`, [A('s', [...s], { active: [i], done: idx(i) }), R('[lo, hi]', [lo, hi])]); });
+  r.step(ln(C_VPS, 'return lo == 0'), `0 is inside [${lo}, ${hi}] → <b>true</b> (the '*' acts as '(').`, [R('[lo, hi]', [lo, hi], { done: [0, 1] })]);
+  ANIM['Valid Parenthesis String'] = W('Range of open counts', C_VPS, r.steps);
+}
+
+const C_WALL = `
+for (int i = 0; i < n; i++) {
+    int fireLeftAfterLeft = count(w, lo[i], pos[i]) + left;
+    int fireLeftAfterRight = count(w, max(lo[i], hi[i - 1] + 1), pos[i]) + right;
+    int fireRight = count(w, pos[i], hi[i]) + Math.max(left, right);
+    left = Math.max(fireLeftAfterLeft, fireLeftAfterRight);
+    right = fireRight;
+}
+return Math.max(left, right);`;
+{
+  const r = recorder();
+  r.step(0, 'robots at 2 (d = 1) and 10 (d = 5); walls at 2, 5, 7. Sorted robots: 2, 10.', [R('robots', ['2 (d1)', '10 (d5)']), R('walls', [2, 5, 7])]);
+  r.step(ln(C_WALL, 'int fireLeftAfterLeft'), 'Robot 2: left covers [1, 2] → 1 wall (2); right covers [2, 3] → 1 wall. left = 1, right = 1.', [R('left / right', [1, 1])]);
+  r.step(ln(C_WALL, 'int fireLeftAfterRight'), 'Robot 10: left covers [5, 10] → walls 5, 7 (2). After robot 2 fired right its range ended at 3, no overlap. left = 2 + 1 = 3.', [R('left / right', [3, 1], { active: [0] })]);
+  r.step(ln(C_WALL, 'int fireRight'), 'Robot 10 right covers [10, 15] → 0 walls: right = 0 + max(1, 1) = 1.', [R('left / right', [3, 1], { active: [1] })]);
+  r.step(ln(C_WALL, 'return'), 'Answer max(3, 1) = <b>3</b>: every wall is destroyed.', [R('answer', [3], { done: [0] })]);
+  ANIM['Maximum Walls Destroyed by Robots'] = W('Two-state DP', C_WALL, r.steps);
+}
+
+const C_TF = `
+for (int i = 1; i < word.length(); i++) {
+    for (int other = 0; other < 27; other++) {
+        next[other] = Math.min(next[other], dp[other] + dist(prev, cur));
+        next[prev] = Math.min(next[prev], dp[other] + dist(other, cur));
+    }
+    dp = next;
+}`;
+{
+  const w = 'CAKE', r = recorder(), pos = c => [Math.floor((c.charCodeAt(0) - 65) / 6), (c.charCodeAt(0) - 65) % 6];
+  const d = (a, b) => a === null ? 0 : Math.abs(pos(a)[0] - pos(b)[0]) + Math.abs(pos(a)[1] - pos(b)[1]);
+  let dp = new Map([[null, 0]]);
+  const show = m => [...m].map(([k, v]) => `${k || 'free'}:${v}`);
+  r.step(0, 'word = "CAKE". After typing C one finger is on C; the other is still free (cost 0).', [R('other finger : cost', show(dp))]);
+  for (let i = 1; i < w.length; i++) {
+    const prev = w[i - 1], cur = w[i], nx = new Map();
+    const up = (k, v) => { if (!nx.has(k) || nx.get(k) > v) nx.set(k, v); };
+    for (const [o, v] of dp) { up(o, v + d(prev, cur)); up(prev, v + d(o, cur)); }
+    dp = nx;
+    r.step(ln(C_TF, 'next[prev]'), `Type ${cur}: move the finger on ${prev} (other stays) or move the other finger (now ${prev} becomes "other").`, [R('other finger : cost', show(dp))]);
+  }
+  r.step(ln(C_TF, 'dp = next'), `Answer min = <b>${Math.min(...dp.values())}</b> (C→A 2, free finger to K 0, K→E 1).`, [R('other finger : cost', show(dp), { done: idx(dp.size) })]);
+  ANIM['Minimum Distance to Type a Word Using Two Fingers'] = W('Track the other finger', C_TF, r.steps);
+}
+
+const C_MRG = `
+int best = Integer.MAX_VALUE, carried = 0;
+for (int j = i + 1; j < n && j - i - 1 <= left; j++) {
+    int rest = go(j, left - (j - i - 1), time[j] + carried, pos, time, memo);
+    if (rest != Integer.MAX_VALUE) best = Math.min(best, (pos[j] - pos[i]) * rate + rest);
+    carried += time[j];
+}
+return memo[i][left][rate] = best;`;
+{
+  const pos = [0, 3, 8, 10], time = [5, 8, 3, 6], r = recorder();
+  r.step(0, 'positions [0,3,8,10], time [5,8,3,6], k = 1. From a kept sign choose the next kept sign; the skipped ones merge into it.', [A('position', pos), A('time', time)]);
+  r.step(ln(C_MRG, 'int rest = go'), 'Option: remove sign 1 → drive 0..8 at rate 5 = 40, sign 2 rate 3 + 8 = 11, drive 8..10 at 11 = 22. Total 62.', [A('time', [5, '–', 11, 6], { bad: [1], active: [2] })]);
+  r.step(ln(C_MRG, 'int rest = go'), 'Option: remove sign 2 → 0..3 at 5 = 15, 3..10 at 8 = 56. Total 71.', [A('time', [5, 8, '–', 9], { bad: [2] })]);
+  r.step(ln(C_MRG, 'return memo'), 'Minimum <b>62</b>.', [R('answer', [62], { done: [0] })]);
+  ANIM['Merge Operations for Minimum Travel Time'] = W('Choose the next kept sign', C_MRG, r.steps);
+}
+
+const META = [{"name": "Jump Game", "hook": "Walk forward carrying a <b>torch</b> that lights up to the farthest index reachable; if you step into darkness, you are stuck.", "mantra": "i > reach → false; reach = max(reach, i + nums[i])", "statement": "nums[i] is the longest jump allowed from index i. Starting at index 0, can you reach the last index?", "recall": [["Why is the reachable set a prefix?", "From any reachable index you can also stop short, so every index before the farthest one is reachable."], ["Where does it fail?", "At a zero that no earlier jump can pass."]], "links": [["Jump Game II", 1], ["Jump Game VII", 4]]}, {"name": "Jump Game II", "hook": "Jumps are <b>BFS levels</b>: everything reachable with t jumps is one window; the next window ends at the farthest reach from it.", "mantra": "i == end → jumps++, end = far", "statement": "Return the minimum number of jumps to reach the last index (it is always reachable).", "recall": [["Why stop the loop at n − 2?", "Arriving at the last index needs no further jump."], ["Why is this BFS?", "Every jump count is a level, and levels are contiguous windows."]], "links": [["Jump Game", 0]]}, {"name": "Jump Game V", "hook": "You can only jump <b>downhill</b>, so heights give a natural order: no cycles.", "mantra": "best(i) = 1 + max best(j); SCAN EACH SIDE UNTIL A BAR IS ≥ arr[i]", "statement": "From index i you may jump to j with |i − j| ≤ d if arr[j] &lt; arr[i] and every bar strictly between them is lower than arr[i]. Start anywhere; return the maximum number of indexes you can visit.", "recall": [["Why can you stop scanning at the first tall bar?", "It blocks the jump to it and every jump past it."], ["Why is there no cycle?", "Every jump strictly decreases the height."]], "links": [["Jump Game VI", 3]]}, {"name": "Jump Game VI", "hook": "Each landing takes the <b>best score among the last k landings</b>: a sliding-window maximum.", "mantra": "dp[i] = nums[i] + max(dp[i−k..i−1]) VIA DECREASING DEQUE", "statement": "Start at index 0 and jump forward 1..k steps at a time until index n − 1. Your score is the sum of the values you land on. Return the maximum score.", "recall": [["Why can a smaller back element be dropped?", "The new one is better and stays in the window longer."], ["Heap alternative?", "A max-heap with lazy removal: O(n log n)."]], "links": [["Jump Game VII", 4]]}, {"name": "Jump Game VII", "hook": "A cell is reachable if <b>any</b> reachable cell sits in the window <code>[i − max, i − min]</code>: just count them.", "mantra": "inWindow += ok[i − min]; inWindow −= ok[i − max − 1]", "statement": "A binary string starts with 0. From a 0 at i you may jump to a 0 at j with i + minJump ≤ j ≤ i + maxJump. Can you reach the last index?", "recall": [["Which index enters the window at i?", "i − minJump."], ["Which leaves?", "i − maxJump − 1."]], "links": [["Jump Game VI", 3], ["Jump Game", 0]]}, {"name": "Frog Jump", "hook": "The frog remembers its <b>last jump size</b>; each stone keeps a basket of sizes that can land on it.", "mantra": "FOR EACH STONE, EACH k IN ITS SET: TRY k−1, k, k+1", "statement": "Stones sit at increasing positions; the frog starts on the first stone and its first jump is 1 unit. If its last jump was k, the next is k − 1, k or k + 1 (forward only) and must land on a stone. Can it reach the last stone?", "recall": [["Why is the jump size at most n?", "It grows by at most 1 per stone."], ["Why start with jump 0 on stone 0?", "Then k + 1 = 1 is exactly the forced first jump."]], "links": [["Jump Game", 0], ["Minimum Distance to Type a Word Using Two Fingers", 13]]}, {"name": "Maximum Number of Jumps to Reach the Last Index", "hook": "Forward jumps make a <b>DAG</b>; the longest path is a simple left-to-right DP.", "mantra": "dp[j] = max(dp[i] + 1) OVER REACHABLE i < j WITH |Δ| ≤ target", "statement": "From i you may jump to any j &gt; i with |nums[j] − nums[i]| ≤ target. Return the maximum number of jumps to go from index 0 to n − 1, or −1 if impossible.", "recall": [["Why −1 as a marker?", "Unreachable indexes must not be extended."], ["Overflow?", "Differences of two ints can overflow: compute with long."]], "links": [["Jump Game II", 1]]}, {"name": "Minimum Number of Refueling Stops", "hook": "Drive until the tank is empty, then <b>wish</b> you had stopped at the biggest station you already passed.", "mantra": "dp[t + 1] = max(dp[t + 1], dp[t] + fuel) IF dp[t] ≥ pos (t DESCENDING)", "statement": "A car starts with startFuel litres and uses one litre per mile. Stations along the road give fuel. Return the fewest stops needed to drive target miles, or −1.", "recall": [["Why does the DP loop t downward?", "So a station is not used twice in the same round."], ["Why is the greedy safe?", "Any plan with t stops reaches at most as far as the t largest fuels you passed."]], "links": [["Grinding Geek", 10]]}, {"name": "Champagne Tower", "hook": "Pour everything into the top glass and let <b>each glass keep 1 cup and split the rest</b> to its two children.", "mantra": "extra = (amount − 1) / 2 → BOTH CHILDREN", "statement": "Glasses form a pyramid (row i has i + 1 glasses). Pour <code>poured</code> cups into the top. A full glass overflows evenly to the two glasses below. How full is glass (queryRow, queryGlass)? (at most 1)", "recall": [["Why track flow above 1?", "The surplus is what feeds the next row."], ["Final clamp?", "A glass shows at most 1 cup."]], "links": []}, {"name": "Count possible ways to construct buildings", "hook": "Each side of the road is a <b>binary string with no two 1s adjacent</b>; the sides do not interact.", "mantra": "ONE SIDE = Fib(n + 2); ANSWER = SIDE²", "statement": "A road has n plots on each side. A plot is either a building or empty, and two buildings cannot be adjacent on the same side. Count the layouts (mod 1e9+7).", "recall": [["Why square?", "Every layout of one side combines with every layout of the other."], ["Which sequence is one side?", "Fibonacci: 2, 3, 5, 8, … for n = 1, 2, 3, 4."]], "links": []}, {"name": "Grinding Geek", "hook": "Every course is bought in order and gives a <b>90% refund</b>: buying is cheap but needs the full price upfront.", "mantra": "best(i, money) = max(skip, 1 + best(i + 1, money − c + 9c/10))", "statement": "You have <code>total</code> coins and n courses in order with costs cost[i]. Buying course i needs at least cost[i] coins and gives back floor(90% of cost[i]). Return the maximum number of courses you can buy.", "recall": [["Why not buy every affordable course?", "Each purchase lowers your money a little, which can make a later course unaffordable; the DP compares both choices instead of guessing."], ["Why is money bounded?", "It only decreases from total."]], "links": [["Minimum Number of Refueling Stops", 7]]}, {"name": "Valid Parenthesis String", "hook": "Do not decide what each <code>*</code> is: keep the <b>range of possible open counts</b> [lo, hi].", "mantra": "( → lo++, hi++ · ) → lo−−, hi−− · * → lo−−, hi++; hi < 0 → false; lo = max(lo, 0)", "statement": "A string has '(', ')' and '*', where '*' can be '(', ')' or empty. Return true if it can be balanced.", "recall": [["Why clamp lo at 0?", "A negative open count is impossible; that choice of <code>*</code> is simply discarded."], ["Why is the set an interval?", "Every <code>*</code> widens by one in both directions, and brackets shift it."]], "links": [["Jump Game", 0]]}, {"name": "Maximum Walls Destroyed by Robots", "hook": "Each robot shoots <b>left or right</b>; only neighbouring robots can hit the same walls.", "mantra": "STATE = PREVIOUS ROBOT FIRED RIGHT?; COUNT WALLS IN RANGE BY BINARY SEARCH", "statement": "Robots stand at distinct positions; robot i fires one bullet left or right that travels distance[i] and destroys every wall it passes, but stops before hitting another robot. Walls at a robot position are destroyed by its bullet. Return the maximum number of distinct walls destroyed.", "recall": [["Why only neighbours overlap?", "Bullets stop before other robots, so ranges of non-adjacent robots are separated."], ["How are walls counted?", "Binary search on sorted wall positions."]], "links": []}, {"name": "Minimum Distance to Type a Word Using Two Fingers", "hook": "One finger is always on the <b>last typed letter</b>; the only unknown is where the other finger rests.", "mantra": "dp[other]: SAME FINGER → dp + d(prev, cur) · OTHER FINGER → next[prev] = dp + d(other, cur)", "statement": "Letters A–Z sit on a keyboard with 6 columns. Type the word with two fingers; moving between keys costs the Manhattan distance, and the first placement of each finger is free. Return the minimum total distance.", "recall": [["Why is \"not placed\" a state?", "Its first move is free."], ["Why only 27 states?", "The typing finger position is always the previous letter."]], "links": [["Frog Jump", 5]]}, {"name": "Merge Operations for Minimum Travel Time", "hook": "Removing signs makes you <b>drive longer at the old rate</b>, while the removed rates pile up on the next kept sign.", "mantra": "FROM SIGN i JUMP TO KEPT SIGN j; RATE(j) = time[j] + Σ REMOVED", "statement": "Signs at increasing positions (first at 0, last at l) give time[i] minutes per km for the segment starting there. A merge removes an interior sign and adds its time to the next sign. Do exactly k merges and return the minimum total travel time.", "recall": [["Why is the rate part of the state?", "Merged times change the rate at the next kept sign."], ["Exactly k?", "The base case rejects plans that end with merges left."]], "links": [["Frog Jump", 5]]}];
+mount({
+  title: "Jumps and Reach Animations",
+  sub: "Positions on a line, and from each one you may <b>jump to a set of later positions</b>. Every problem asks \"can I get there\", \"in how few jumps\", or \"with the most value\".",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

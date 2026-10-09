@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LCA Distance and Tree Graphs Animations</title>
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const vals = (t, ids) => ids.map(u => t.val(u));
+const idOf = (t, v) => t.ids.find(u => t.val(u) === v);
+
+const C_LCA = `
+public TreeNode lowestCommonAncestor(TreeNode root, TreeNode p, TreeNode q) {
+    if (root == null || root == p || root == q) return root;
+    TreeNode l = lowestCommonAncestor(root.left, p, q), r = lowestCommonAncestor(root.right, p, q);
+    if (l != null && r != null) return root;
+    return l != null ? l : r;
+}`;
+{
+  const t = make([3, 5, 1, 6, 2, 0, 8, null, null, 7, 4]), P = idOf(t, 7), Qn = idOf(t, 4), res = {}, badge = {}, r = recorder();
+  r.step(0, 'Find the LCA of 7 and 4. Every call returns a node if it found p or q (or both) below, else null.', [t.snap('tree', { active: [P, Qn] })]);
+  const post = t.post();
+  post.forEach((u, k) => { const l = t.L[u] === undefined ? null : res[t.L[u]], rr = t.R[u] === undefined ? null : res[t.R[u]];
+    let out = null, line, say;
+    if (u === P || u === Qn) { out = u; line = ln(C_LCA, 'root == p'); say = `Node ${t.val(u)} is one of the targets → return it.`; }
+    else if (l !== null && rr !== null) { out = u; line = ln(C_LCA, 'return root;'); say = `Both sides returned a node (${t.val(l)} and ${t.val(rr)}) → <b>${t.val(u)} is the LCA</b>.`; }
+    else { out = l !== null ? l : rr; line = ln(C_LCA, 'return l != null'); say = out === null ? `Node ${t.val(u)}: nothing found below → null.` : `Node ${t.val(u)}: only one side found (${t.val(out)}) → pass it up.`; }
+    res[u] = out; badge[u] = out === null ? '∅' : '→' + t.val(out);
+    r.step(line, say, [t.snap('tree', { active: [u], done: post.slice(0, k), badge: { ...badge } })]); });
+  ANIM['Lowest Common Ancestor of a Binary Tree'] = W('Found on both sides', C_LCA, r.steps);
+}
+
+const C_BST = `
+while (root != null) {
+    if (p.val < root.val && q.val < root.val) root = root.left;
+    else if (p.val > root.val && q.val > root.val) root = root.right;
+    else return root;
+}`;
+{
+  const t = make([6, 2, 8, 0, 4, 7, 9, null, null, 3, 5]), r = recorder();
+  r.step(0, 'p = 3, q = 5 in a BST. Go left when both are smaller, right when both are larger; stop when they split.', [t.snap('tree', { active: [idOf(t, 3), idOf(t, 5)] })]);
+  [[0, 'Both 3 and 5 are smaller than 6 → go left.', 'root = root.left'], [1, 'Both are larger than 2 → go right.', 'root = root.right'], [4, '3 < 4 < 5: they split here → <b>LCA = 4</b>.', 'else return root']].forEach(([u, say, key]) =>
+    r.step(ln(C_BST, key), say, [t.snap('tree', { active: [u], done: u === 4 ? [0, 1] : u === 1 ? [0] : [] })]));
+  ANIM['Lowest Common Ancestor of a Binary Search Tree'] = W('Walk down', C_BST, r.steps);
+}
+
+const C_DL = `
+private Result dfs(TreeNode n, int d) {
+    if (n == null) return new Result(d, null);
+    Result l = dfs(n.left, d + 1), r = dfs(n.right, d + 1);
+    if (l.depth > r.depth) return l;
+    if (r.depth > l.depth) return r;
+    return new Result(l.depth, n);
+}`;
+{
+  const t = make([3, 5, 1, 6, 2, 0, 8, null, null, 7, 4]), dep = t.depth(), res = {}, badge = {}, order = t.post(), r = recorder();
+  r.step(0, 'Each call returns (deepest depth below, LCA of the deepest leaves there). A tie between the sides makes the current node the answer.', [t.snap('tree')]);
+  order.forEach((u, k) => { let d, node, say;
+    const l = t.L[u] === undefined ? null : res[t.L[u]], rr = t.R[u] === undefined ? null : res[t.R[u]];
+    if (!l && !rr) { d = dep[u]; node = u; say = `Leaf ${t.val(u)} at depth ${d}: (${d}, ${t.val(u)}).`; }
+    else if (l && rr) { if (l.d === rr.d) { d = l.d; node = u; say = `Both sides reach depth ${d} → <b>node ${t.val(u)}</b> is their LCA.`; } else { const w = l.d > rr.d ? l : rr; d = w.d; node = w.n; say = `Left depth ${l.d}, right depth ${rr.d} → keep the deeper side's answer (${t.val(node)}).`; } }
+    else { const w = l || rr; d = w.d; node = w.n; say = `Only one child: pass its answer (${t.val(node)}, depth ${d}) up.`; }
+    res[u] = { d, n: node }; badge[u] = `${d}/${t.val(node)}`;
+    r.step(ln(C_DL, 'return new Result'), say, [t.snap('tree', { active: [u], done: order.slice(0, k), badge: { ...badge } })]); });
+  ANIM['Lowest Common Ancestor of Deepest Leaves'] = W('Depth and node', C_DL, r.steps);
+}
+
+const C_DK = `
+Queue<TreeNode> q = new LinkedList<>();
+Set<TreeNode> seen = new HashSet<>(List.of(target));
+q.add(target);
+for (int d = 0; d < k && !q.isEmpty(); d++) {
+    for (int i = q.size(); i > 0; i--) {
+        TreeNode cur = q.poll();
+        for (TreeNode nb : new TreeNode[]{cur.left, cur.right, parent.get(cur)}) if (nb != null && seen.add(nb)) q.add(nb);
+    }
+}`;
+{
+  const t = make([3, 5, 1, 6, 2, 0, 8, null, null, 7, 4]), start = idOf(t, 5), seen = new Set([start]), r = recorder();
+  const nb = u => [t.L[u], t.R[u], t.par[u] >= 0 ? t.par[u] : undefined].filter(x => x !== undefined);
+  let ring = [start], k = 0; const done = [];
+  r.step(0, 'Target 5, k = 2. A tree edge only points down, so first record each node\'s <b>parent</b>, then do a BFS that may also step up.', [t.snap('tree', { active: [start] }), Q('queue', [5])]);
+  while (k < 2) { const next = []; ring.forEach(u => nb(u).forEach(v => { if (!seen.has(v)) { seen.add(v); next.push(v); } })); done.push(...ring); k++;
+    r.step(ln(C_DK, 'seen.add(nb)'), `Round ${k}: neighbours of ${vals(t, ring).join(', ')} (children and parent) not seen yet → ${vals(t, next).join(', ')}.`, [t.snap('tree', { done: [...done], warn: next }), Q('queue', vals(t, next))]); ring = next; }
+  r.step(ln(C_DK, 'for (int d = 0'), `After k = 2 rounds the queue holds the answer: <b>${vals(t, ring).join(', ')}</b>.`, [t.snap('tree', { done, active: ring }), Q('answer', vals(t, ring))]);
+  ANIM['All Nodes Distance K in Binary Tree'] = W('Parent map + BFS', C_DK, r.steps);
+}
+
+const C_AT = `
+Queue<Integer> q = new LinkedList<>(List.of(start));
+Set<Integer> seen = new HashSet<>(List.of(start));
+int minutes = -1;
+while (!q.isEmpty()) {
+    minutes++;
+    for (int i = q.size(); i > 0; i--) for (int nb : g.get(q.poll())) if (seen.add(nb)) q.add(nb);
+}`;
+{
+  const t = make([1, 5, 3, null, 4, 10, 6, 9, 2]), start = idOf(t, 3), seen = new Set([start]), r = recorder();
+  const nb = u => [t.L[u], t.R[u], t.par[u] >= 0 ? t.par[u] : undefined].filter(x => x !== undefined);
+  let ring = [start], minutes = 0; const done = [];
+  r.step(ln(C_AT, 'int minutes'), 'Start at node 3. Treat the tree as an undirected graph; one BFS level = one minute.', [t.snap('tree', { active: [start] }), A('minutes', [0])]);
+  while (true) { const next = []; ring.forEach(u => nb(u).forEach(v => { if (!seen.has(v)) { seen.add(v); next.push(v); } })); done.push(...ring); if (!next.length) break; minutes++;
+    r.step(ln(C_AT, 'minutes++'), `Minute ${minutes}: ${vals(t, next).join(', ')} get infected.`, [t.snap('tree', { done: [...done], warn: next }), A('minutes', [minutes], { done: [0] })]); ring = next; }
+  r.step(ln(C_AT, 'while'), `No new nodes → everyone is infected after <b>${minutes}</b> minutes.`, [t.snap('tree', { done: t.ids }), A('minutes', [minutes], { done: [0] })]);
+  ANIM['Amount of Time for Binary Tree to Be Infected'] = W('BFS levels', C_AT, r.steps);
+}
+
+const C_MDN = `
+public int findDist(TreeNode root, int a, int b) {
+    TreeNode lca = lca(root, a, b);
+    return depth(lca, a, 0) + depth(lca, b, 0);
+}`;
+{
+  const t = make([1, 2, 3, 4, 5, 6, 7]), r = recorder();
+  r.step(0, 'Distance between 4 and 7: go up to the meeting point and down again.', [t.snap('tree', { active: [idOf(t, 4), idOf(t, 7)] })]);
+  r.step(ln(C_MDN, 'TreeNode lca'), 'LCA(4, 7) = 1 (they are on different sides of the root).', [t.snap('tree', { done: [0], active: [idOf(t, 4), idOf(t, 7)] })]);
+  r.step(ln(C_MDN, 'depth(lca, a, 0)'), 'Distance from the LCA to 4 is 2 (1 → 2 → 4).', [t.snap('tree', { done: [0, 1, 3] }), A('legs', [2, 0])]);
+  r.step(ln(C_MDN, 'depth(lca, b, 0)'), 'Distance from the LCA to 7 is 2 (1 → 3 → 7). Total <b>4</b>.', [t.snap('tree', { done: [0, 1, 3, 2, 6] }), A('legs', [2, 2], { done: [0, 1] })]);
+  ANIM['Min Distance between Two Given Nodes of a Binary Tree'] = W('LCA + two legs', C_MDN, r.steps);
+}
+
+const C_SBS = `
+path(root, startValue, s);
+path(root, destValue, d);
+s.reverse();
+d.reverse();
+int c = 0;
+while (c < s.length() && c < d.length() && s.charAt(c) == d.charAt(c)) c++;
+return "U".repeat(s.length() - c) + d.substring(c);`;
+{
+  const t = make([5, 1, 2, 3, null, 6, 4]), r = recorder();
+  r.step(0, 'From 3 to 6. Write each root path as L/R letters.', [t.snap('tree', { active: [idOf(t, 3), idOf(t, 6)] })]);
+  r.step(ln(C_SBS, 's.reverse()'), 'Root → 3 is "LL"; root → 6 is "RL".', [t.snap('tree', { done: [0, 1, 3] }), R('root→start', ['L', 'L']), R('root→dest', ['R', 'L'])]);
+  r.step(ln(C_SBS, 'while (c <'), 'The common prefix is empty (L ≠ R), so the whole start path becomes "UU".', [t.snap('tree'), R('start', ['U', 'U']), R('dest rest', ['R', 'L'])]);
+  r.step(ln(C_SBS, 'return "U"'), 'Answer: <b>UURL</b> — up twice to the root, right, then left.', [t.snap('tree', { done: [3, 1, 0, 2, 5] }), R('answer', ['U', 'U', 'R', 'L'], { done: [0, 1, 2, 3] })]);
+  ANIM['Step-By-Step Directions From a Binary Tree Node to Another'] = W('Cut the common prefix', C_SBS, r.steps);
+}
+
+const C_KP = `
+Map<Integer, List<Integer>> kids = new HashMap<>();
+for (int i = 0; i < pid.size(); i++) kids.computeIfAbsent(ppid.get(i), k -> new ArrayList<>()).add(pid.get(i));
+Queue<Integer> q = new LinkedList<>(List.of(kill));
+while (!q.isEmpty()) {
+    int cur = q.poll();
+    res.add(cur);
+    q.addAll(kids.getOrDefault(cur, List.of()));
+}`;
+{
+  const pid = [1, 3, 10, 5, 7], ppid = [3, 0, 5, 3, 5], po = {}; pid.forEach((p, i) => { po[p] = ppid[i] === 0 ? -1 : ppid[i]; });
+  const kids = {}; pid.forEach((p, i) => { (kids[ppid[i]] = kids[ppid[i]] || []).push(p); });
+  const r = recorder(), killed = [], q = [5];
+  const snap = (cls = {}) => BrainAnim.tree('process tree', po, { cls });
+  r.step(ln(C_KP, 'computeIfAbsent'), 'Group children by parent: ' + Object.entries(kids).map(([k, v]) => `${k}→[${v}]`).join('  ') + '. Kill process 5.', [snap({ active: [5] })].map(x => x));
+  while (q.length) { const c = q.shift(); killed.push(c); (kids[c] || []).forEach(x => q.push(x));
+    r.step(ln(C_KP, 'res.add(cur)'), `Poll ${c}: killed. Its children [${(kids[c] || []).join(', ')}] join the queue.`, [snap(Object.fromEntries([...killed.map(k => [k, 'done']), ...q.map(k => [k, 'warn'])])), Q('queue', [...q])]); }
+  r.step(ln(C_KP, 'while'), `Killed: <b>${killed.join(', ')}</b>.`, [snap(Object.fromEntries(killed.map(k => [k, 'done']))), A('killed', killed, { done: killed.map((_, i) => i) })]);
+  ANIM['Kill Process'] = W('Children map + BFS', C_KP, r.steps);
+}
+
+const C_TI = `
+private int dfs(int e, List<List<Integer>> kids, int[] informTime) {
+    int worst = 0;
+    for (int c : kids.get(e)) worst = Math.max(worst, dfs(c, kids, informTime));
+    return worst + informTime[e];
+}`;
+{
+  const manager = [-1, 0, 0, 1, 1, 2, 2], inform = [3, 2, 1, 0, 0, 0, 0], po = {}; manager.forEach((m, i) => { po[i] = m; });
+  const kids = manager.map(() => []); manager.forEach((m, i) => { if (m >= 0) kids[m].push(i); });
+  const r = recorder(), res = {}, badge = {};
+  const snap = (cls = {}) => BrainAnim.tree('org chart (badge = time to finish below)', po, { cls, badge: { ...badge } });
+  r.step(0, 'Head 0 tells its reports in 3 min, 1 needs 2 min, 2 needs 1 min, others 0. Time(e) = informTime(e) + the slowest report.', [snap()]);
+  [3, 4, 1, 5, 6, 2, 0].forEach((e, k) => { const worst = Math.max(0, ...kids[e].map(c => res[c])); res[e] = worst + inform[e]; badge[e] = res[e];
+    r.step(ln(C_TI, 'return worst'), `Employee ${e}: slowest report ${worst} + own inform time ${inform[e]} = <b>${res[e]}</b>.`, [snap({ [e]: 'active' })]); });
+  r.step(ln(C_TI, 'int worst'), `The whole company is informed after <b>${res[0]}</b> minutes (0 → 1: 3, then 1 → 3: 2).`, [snap(Object.fromEntries(manager.map((_, i) => [i, 'done'])))]);
+  ANIM['Time Needed to Inform All Employees'] = W('Slowest chain', C_TI, r.steps);
+}
+
+const C_HQ = `
+int h = 1 + Math.max(measure(n.left, d + 1, ...), measure(n.right, d + 1, ...));
+depth.put(n.val, d);
+height.put(n.val, h);
+int[] t = top.computeIfAbsent(d, k -> new int[2]);
+if (h > t[0]) { t[1] = t[0]; t[0] = h; } else if (h > t[1]) t[1] = h;
+...
+int[] t = top.get(d);
+int bestOnLevel = h == t[0] ? t[1] : t[0];
+res[i] = d + bestOnLevel - 1;`;
+{
+  const t = make([1, 3, 4, 2, null, 6, 5, null, null, null, null, null, 7]), dep = t.depth(), hh = {}, badge = {};
+  t.post().forEach(u => { hh[u] = 1 + Math.max(t.L[u] === undefined ? 0 : hh[t.L[u]], t.R[u] === undefined ? 0 : hh[t.R[u]]); badge[u] = 'h' + hh[u]; });
+  const r = recorder();
+  r.step(0, 'Query: remove the subtree of node 4. Precompute depth and height of every node.', [t.snap('tree (badge = height in nodes)', { badge })]);
+  r.step(ln(C_HQ, 'height.put'), 'Node 4 is at depth 1 with height 3. The other node on depth 1 is 3 with height 2.', [t.snap('tree', { badge, warn: [idOf(t, 4)], done: [idOf(t, 3)] }), A('heights at depth 1 (top two)', [3, 2])]);
+  r.step(ln(C_HQ, 'bestOnLevel'), 'Removing 4 (the tallest on its level) leaves the runner-up: bestOnLevel = 2.', [t.snap('tree', { badge, bad: [idOf(t, 4), 5, 6, 12] }), A('bestOnLevel', [2])]);
+  r.step(ln(C_HQ, 'res[i]'), 'New height (edges) = depth + bestOnLevel − 1 = 1 + 2 − 1 = <b>2</b>.', [t.snap('tree', { badge, done: [0, idOf(t, 3), 3] }), A('answer', [2])]);
+  ANIM['Height of Binary Tree After Subtree Removal Queries'] = W('Top two per level', C_HQ, r.steps);
+}
+
+const C_FR = `
+long sum = 0;
+for (Node n : tree) {
+    sum += n.val;
+    for (Node c : n.children) sum -= c.val;
+}
+for (Node n : tree) if (n.val == sum) return n;`;
+{
+  const po = { 1: -1, 3: 1, 2: 1, 4: 1, 5: 3, 6: 3 }, r = recorder(), list = [5, 1, 4, 3, 6, 2];
+  const snap = (cls = {}) => BrainAnim.tree('hidden tree (you only get the shuffled list)', po, { cls });
+  r.step(0, 'The nodes arrive shuffled: [5, 1, 4, 3, 6, 2]. Every non-root node is somebody\'s child.', [A('list', list)]);
+  let sum = 0; const steps = [[5, []], [1, [3, 2, 4]], [4, []], [3, [5, 6]], [6, []], [2, []]];
+  steps.forEach(([v, ch]) => { sum += v; ch.forEach(c => { sum -= c; });
+    r.step(ln(C_FR, 'sum -= c.val'), `Node ${v}: add ${v}${ch.length ? ', subtract its children ' + ch.join(' + ') : ''}. Running total <b>${sum}</b>.`, [A('list', list, { active: [list.indexOf(v)] }), A('sum', [sum], { done: [0] })]); });
+  r.step(ln(C_FR, 'return n'), `Everything cancelled except the root: <b>${sum}</b>.`, [snap({ 1: 'done' }), A('sum', [sum], { done: [0] })]);
+  ANIM['Find Root of N-Ary Tree'] = W('Sum minus children', C_FR, r.steps);
+}
+
+const C_CD = `
+for (int[] d : descriptions) {
+    TreeNode parent = nodes.computeIfAbsent(d[0], TreeNode::new), child = nodes.computeIfAbsent(d[1], TreeNode::new);
+    if (d[2] == 1) parent.left = child; else parent.right = child;
+    children.add(d[1]);
+}
+for (int[] d : descriptions) if (!children.contains(d[0])) return nodes.get(d[0]);`;
+{
+  const desc = [[20, 15, 1], [20, 17, 0], [50, 20, 1], [50, 80, 0], [80, 19, 1]], po = {}, r = recorder(), kidsSet = [];
+  const snap = (cls = {}) => BrainAnim.tree('tree so far', po, { cls });
+  r.step(0, 'Descriptions [parent, child, isLeft] arrive in any order. Create each node once and wire the edge.', [R('descriptions', desc.map(d => d.join(','))), snap()]);
+  desc.forEach(([p, c, left], i) => { po[c] = p; if (!(p in po)) po[p] = -1; kidsSet.push(c);
+    r.step(ln(C_CD, 'if (d[2] == 1)'), `${p} gets ${c} as its ${left ? 'left' : 'right'} child. Children seen: {${kidsSet.join(', ')}}.`, [R('descriptions', desc.map(d => d.join(',')), { active: [i] }), snap({ [c]: 'active' })]); });
+  r.step(ln(C_CD, 'return nodes.get'), 'The root is the parent that never appears as a child: <b>50</b>.', [snap({ 50: 'done' })]);
+  ANIM['Create Binary Tree From Descriptions'] = W('Wire and find the root', C_CD, r.steps);
+}
+
+const C_PA = `
+private void create(int i, int[] parent, TreeNode[] made, TreeNode[] root) {
+    if (made[i] != null) return;
+    made[i] = new TreeNode(i);
+    if (parent[i] == -1) { root[0] = made[i]; return; }
+    create(parent[i], parent, made, root);
+    TreeNode p = made[parent[i]];
+    if (p.left == null) p.left = made[i]; else p.right = made[i];
+}`;
+{
+  const parent = [3, 0, 0, -1, 1], po = {}, r = recorder();
+  const snap = (cls = {}) => BrainAnim.tree('tree so far', po, { cls });
+  r.step(0, 'parent = [3, 0, 0, −1, 1]. Node 0 is under 3, nodes 1 and 2 under 0, node 4 under 1, node 3 is the root. A child can appear before its parent, so create the parent first.', [A('parent', parent), snap()]);
+  r.step(ln(C_PA, 'made[i] = new TreeNode(i)'), 'i = 0: create node 0. Its parent 3 does not exist yet → create 3 first.', [A('parent', parent, { active: [0] }), snap()]);
+  po[3] = -1; r.step(ln(C_PA, 'root[0] = made[i]'), 'Node 3 has parent −1 → it is the root.', [A('parent', parent, { active: [3] }), snap({ 3: 'done' })]);
+  po[0] = 3; r.step(ln(C_PA, 'p.left = made[i]'), 'Back in 0: attach to 3\'s first free slot (left).', [A('parent', parent, { active: [0] }), snap({ 0: 'active' })]);
+  po[1] = 0; po[2] = 0; r.step(ln(C_PA, 'p.right = made[i]'), 'i = 1 and i = 2 attach under 0 (left, then right).', [A('parent', parent, { active: [1, 2] }), snap({ 1: 'active', 2: 'active' })]);
+  po[4] = 1; r.step(ln(C_PA, 'create(parent[i]'), 'i = 4: its parent 1 already exists → attach under 1.', [A('parent', parent, { active: [4] }), snap({ 4: 'active' })]);
+  ANIM['Construct Binary Tree from Parent Array'] = W('Create parents first', C_PA, r.steps);
+}
+
+const META = [{"name": "Lowest Common Ancestor of a Binary Tree", "hook": "Send two scouts down; the first node that <b>hears from both sides</b> is the meeting point.", "mantra": "FOUND ON BOTH SIDES → ME", "statement": "Return the lowest node that has both p and q in its subtree (a node may be its own descendant).", "recall": [["What if p is an ancestor of q?", "The recursion returns p as soon as it meets it; q is below, so p is the answer."], ["Does it assume both nodes exist?", "Yes; otherwise one extra pass must confirm that."]], "links": [["Lowest Common Ancestor of a Binary Search Tree", 1], ["Lowest Common Ancestor of Deepest Leaves", 2], ["Min Distance between Two Given Nodes of a Binary Tree", 5]]}, {"name": "Lowest Common Ancestor of a Binary Search Tree", "hook": "In a BST the <b>values tell you which way to go</b>: stop at the node that splits p and q.", "mantra": "BOTH SMALLER ← , BOTH BIGGER → , ELSE STOP", "statement": "Find the lowest common ancestor of two nodes of a binary search tree.", "recall": [["Why is no recursion into both children needed?", "The ordering guarantees the answer lies on a single path."]], "links": [["Lowest Common Ancestor of a Binary Tree", 0]]}, {"name": "Lowest Common Ancestor of Deepest Leaves", "hook": "The meeting point of the <b>deepest</b> leaves: the taller side wins, a tie means \"me\".", "mantra": "DEEPER SIDE WINS, TIE → THIS NODE", "statement": "Return the LCA of all deepest leaves.", "recall": [["What does a tie mean?", "Deepest leaves exist on both sides, so only this node contains them all."]], "links": [["Lowest Common Ancestor of a Binary Tree", 0]]}, {"name": "All Nodes Distance K in Binary Tree", "hook": "Give every node an <b>up arrow</b>, then ripple outward from the target for k steps.", "mantra": "ADD PARENT LINKS, BFS K LEVELS", "statement": "Return the values of all nodes at distance k from the target node.", "recall": [["Why a visited set?", "The parent edge leads back to where you came from."]], "links": [["Amount of Time for Binary Tree to Be Infected", 4]]}, {"name": "Amount of Time for Binary Tree to Be Infected", "hook": "Infection spreads one edge per minute, so the answer is the <b>farthest distance</b> from the start.", "mantra": "FARTHEST NODE FROM START", "statement": "The start node is infected at minute 0 and infects its neighbours every minute. How long until the whole tree is infected?", "recall": [["Why <code>minutes</code> starts at -1?", "The first level is the start itself and takes zero minutes."]], "links": [["All Nodes Distance K in Binary Tree", 3], ["Kill Process", 7]]}, {"name": "Min Distance between Two Given Nodes of a Binary Tree", "hook": "Walk up to the meeting point and back down: <b>two legs of a V</b>.", "mantra": "dist = depth(a) + depth(b) − 2·depth(LCA)", "statement": "Return the number of edges on the shortest path between two nodes.", "recall": [["Distance from a node to itself?", "0."]], "links": [["Lowest Common Ancestor of a Binary Tree", 0], ["Step-By-Step Directions From a Binary Tree Node to Another", 6]]}, {"name": "Step-By-Step Directions From a Binary Tree Node to Another", "hook": "The route is <b>U moves up to the meeting point, then L/R moves down</b>.", "mantra": "ROOT PATHS, CUT COMMON PREFIX, U FOR THE REST", "statement": "Return the shortest path from <code>startValue</code> to <code>destValue</code> as a string of L, R and U moves.", "recall": [["Why build the paths reversed?", "The recursion appends a letter while unwinding, so the string is leaf-to-root and must be reversed."]], "links": [["Min Distance between Two Given Nodes of a Binary Tree", 5], ["Lowest Common Ancestor of a Binary Tree", 0]]}, {"name": "Kill Process", "hook": "Killing a process kills its <b>whole family tree</b>.", "mantra": "MAP PARENT → CHILDREN, TRAVERSE FROM KILL", "statement": "Given process ids and parent ids, return all processes killed when <code>kill</code> is killed.", "recall": [["Why not scan the arrays for every level?", "That is O(n · depth); the map makes it linear."]], "links": [["Amount of Time for Binary Tree to Be Infected", 4], ["Time Needed to Inform All Employees", 8]]}, {"name": "Time Needed to Inform All Employees", "hook": "News flows down the org chart: the answer is the <b>slowest chain of managers</b>.", "mantra": "MAX OVER PATHS OF Σ informTime(manager)", "statement": "Each manager needs <code>informTime</code> minutes to tell all direct reports at once. Return the time until everyone knows.", "recall": [["Why is it a max and not a sum over reports?", "A manager informs all direct reports at the same time."]], "links": [["Kill Process", 7], ["Amount of Time for Binary Tree to Be Infected", 4]]}, {"name": "Height of Binary Tree After Subtree Removal Queries", "hook": "On each level keep the <b>two tallest</b> subtrees; removing the tallest promotes the runner-up.", "mantra": "DEPTH + BEST OTHER HEIGHT ON THE LEVEL", "statement": "For each query remove the subtree rooted at the given node (independently) and return the height of the remaining tree.", "recall": [["Why only the same level?", "Everything at other depths is untouched, and the deepest remaining node is either on this level or above it."], ["What if v is the only node on its level?", "The second best is 0, giving height d - 1."]], "links": []}, {"name": "Find Root of N-Ary Tree", "hook": "Every node except the root shows up as somebody's child, so <b>count appearances</b>.", "mantra": "ROOT = ALL NODES − ALL CHILDREN", "statement": "You receive all nodes of an N-ary tree in arbitrary order. Return the root.", "recall": [["Why is O(1) space possible?", "Only a running sum or xor is stored."], ["When does the sum version break?", "If values are not unique or the sum overflows; XOR needs unique values too."]], "links": [["Create Binary Tree From Descriptions", 11]]}, {"name": "Create Binary Tree From Descriptions", "hook": "Edges in any order: make each node once and <b>wire them up</b>.", "mantra": "MAP VALUE → NODE, ROOT IS NEVER A CHILD", "statement": "Descriptions <code>[parent, child, isLeft]</code> define a binary tree. Build it and return the root.", "recall": [["Why <code>computeIfAbsent</code>?", "The same value can appear in several descriptions and must map to one node."]], "links": [["Find Root of N-Ary Tree", 10], ["Construct Binary Tree from Parent Array", 12]]}, {"name": "Construct Binary Tree from Parent Array", "hook": "Node <code>i</code> hangs under node <code>parent[i]</code>: <b>create the parent first</b> if it does not exist yet.", "mantra": "NODE i UNDER parent[i], CREATE PARENTS FIRST", "statement": "Given <code>parent[i]</code> for each node (−1 for the root), build the binary tree.", "recall": [["Why can the child come before its parent in the array?", "The array is in node order, not level order."]], "links": [["Create Binary Tree From Descriptions", 11]]}];
+mount({
+  title: "LCA Distance and Tree Graphs Animations",
+  sub: "Questions about <b>two nodes</b> or <b>spreading from a node</b> need the tree to forget which way is \"down\":",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

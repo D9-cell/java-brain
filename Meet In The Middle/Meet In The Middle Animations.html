@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meet In The Middle</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, recorder, mount } = BrainAnim;
+
+// Lists subset sums of arr with a readable label per mask
+function sums(arr) {
+  const out = [];
+  for (let m = 0; m < 1 << arr.length; m++) {
+    const pick = arr.filter((_, i) => m >> i & 1);
+    out.push({ s: pick.reduce((a, b) => a + b, 0), label: pick.length ? '{' + pick.join(',') + '}' : '{}', size: pick.length });
+  }
+  return out;
+}
+const lowerBound = (a, k) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < k) lo = m + 1; else hi = m; } return lo; };
+
+// Animates CSES 1628 counting subsets with sum x
+function cses() {
+  const t = [2, 4, 1, 2, 7], x = 7, r = recorder(), n1 = 2;
+  const A = t.slice(0, n1), B = t.slice(n1);
+  const arr = o => lane('Array', t, { showIdx: true, warn: [2, 3, 4], ...o, tag: 'left half | right half (orange)' });
+  r.step(0, `n = 5, x = 7. Brute force tries 2^5 = 32 subsets. With n = 40 that is 2^40 ≈ 10^12, far too slow. <b>Cut the array in half</b>: 2^20 + 2^20 ≈ 2 million.`, [arr()]);
+  const L = [], SA = sums(A);
+  SA.forEach((o, k) => { L.push(o.s); r.step(2, `Left subset ${o.label} → sum <b>${o.s}</b>.`, [arr(), lane('Left sums', L, { active: [k] })]); });
+  const SB = sums(B), R = [];
+  SB.forEach((o, k) => { R.push(o.s); r.step(2, `Right subset ${o.label} → sum <b>${o.s}</b>.`, [arr(), lane('Left sums', L), lane('Right sums', R, { active: [k] })]); });
+  R.sort((a, b) => a - b);
+  r.step(3, `Sort the right sums so we can <b>binary search</b> them.`, [arr(), lane('Left sums', L), lane('Right sums (sorted)', R, { done: R.map((_, i) => i), showIdx: true })]);
+  let cnt = 0;
+  L.forEach((s, k) => {
+    const need = x - s, lo = lowerBound(R, need), hi = lowerBound(R, need + 1), c = hi - lo; cnt += c;
+    const hit = [...Array(c).keys()].map(i => lo + i);
+    r.step(7, `Left sum ${s} needs a right sum of <b>${x} − ${s} = ${need}</b>. Equal range [${lo}, ${hi}) → ${c} match${c === 1 ? '' : 'es'}.`, [arr(), lane('Left sums', L, { active: [k] }), lane('Right sums (sorted)', R, { showIdx: true, done: hit, ptr: { [Math.min(lo, R.length - 1)]: 'lo' } })], { need, count: cnt });
+  });
+  r.step(8, `Total = <b>${cnt}</b> subsets with sum 7: {7}, {4,1,2}, {2,4,1}. Two halves "meet" at the target.`, [arr(), lane('Left sums', L), lane('Right sums (sorted)', R)], { count: cnt });
+  return r.steps;
+}
+
+// Animates LC 1755 closest sum with two-neighbour check
+function closest() {
+  const nums = [5, -7, 3, 5], goal = 6, r = recorder();
+  const L = sums(nums.slice(0, 2)).map(o => o.s), R = sums(nums.slice(2)).map(o => o.s).sort((a, b) => a - b);
+  const base = () => [lane('nums', nums, { showIdx: true, warn: [2, 3] })];
+  r.step(5, `goal = 6. Left sums of [5,−7] = <b>[${L}]</b>. Right sums of [3,5], sorted = <b>[${R}]</b>.`, [...base(), lane('Left sums', L), lane('Right sums (sorted)', R, { showIdx: true })]);
+  let best = Infinity;
+  L.forEach((s, k) => {
+    const need = goal - s, idx = lowerBound(R, need), ptr = {}, done = [], warn = [];
+    if (idx < R.length) { done.push(idx); ptr[idx] = '≥ need'; best = Math.min(best, Math.abs(s + R[idx] - goal)); }
+    if (idx > 0) { warn.push(idx - 1); ptr[idx - 1] = '< need'; best = Math.min(best, Math.abs(s + R[idx - 1] - goal)); }
+    r.step(idx < R.length ? 8 : 9, `Left ${s}: best partner is near <b>${need}</b>. The closest value is either the first one ≥ ${need}${idx < R.length ? ` (${R[idx]})` : ' (none)'} or the one just before it${idx > 0 ? ` (${R[idx - 1]})` : ' (none)'}. Best so far = ${best}.`,
+      [...base(), lane('Left sums', L, { active: [k] }), lane('Right sums (sorted)', R, { showIdx: true, done, warn, ptr })], { need, idx, best });
+  });
+  r.step(11, `Answer <b>${best}</b>: 5 + (−7) + 3 + 5 = 6 hits the goal exactly.`, [...base(), lane('Left sums', L), lane('Right sums (sorted)', R)], { best });
+  return r.steps;
+}
+
+// Animates LC 2035 bucketed MITM: k from left, n-k from right
+function partition() {
+  const nums = [3, 9, 7, 3], n = 2, S = 22, r = recorder();
+  const by = arr => { const b = [...Array(arr.length + 1)].map(() => []); sums(arr).forEach(o => b[o.size].push(o.s)); b.forEach(x => x.sort((a, c) => a - c)); return b; };
+  const Lb = by(nums.slice(0, n)), Rb = by(nums.slice(n));
+  const G = (cl) => grid('Subset sums grouped by size', [['left', ...Lb.map(x => x.join(', '))], ['right', ...Rb.map(x => x.join(', '))]],
+    { colLabels: ['half', 'size 0', 'size 1', 'size 2'], rowLabels: ['', ''], cls: cl });
+  r.step(0, `Split into two arrays of size n = 2 each. S = ${S}, so ideally one side sums to S/2 = 11. Minimise |S − 2·sum(A)|.`, [lane('nums', nums, { warn: [2, 3] }), G()]);
+  r.step(1, `Twist: A must have <b>exactly n elements</b>. So group subset sums by <b>size</b>. Taking k from the left forces n − k from the right.`, [lane('nums', nums, { warn: [2, 3] }), G((rr, c) => c > 0 ? 'active' : '')]);
+  let best = Infinity;
+  for (let k = 0; k <= n; k++) {
+    const rb = Rb[n - k];
+    Lb[k].forEach(ls => {
+      const need = Math.trunc((S - 2 * ls) / 2), idx = lowerBound(rb, need), cand = [];
+      if (idx < rb.length) cand.push(rb[idx]); if (idx > 0) cand.push(rb[idx - 1]);
+      cand.forEach(rs => best = Math.min(best, Math.abs(S - 2 * (ls + rs))));
+      r.step(10, `k = ${k}: left sum ${ls} (size ${k}) pairs with right size ${n - k} sums [${rb}]. Target ≈ ${need}; try ${cand.join(' and ')}. |22 − 2·(${ls}+${cand[0]})| = ${Math.abs(S - 2 * (ls + cand[0]))}. Best = <b>${best}</b>.`,
+        [lane('nums', nums, { warn: [2, 3] }), G((rr, c) => (rr === 0 && c === k + 1) ? 'active' : (rr === 1 && c === n - k + 1) ? 'done' : '')], { k, ls, best });
+    });
+  }
+  r.step(15, `Answer <b>${best}</b>: {3, 9} vs {7, 3} → 12 vs 10.`, [lane('nums', nums, { warn: [2, 3] }), G()], { best });
+  return r.steps;
+}
+
+// Animates LC 805 average condition via size-bucket lookups
+function splitAvg() {
+  const nums = [1, 2, 3, 4], N = 4, S = 10, r = recorder();
+  const by = arr => { const b = [...Array(arr.length + 1)].map(() => []); sums(arr).forEach(o => b[o.size].push(o.s)); return b; };
+  const Lb = by([1, 2]), Rb = by([3, 4]);
+  const G = (cl) => grid('Subset sums by size', [['left', ...Lb.map(x => x.join(', '))], ['right', ...Rb.map(x => x.join(', '))]], { colLabels: ['half', 'size 0', 'size 1', 'size 2'], rowLabels: ['', ''], cls: cl });
+  r.step(0, `If avg(A) = avg(B), both equal avg(all) = ${S}/${N}. So find ONE proper subset A with <b>sum(A)·N = size(A)·S</b>.`, [lane('nums', nums, { warn: [2, 3] }), G()]);
+  r.step(0, `A size can be valid only if size·S is divisible by N: size 1 → 10/4 ✗, size 2 → 20/4 = 5 ✓, size 3 → 30/4 ✗. So we need a pair with sum 5.`, [lane('nums', nums, { warn: [2, 3] }), G()]);
+  for (let k = 0; k <= 2; k++) for (const ls of Lb[k]) for (let m = 0; m <= 2; m++) {
+    const size = k + m; if (size === 0 || size === N || size * S % N) continue;
+    const need = size * S / N - ls, hit = Rb[m].includes(need);
+    r.step(hit ? 6 : 5, `Left size ${k} sum ${ls} + right size ${m}: need right sum ${size}·${S}/${N} − ${ls} = <b>${need}</b> in {${Rb[m]}} → ${hit ? '<b>found ✓</b>' : 'no'}.`,
+      [lane('nums', nums, { warn: [2, 3] }), G((rr, c) => rr === 0 && c === k + 1 ? 'active' : rr === 1 && c === m + 1 ? (hit ? 'done' : 'bad') : '')], { k, m, need });
+    if (hit) { r.step(6, `Return <b>true</b>: A = {1, 4} (avg 2.5), B = {2, 3} (avg 2.5).`, [lane('nums', nums, { done: [0, 3] }), G()]); return r.steps; }
+  }
+  return r.steps;
+}
+
+mount({
+  title: 'Meet In The Middle',
+  sub: 'When n ≈ 40, 2^n is too big but 2^(n/2) is fine. Enumerate each half, sort one, then binary-search to make the halves meet.',
+  problems: [
+    { name: 'CSES 1628 (count = x)', hook: 'Two friends dig a tunnel <b>from both ends</b> of a mountain. Each digs half the distance and they meet in the middle. Each half-array is "dug" separately; binary search is the handshake.',
+      mantra: 'SPLIT, ENUMERATE, SORT ONE, SEARCH OTHER',
+      statement: 'Count subsets of n ≤ 40 numbers whose sum is exactly x.',
+      anims: [{ name: 'Split + equal range', code: `
+long[] left = subsetSums(t, 0, n1), right = subsetSums(t, n1, n2);
+//   sums[mask] = sums[mask & (mask-1)] + a[lowest set bit]
+Arrays.sort(right);
+long cnt = 0;
+for (long s : left)
+    // count of right sums equal to x - s
+    cnt += lowerBound(right, x - s + 1) - lowerBound(right, x - s);
+return cnt;`, steps: cses() }],
+      recall: [['When should you think MITM?', 'n ≈ 30–40, you need all subsets, and 2^n is too large while 2^(n/2) ≈ 10^6 is fine.'],
+        ['How do you count equal elements in a sorted array?', 'upperBound(key) − lowerBound(key), i.e. lowerBound(key+1) − lowerBound(key) for integers.'],
+        ['O(2^h) subset sums trick?', 'sums[mask] = sums[mask & (mask−1)] + a[numberOfTrailingZeros(mask)]. Each mask reuses the mask with its lowest bit removed.'],
+        ['Why long?', 'Values up to 1e9 and 40 of them can sum to 4e10, which overflows int.']],
+      links: [['Closest Subsequence Sum', 1], ['Partition Min Difference', 2], ['Split Same Average', 3]] },
+    { name: 'Closest Sum (LC 1755)', hook: 'Same tunnel, but the ends may not line up exactly. Check the spot <b>just past</b> the target and the spot <b>just before</b> it, and take the closer one.',
+      mantra: 'LOWER BOUND + ITS LEFT NEIGHBOUR',
+      statement: 'Choose a subsequence whose sum is as close as possible to goal; return |sum − goal|. n ≤ 40.',
+      anims: [{ name: 'Two-neighbour check', code: `
+public int minAbsDifference(int[] nums, int goal) {
+    int n1 = nums.length / 2, n2 = nums.length - n1;
+    int[] left = subsetSums(nums, 0, n1), right = subsetSums(nums, n1, n2);
+    Arrays.sort(right);
+    int best = Integer.MAX_VALUE;
+    for (int s : left) {
+        int idx = lowerBound(right, goal - s);
+        if (idx < right.length) best = Math.min(best, Math.abs(s + right[idx] - goal));
+        if (idx > 0) best = Math.min(best, Math.abs(s + right[idx - 1] - goal));
+    }
+    return best;
+}`, steps: closest() }],
+      recall: [['Why check both idx and idx−1?', 'The closest value to `need` in a sorted array is either the first one ≥ need or the last one < need.'],
+        ['Difference from CSES 1628?', 'CSES counts exact matches (equal range). This one minimises the distance (neighbours).'],
+        ['Can the empty subsequence be used?', 'Yes. mask 0 gives sum 0 on both sides.']],
+      links: [['CSES 1628', 0], ['Partition Min Difference', 2]] },
+    { name: 'Partition (LC 2035)', hook: 'A tug-of-war with <b>exactly n players per team</b>. Group the players by <b>how many</b> you take from each half: k from the left means n − k from the right.',
+      mantra: 'BUCKET BY SIZE, k + (n−k), AIM AT S/2',
+      statement: 'Split 2n numbers into two arrays of length n, minimising |sum1 − sum2|.',
+      anims: [{ name: 'Size buckets', code: `
+public int minimumDifference(int[] nums) {
+    int n = nums.length / 2, total = 0;
+    for (int x : nums) total += x;
+    int[][] left = sumsBySize(nums, 0, n), right = sumsBySize(nums, n, n);
+    int best = Integer.MAX_VALUE;
+    for (int k = 0; k <= n; k++) {
+        int[] rb = right[n - k];
+        for (int ls : left[k]) {
+            int idx = lowerBound(rb, (total - 2 * ls) / 2);
+            if (idx < rb.length) best = Math.min(best, Math.abs(total - 2 * (ls + rb[idx])));
+            if (idx > 0) best = Math.min(best, Math.abs(total - 2 * (ls + rb[idx - 1])));
+        }
+    }
+    return best;
+}
+// lines 10-11: same two-neighbour check as LC 1755
+// |sum1 - sum2| = |S - 2*sum1|
+// sum1 = ls + rs, want it close to S/2`, steps: partition() }],
+      recall: [['Why group by subset size?', 'The team must have exactly n elements. If k come from the left, exactly n − k must come from the right.'],
+        ['What is minimised?', '|S − 2·(ls + rs)|, i.e. the chosen half-sum should be close to S/2.'],
+        ['Which halves get sorted?', 'Each right bucket. Left buckets are only iterated.']],
+      links: [['Closest Subsequence Sum (same neighbour check)', 1], ['Split Same Average (also size buckets)', 3]] },
+    { name: 'Same Average (LC 805)', hook: 'If two groups have the same average, they both equal the <b>class average</b>. So look for ONE group whose average equals the class average.',
+      mantra: 'avg(A) = avg(ALL) ⇒ sum·N = size·S',
+      statement: 'Can nums be split into two non-empty arrays with equal averages? N ≤ 30.',
+      anims: [{ name: 'Size buckets + exact match', code: `
+for (int k = 0; k <= n1; k++) {
+    for (int ls : left.get(k)) {
+        for (int m = 0; m <= n2; m++) {
+            int size = k + m;
+            if (size == 0 || size == N || size * S % N != 0) continue;
+            if (right.get(m).contains(size * S / N - ls)) return true;
+        }
+    }
+}
+return false;`, steps: splitAvg() }],
+      recall: [['Why does equal average imply average of all?', 'Combining two groups with the same average gives that same average.'],
+        ['The divisibility filter?', 'sum(A) = size·S/N must be an integer, so skip sizes where size·S % N ≠ 0.'],
+        ['Why exclude size 0 and size N?', 'Both groups must be non-empty.'],
+        ['Java speed-up used here?', 'Right buckets are HashSets, so the exact-match lookup is O(1) instead of a binary search.']],
+      links: [['Partition Min Difference', 2]] }
+  ]
+});
+</script>
+</body>
+</html>

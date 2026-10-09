@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Disjoint Set Animations</title>
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/graph-kit.js"></script>
+<script>
+const { lane, graph, grid, tree, recorder, mount, ln } = BrainAnim;
+const { range, C, EC, Q, S, A, story, adjOf } = GK;
+const bits = a => a.map(b => (b ? 1 : 0));
+const fm = d => (d === Infinity || d === undefined ? '∞' : d);
+
+// Forest lane from a parent array (roots have parent == self)
+const forest = (name, parent, o = {}) => tree(name, Object.fromEntries(parent.map((p, i) => [o.ids ? o.ids[i] : i, p === i ? null : (o.ids ? o.ids[p] : p)])), { wide: !!o.wide, cls: o.cls || {}, badge: o.badge || {}, labels: o.labels || {} });
+// Small DSU used by the animations; log records each union
+const mkDsu = (n, o = {}) => { const parent = range(0, n - 1), rank = Array(n).fill(0), size = Array(n).fill(1);
+  const find = x => { while (parent[x] !== x) x = parent[x]; return x; };
+  const findC = x => (parent[x] === x ? x : (parent[x] = findC(parent[x])));
+  const union = (a, b) => { const ra = (o.compress ? findC : find)(a), rb = (o.compress ? findC : find)(b); if (ra === rb) return false; if (o.rank) { if (rank[ra] < rank[rb]) parent[ra] = rb; else if (rank[ra] > rank[rb]) parent[rb] = ra; else { parent[rb] = ra; rank[ra]++; } } else if (o.size) { let x = ra, y = rb; if (size[x] < size[y]) { const t = x; x = y; y = t; } parent[y] = x; size[x] += size[y]; } else parent[ra] = rb; return true; };
+  return { parent, rank, size, find, findC, union }; };
+
+const C_DSU = `
+// plain: parent[find(a)] = find(b)
+// rank + compression:
+int find(int x) { return parent[x] == x ? x : (parent[x] = find(parent[x])); }
+boolean union(int a, int b) {
+    int ra = find(a), rb = find(b);
+    if (ra == rb) return false;
+    if (rank[ra] < rank[rb]) parent[ra] = rb;
+    else if (rank[ra] > rank[rb]) parent[rb] = ra;
+    else { parent[rb] = ra; rank[ra]++; }
+    return true;
+}`;
+function dsuVariant(kind) {
+  const n = 5, ops = [[0, 1], [1, 2], [2, 3], [3, 4]], r = recorder(), d = mkDsu(n, kind === 'plain' ? {} : kind === 'rank' ? { rank: true, compress: true } : { size: true, compress: true });
+  const V = (act) => [forest(`forest (${kind})`, d.parent, { cls: C({ active: act !== undefined ? [act] : [] }), badge: kind === 'size' ? Object.fromEntries(range(0, n - 1).filter(i => d.parent[i] === i).map(i => [i, 'size ' + d.size[i]])) : kind === 'rank' ? Object.fromEntries(range(0, n - 1).filter(i => d.parent[i] === i).map(i => [i, 'rank ' + d.rank[i]])) : {} }), A('parent[]', d.parent)];
+  r.step(ln(C_DSU, 'boolean union'), kind === 'plain' ? 'Plain union: hang the root of a under the root of b. Union a chain 0-1-2-3-4 and the tree becomes a long path.' : kind === 'rank' ? 'Union by rank: hang the shorter tree under the taller one, and compress paths in find. Together they make operations almost O(1) (inverse Ackermann).' : 'Union by size: hang the smaller set under the bigger one; the root also stores how many elements its set has.', V(), {});
+  for (const [a, b] of ops) { d.union(a, b); r.step(ln(C_DSU, 'if (rank[ra] < rank[rb])'), `union(${a}, ${b}): roots ${a === 0 ? 0 : 'of ' + a} and ${b}'s root differ → merge.`, V(b), {}); }
+  r.step(ln(C_DSU, 'int find(int x)'), kind === 'plain' ? 'find(0) must climb the whole chain: 4 steps. n unions can make every find O(n).' : 'Trees stay shallow: find(0) climbs at most a couple of steps, and compression flattens whatever it walks over.', V(0), {});
+  return r.steps;
+}
+const dsuPlain = () => dsuVariant('plain'), dsuRank = () => dsuVariant('rank'), dsuSize = () => dsuVariant('size');
+
+const C_RED = `
+for (int[] e : edges) {
+    int a = find(parent, e[0]), b = find(parent, e[1]);
+    if (a == b) return e;               // both ends already connected: this edge closes the cycle
+    parent[a] = b;
+}`;
+function redundant() {
+  const edges = [[1, 2], [2, 3], [3, 4], [1, 4], [1, 5]], r = recorder(), d = mkDsu(6, { compress: true }); const used = [];
+  const N = { 1: [0, 0], 2: [1.6, 0], 3: [1.6, 1.6], 4: [0, 1.6], 5: [-1.6, 0] };
+  const V = (ecls, cls) => [graph('edges so far', N, edges, { ecls, cls }), forest('union-find forest (0 unused)', d.parent, {})];
+  r.step(ln(C_RED, 'for (int[] e : edges)'), 'A tree on n nodes has n − 1 edges; one extra edge makes a cycle. Add edges in order; the first whose ends are already connected is the redundant one.', V({}, C({})), {});
+  for (const e of edges) { const a = d.findC(e[0]), b = d.findC(e[1]); if (a === b) { r.step(ln(C_RED, 'if (a == b)'), `Edge ${e.join('–')}: both ends already in the same set ${a}. It closes a cycle: <b>${e.join(', ')}</b> is the answer.`, V(EC({ bad: [e], done: used }), C({ bad: e })), {}); break; } d.union(e[0], e[1]); used.push(e); r.step(ln(C_RED, 'parent[a] = b'), `Edge ${e.join('–')}: different sets → merge.`, V(EC({ done: used }), C({ active: e })), {}); }
+  return r.steps;
+}
+
+const C_ELP = `
+Arrays.sort(edges, (a, b) -> a[2] - b[2]);
+Arrays.sort(order, (a, b) -> queries[a][2] - queries[b][2]);        // queries sorted by limit
+for (int qi : order) {
+    while (next < edges.length && edges[next][2] < queries[qi][2]) {  // add every edge shorter than this limit
+        parent[find(parent, edges[next][0])] = find(parent, edges[next][1]);
+        next++;
+    }
+    answer[qi] = find(parent, queries[qi][0]) == find(parent, queries[qi][1]);
+}`;
+function limited() {
+  const E = [[0, 1, 2], [1, 2, 4], [2, 0, 8], [1, 0, 16]], qs = [[0, 1, 2], [0, 2, 5]], N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2] }, r = recorder(), d = mkDsu(3, { compress: true }); let next = 0; const used = [];
+  const sorted = E.slice().sort((a, b) => a[2] - b[2]);
+  const V = () => [graph('edges (weight = length)', N, E.map(e => [e[0], e[1], e[2]]), { ecls: EC({ done: used }) }), forest('union-find', d.parent, {})];
+  r.step(ln(C_ELP, 'Arrays.sort(edges'), 'Query (p, q, limit): is there a path using only edges strictly shorter than limit? Answer queries <b>offline</b>: sort queries by limit and edges by length, and add edges to the Union-Find as the limit grows.', V(), {});
+  for (const [p, q, lim] of qs) { while (next < sorted.length && sorted[next][2] < lim) { d.union(sorted[next][0], sorted[next][1]); used.push([sorted[next][0], sorted[next][1]]); r.step(ln(C_ELP, 'parent[find'), `Limit ${lim}: edge ${sorted[next][0]}–${sorted[next][1]} (${sorted[next][2]}) is shorter: union.`, V(), {}); next++; } const ok = d.findC(p) === d.findC(q); r.step(ln(C_ELP, 'answer[qi]'), `Query (${p}, ${q}, limit ${lim}): ${ok ? 'same set → <b>true</b>' : 'different sets → <b>false</b>'}.`, V(), {}); }
+  r.step(0, 'Answers [false, true]. Each edge is added once and each query is answered in near-O(1): O((E + Q) log) overall for the sorts.', V(), {});
+  return r.steps;
+}
+
+const C_COMP = `
+for (int[] e : edges) parent[find(parent, e[0])] = find(parent, e[1]);
+for (int i = 0; i < n; i++) nodes[find(parent, i)]++;
+for (int[] e : edges) edgeCount[find(parent, e[0])]++;
+for (int i = 0; i < n; i++) if (find(parent, i) == i && edgeCount[i] == nodes[i] * (nodes[i] - 1) / 2) count++;`;
+function complete() {
+  const E = [[0, 1], [0, 2], [1, 2], [3, 4]], N = { 0: [0, 0], 1: [1.5, 0], 2: [0.7, 1.4], 3: [3.2, 0], 4: [4.5, 0], 5: [3.8, 1.4] }, r = recorder(), d = mkDsu(6, { compress: true });
+  E.forEach(e => d.union(e[0], e[1]));
+  r.step(0, 'A component with k nodes is <b>complete</b> iff it has k(k − 1)/2 edges (every pair joined). Union all edges, then compare per root.', [graph('graph', N, E, {})], {});
+  let cnt = 0;
+  [[[0, 1, 2], 3], [[3, 4], 1], [[5], 0]].forEach(([nodes, edges]) => { const k = nodes.length, need = k * (k - 1) / 2; const ok = edges === need; if (ok) cnt++; r.step(ln(C_COMP, 'edgeCount[i] =='), `Component {${nodes.join(',')}}: k = ${k}, needs ${need} edges, has ${edges} → ${ok ? '<b>complete</b>' : 'not complete'}.`, [graph('graph', N, E, { cls: C({ done: ok ? nodes : [], bad: ok ? [] : nodes }) }), A('complete so far', [cnt])], {}); });
+  r.step(0, `<b>${cnt}</b> complete components. A single node counts (0 = 0 edges).`, [A('answer', [cnt])], {});
+  return r.steps;
+}
+
+const C_GCD = `
+for (int i = 0; i < n; i++) {
+    int v = nums[i];
+    while (v > 1) {
+        int p = smallest[v];
+        parent[find(parent, i)] = find(parent, n + p);      // link index i with its prime p
+        while (v % p == 0) v /= p;
+    }
+}`;
+function gcdTraversal() {
+  const nums = [2, 3, 6], n = 3, r = recorder(), E = []; const d = mkDsu(3 + 4, { compress: true });
+  const ids = ['i0', 'i1', 'i2', 'p0', 'p1', 'p2', 'p3'], N = { i0: [0, 0], i1: [0, 1.4], i2: [0, 2.8], p2: [2.2, 0.4], p3: [2.2, 2.2] };
+  const V = (act) => [graph('indices (left) and primes (right); edge = "has this factor"', N, E, { cls: C({ active: act || [] }) }), A('numbers', nums, { showIdx: true })];
+  r.step(0, 'Indices i and j can be joined iff gcd > 1, i.e. they share a prime. So link every index with <b>each of its prime factors</b>; two numbers sharing a prime end up in one set. Then all indices must be in one set.', V(), {});
+  nums.forEach((v, i) => { const ps = [2, 3].filter(p => v % p === 0); ps.forEach(p => { E.push([`i${i}`, `p${p}`]); d.union(i, n + p); }); r.step(ln(C_GCD, 'parent[find(parent, i)]'), `nums[${i}] = ${v}: primes ${ps.join(', ')}. Link i${i} with ${ps.map(p => 'p' + p).join(' and ')}.`, V([`i${i}`]), {}); });
+  r.step(0, 'Indices 0 (2), 1 (3) and 2 (6): 6 links the primes 2 and 3 together, so everything is one component: <b>true</b>. For [3, 9, 5] the prime 5 stays alone: false. A 1 can never connect: false.', V(['i0', 'i1', 'i2']), {});
+  return r.steps;
+}
+const C_LCS = `
+for (int v : nums) {
+    for (int f = 2; (long) f * f <= v; f++) {
+        if (v % f == 0) {
+            parent[find(parent, v)] = find(parent, f);
+            parent[find(parent, v)] = find(parent, v / f);
+        }
+    }
+}`;
+function largestComp() {
+  const nums = [4, 6, 15, 35], r = recorder(), E = [], N = { 4: [0, 0], 6: [0, 1.4], 15: [0, 2.8], 35: [0, 4.2], 2: [2.2, 0.5], 3: [2.2, 1.9], 5: [2.2, 3.3], 7: [2.2, 4.7] };
+  const V = (act) => [graph('numbers (left) linked to their factors (right)', N, E, { cls: C({ active: act || [] }) })];
+  r.step(0, 'Union each number with its factors > 1 (not all pairs!). Numbers sharing any factor then share a root: 4 – 2 – 6 – 3 – 15 – 5 – 35 – 7 is one chain.', V(), {});
+  const fac = { 4: [2], 6: [2, 3], 15: [3, 5], 35: [5, 7] };
+  nums.forEach(v => { fac[v].forEach(f => E.push([v, f])); r.step(ln(C_LCS, 'parent[find(parent, v)]'), `${v}: factors ${fac[v].join(', ')} → union ${v} with each.`, V([v]), {}); });
+  r.step(0, 'All four numbers are in one component: size <b>4</b>. Counting numbers per root afterwards (a HashMap) gives the largest component.', V([4, 6, 15, 35]), {});
+  return r.steps;
+}
+const C_STAB = `
+int low = 1, high = 2 * maxStrength, answer = -1;
+while (low <= high) {
+    int mid = low + (high - low) / 2;
+    if (feasible(n, edges, k, mid)) { answer = mid; low = mid + 1; }
+    else high = mid - 1;
+}
+// feasible: must edges need strength >= s; optional >= s are free; 2 * strength >= s costs one upgrade`;
+function stability() {
+  const E = [[0, 1, 4], [1, 2, 3], [0, 2, 1]], N = { 0: [0, 1], 1: [1.6, 0], 2: [1.6, 2] }, k = 2, r = recorder();
+  r.step(0, 'Choose a spanning tree and up to k = 2 optional edges to double; stability = weakest edge in the tree. "Can we reach stability ≥ s?" is monotone in s, so binary search s; a Union-Find tests feasibility.', [graph('edges (all optional)', N, E, {})], {});
+  let low = 1, high = 8, ans = -1;
+  while (low <= high) { const mid = (low + high) >> 1; const d = mkDsu(3, { compress: true }); const up = []; E.forEach(([a, b, s]) => { if (s >= mid) d.union(a, b); else if (2 * s >= mid) up.push([a, b, s]); }); let kk = k, used = 0; up.forEach(([a, b]) => { if (d.findC(a) !== d.findC(b) && kk > 0) { d.union(a, b); kk--; used++; } }); const ok = d.findC(0) === d.findC(1) && d.findC(1) === d.findC(2);
+    r.step(ln(C_STAB, 'if (feasible'), `s = ${mid}: edges ≥ ${mid} are free (${E.filter(e => e[2] >= mid).map(e => e[0] + '–' + e[1]).join(', ') || 'none'}); upgradable (2·w ≥ ${mid}): ${up.map(u => u[0] + '–' + u[1]).join(', ') || 'none'}; upgrades used ${used}/${k}. ${ok ? 'Everything connected: <b>feasible</b>' : 'Not connected: <b>infeasible</b>'}.`, [graph(`testing s = ${mid}`, N, E, { ecls: EC({ done: E.filter(e => e[2] >= mid).map(e => [e[0], e[1]]), hot: up.map(u => [u[0], u[1]]) }) }), A('low, high, mid', [low, high, mid])], { low, high, mid });
+    if (ok) { ans = mid; low = mid + 1; } else high = mid - 1; }
+  r.step(0, `Best stability <b>${ans}</b>: upgrade the 3-edge (→ 6) and the 4-edge (→ 8); the weakest becomes 6. Must edges would need strength ≥ s with no upgrade, and two must edges forming a cycle give −1.`, [A('answer', [ans])], {});
+  return r.steps;
+}
+const C_HAM = `
+for (int[] s : allowedSwaps) parent[find(parent, s[0])] = find(parent, s[1]);
+Map<Integer, Map<Integer, Integer>> pool = ...;       // per component: multiset of source values
+for (int i = 0; i < n; i++) pool.computeIfAbsent(find(parent, i), k -> new HashMap<>()).merge(source[i], 1, Integer::sum);
+for (int i = 0; i < n; i++) {
+    Map<Integer, Integer> values = pool.get(find(parent, i));
+    Integer have = values.get(target[i]);
+    if (have == null || have == 0) mismatches++;
+    else values.put(target[i], have - 1);
+}`;
+function hamming() {
+  const src = [1, 2, 3, 4], tgt = [2, 1, 4, 5], r = recorder();
+  r.step(0, 'Swaps may be repeated, so indices linked by allowed swaps form components inside which the values can be arranged in <i>any</i> order. Inside a component only the multiset of values matters.', [A('source', src, { showIdx: true }), A('target', tgt, { showIdx: true })], {});
+  r.step(ln(C_HAM, 'for (int[] s : allowedSwaps)'), 'Swaps [0,1] and [2,3] give components {0,1} and {2,3}.', [A('component of each index', ['A', 'A', 'B', 'B'], { showIdx: true })], {});
+  r.step(ln(C_HAM, 'pool.computeIfAbsent'), 'Component A holds source values {1, 2}; component B holds {3, 4}.', [A('pool A (source)', [1, 2], { showIdx: false }), A('pool B (source)', [3, 4], { showIdx: false })], {});
+  r.step(ln(C_HAM, 'Integer have'), 'Match targets against the pool: A needs {2, 1} → both available (0 mismatches). B needs {4, 5} → 4 available, 5 is not in {3, 4}: <b>1 mismatch</b>.', [A('target in A', [2, 1], { done: [0, 1], showIdx: false }), A('target in B', [4, 5], { done: [0], bad: [1], showIdx: false })], { mismatches: 1 });
+  return r.steps;
+}
+const C_WALK = `
+for (int[] e : edges) {
+    int a = find(parent, e[0]), b = find(parent, e[1]);
+    if (a != b) { parent[b] = a; cost[a] &= cost[b]; }      // merge the AND of both components
+    cost[a] &= e[2];                                       // and include this edge
+}
+...query: s == t -> 0; different components -> -1; else cost[root]`;
+function walkCost() {
+  const E = [[0, 1, 7], [1, 3, 7], [1, 2, 1]], N = { 0: [0, 1], 1: [1.6, 1], 2: [3.2, 0], 3: [3.2, 2], 4: [4.8, 1] }, r = recorder(), d = mkDsu(5, { compress: true }), cost = Array(5).fill(-1), used = [];
+  const V = (act) => [graph('edges (weights); cost of a walk = AND of its edges', N, E, { cls: C({ active: act || [] }), ecls: EC({ done: used }) }), A('component AND (root → value)', range(0, 4).map(i => (d.findC(i) === i ? cost[i] : '·')), { showIdx: true })];
+  r.step(0, 'AND can only <i>clear</i> bits, and a walk may reuse edges, so a walk can pick up <b>every</b> edge of its component: the cheapest cost between two nodes of a component is the AND of all the component\'s edges.', V(), {});
+  E.forEach(([u, v, w]) => { const a = d.findC(u), b = d.findC(v); if (a !== b) { d.union(u, v); const root = d.findC(u); cost[root] = cost[a] & cost[b]; } cost[d.findC(u)] &= w; used.push([u, v]); r.step(ln(C_WALK, 'cost[a] &= e[2]'), `Edge ${u}–${v} (${w}): component AND becomes ${cost[d.findC(u)]}.`, V([u, v]), {}); });
+  r.step(0, 'Query (0, 3): same component, AND = 7 & 7 & 1 = <b>1</b>. Query (3, 4): node 4 is isolated: <b>−1</b>. A query (s, s) is 0.', V([0, 3]), {});
+  return r.steps;
+}
+const C_GP = `
+for (Map.Entry<Integer, List<Integer>> en : byValue.entrySet()) {            // values in increasing order
+    for (int u : en.getValue()) for (int v : adj.get(u)) if (vals[v] <= vals[u]) union(u, v);
+    Map<Integer, Integer> perRoot = new HashMap<>();
+    for (int u : en.getValue()) {
+        int c = perRoot.merge(find(parent, u), 1, Integer::sum);
+        count += c - 1;                                                       // new good paths ending at u
+    }
+}`;
+function goodPaths() {
+  const vals = [1, 3, 2, 1, 3], E = [[0, 1], [0, 2], [2, 3], [2, 4]], N = { 0: [1.5, 1], 1: [0, 0], 2: [3, 1], 3: [4.5, 0], 4: [4.5, 2] }, r = recorder(), d = mkDsu(5, { compress: true }), adj = adjOf(5, E, false); let count = 5; const used = [];
+  const V = (act) => [graph('tree (badge = value)', N, E, { cls: C({ active: act || [] }), ecls: EC({ done: used }), badge: Object.fromEntries(vals.map((v, i) => [i, v])) }), A('good paths so far', [count])];
+  r.step(0, 'A good path has equal end values and no larger value between. Every single node counts (5). Add nodes by <b>increasing value</b>; when value v is active, connect each v-node to neighbours with value ≤ v, then any two v-nodes in one component form a good path.', V(), {});
+  for (const v of [1, 2, 3]) { const nodes = range(0, 4).filter(i => vals[i] === v); nodes.forEach(u => adj[u].forEach(w => { if (vals[w] <= vals[u]) { d.union(u, w); used.push([u, w]); } })); const per = {}; let add = 0; nodes.forEach(u => { const root = d.findC(u); per[root] = (per[root] || 0) + 1; add += per[root] - 1; }); count += add;
+    r.step(ln(C_GP, 'count += c - 1'), `Value ${v}: nodes ${nodes.join(', ')} connect to smaller-or-equal neighbours. ${add ? add + ' new pair(s) of equal values now share a component → +' + add : 'no two of them share a component yet'}. Total ${count}.`, V(nodes), {}); }
+  r.step(0, `Total good paths: <b>${count}</b> = 5 single nodes + the path 1–0–2–4 (both ends 3, nothing larger between). The two 1s (nodes 0 and 3) are separated by the 2 at node 2, so they do not count.`, V(), {});
+  return r.steps;
+}
+
+const C_NET = `
+if (connections.length < n - 1) return -1;           // not enough cables
+for (int[] c : connections) {
+    int a = find(parent, c[0]), b = find(parent, c[1]);
+    if (a != b) { parent[a] = b; components--; }
+}
+return components - 1;                                 // each spare cable joins one more component`;
+function networkConn() {
+  const E = [[0, 1], [0, 2], [1, 2]], N = { 0: [0, 0], 1: [1.6, 0], 2: [0.8, 1.4], 3: [3.2, 0.7] }, r = recorder(), d = mkDsu(4, { compress: true }); let comps = 4; const used = [];
+  const V = () => [graph('computers and cables (n = 4)', N, E, { ecls: EC({ done: used }) }), A('components', [comps])];
+  r.step(ln(C_NET, 'if (connections.length < n - 1)'), 'To connect n computers we need at least n − 1 cables: here 3 ≥ 3, fine. Then every spare (cycle) cable can be moved to join two components.', V(), {});
+  E.forEach(([a, b]) => { const ok = d.union(a, b); if (ok) { comps--; used.push([a, b]); } r.step(ln(C_NET, 'if (a != b)'), ok ? `Cable ${a}–${b} merges two components: ${comps} left.` : `Cable ${a}–${b} joins computers already connected: a <b>spare</b> cable.`, V(), {}); });
+  r.step(ln(C_NET, 'return components - 1'), `${comps} components, so we need ${comps - 1} move${comps - 1 === 1 ? '' : 's'}: take the spare cable and join computer 3. Answer <b>${comps - 1}</b>.`, V(), {});
+  return r.steps;
+}
+const C_RME = `
+for (int[] e : edges) {                                 // shared edges first: they help both people
+    if (e[0] != 3) continue;
+    boolean a = union(alice, e[1], e[2]), b = union(bob, e[1], e[2]);
+    ...
+}
+for (int[] e : edges) {                                 // then each person's own edges
+    if (e[0] == 1 && union(alice, e[1], e[2])) { aliceParts--; used++; }
+    if (e[0] == 2 && union(bob, e[1], e[2])) { bobParts--; used++; }
+}
+return aliceParts == 1 && bobParts == 1 ? edges.length - used : -1;`;
+function removeMax() {
+  const E = [[3, 1, 2], [3, 2, 3], [1, 1, 3], [1, 2, 4], [1, 1, 2], [2, 3, 4]], N = { 1: [0, 0], 2: [1.6, 0], 3: [1.6, 1.6], 4: [0, 1.6] }, r = recorder(), al = mkDsu(5, { compress: true }), bo = mkDsu(5, { compress: true }), used = [], skipped = [];
+  const V = () => [graph('edge types: 1 Alice, 2 Bob, 3 both (labels not drawn; see log)', N, E.map(e => [e[1], e[2]]), { ecls: EC({ done: used.map(e => [e[1], e[2]]), bad: skipped.map(e => [e[1], e[2]]) }) }), A('used / total edges', [used.length, E.length])];
+  r.step(0, 'Both Alice and Bob must be able to reach every node. Keep as few edges as possible. A type-3 edge helps both, so take those first; then each person\'s own edges; any edge that joins nothing new is removable.', V(), {});
+  const order = E.filter(e => e[0] === 3).concat(E.filter(e => e[0] !== 3));
+  order.forEach(e => { let useIt = false; if (e[0] === 3) { const a = al.union(e[1], e[2]), b = bo.union(e[1], e[2]); useIt = a || b; } else if (e[0] === 1) useIt = al.union(e[1], e[2]); else useIt = bo.union(e[1], e[2]); (useIt ? used : skipped).push(e); r.step(ln(C_RME, useIt ? 'used++' : 'if (e[0] == 1'), `Edge type ${e[0]} (${e[1]}–${e[2]}): ${useIt ? 'joins something new → keep' : 'already connected for the person(s) it serves → <b>remove</b>'}.`, V(), {}); });
+  r.step(ln(C_RME, 'return aliceParts == 1'), `Kept ${used.length} of ${E.length}; both are fully connected, so we can remove <b>${skipped.length}</b> edges. If either person ended with more than one component the answer is −1.`, V(), {});
+  return r.steps;
+}
+const C_EQ = `
+for (String e : equations) if (e.charAt(1) == '=') parent[find(parent, e.charAt(0) - 'a')] = find(parent, e.charAt(3) - 'a');
+for (String e : equations) if (e.charAt(1) == '!' && find(parent, e.charAt(0) - 'a') == find(parent, e.charAt(3) - 'a')) return false;
+return true;`;
+function equations() {
+  const eqs = [['a', '=', 'b'], ['b', '=', 'c'], ['a', '!', 'c']], r = recorder(), d = mkDsu(3, { compress: true }), L = 'abc';
+  const V = (act) => [A('equations', eqs.map(e => e[0] + e[1] + '=' + e[2]).map((s, i) => (eqs[i][1] === '!' ? eqs[i][0] + '!=' + eqs[i][2] : s)), { showIdx: true, active: act !== undefined ? [act] : [] }), forest('letters a, b, c (0, 1, 2)', d.parent, { labels: { 0: 'a', 1: 'b', 2: 'c' }, wide: false })];
+  r.step(0, '"==" equations make letters equal (union them). "!=" equations are checks that must be done <b>after</b> all unions, because a later "==" can still link two letters.', V(), {});
+  eqs.forEach((e, i) => { if (e[1] === '=') { d.union(L.indexOf(e[0]), L.indexOf(e[2])); r.step(ln(C_EQ, "if (e.charAt(1) == '=')"), `${e[0]} == ${e[2]}: union.`, V(i), {}); } });
+  const [a, , c] = eqs[2]; r.step(ln(C_EQ, "e.charAt(1) == '!'"), `Check a != c: a and c now share a root (${d.findC(0)}) through b, so the equations contradict: <b>false</b>.`, V(2), {});
+  return r.steps;
+}
+const C_SIM = `
+private boolean similar(String a, String b) {
+    int diff = 0;
+    for (int i = 0; i < a.length(); i++) if (a.charAt(i) != b.charAt(i) && ++diff > 2) return false;
+    return true;
+}
+...
+for (int i = 0; i < n; i++) for (int j = i + 1; j < n; j++) {
+    if (!similar(strs[i], strs[j])) continue;
+    int a = find(parent, i), b = find(parent, j);
+    if (a != b) { parent[a] = b; groups--; }
+}`;
+function simGroups() {
+  const s = ['tars', 'rats', 'arts', 'star'], r = recorder(), d = mkDsu(4, { compress: true }); let groups = 4; const E = [];
+  const sim = (a, b) => { let x = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i] && ++x > 2) return false; return true; };
+  const N = { 0: [0, 0], 1: [1.8, 0], 2: [0, 1.8], 3: [1.8, 1.8] }, lab = Object.fromEntries(s.map((w, i) => [i, `${i}:${w}`]));
+  const V = (act, bad) => [graph('strings (edge = similar)', Object.fromEntries(Object.entries(N)), E, { cls: C({ active: act || [], bad: bad || [] }) }), A('strings', s, { showIdx: true }), A('groups', [groups])];
+  r.step(0, 'Anagrams; two are <b>similar</b> if equal or one swap apart (differ in ≤ 2 places). Groups = connected components of the similarity graph: Union-Find, one union removes one group.', V(), {});
+  for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) { const ok = sim(s[i], s[j]); if (!ok) { r.step(ln(C_SIM, 'if (!similar'), `${s[i]} vs ${s[j]}: differ in more than 2 places → not similar.`, V([i, j], [i, j]), {}); continue; } const mg = d.union(i, j); if (mg) { groups--; E.push([i, j]); } r.step(ln(C_SIM, 'groups--'), `${s[i]} vs ${s[j]}: similar. ${mg ? 'Different groups → merge, groups = ' + groups : 'already the same group'}.`, V([i, j]), {}); }
+  r.step(0, `<b>${groups}</b> groups: {tars, rats, arts} and {star} (star differs from each in 4 places).`, V(), {});
+  return r.steps;
+}
+const C_VBT = `
+for (int u = 0; u < n; u++) {
+    for (int child : new int[]{leftChild[u], rightChild[u]}) {
+        if (child == -1) continue;
+        if (hasParent[child] == 1) return false;           // a node with two parents
+        hasParent[child] = 1;
+        int a = find(parent, u), b = find(parent, child);
+        if (a == b) return false;                           // linking would close a cycle
+        parent[b] = a;
+        components--;
+    }
+}
+return components == 1;`;
+function validTree() {
+  const left = [1, -1, 3, -1], right = [2, -1, -1, -1], n = 4, E = [[0, 1], [0, 2], [2, 3]], N = { 0: [1, 0], 1: [0, 1.4], 2: [2, 1.4], 3: [2, 2.8] }, r = recorder(), d = mkDsu(4, { compress: true }), has = [0, 0, 0, 0]; let comps = 4; const used = [];
+  const V = (act) => [graph('parent → child links', N, E, { directed: true, cls: C({ active: act !== undefined ? [act] : [] }), ecls: EC({ done: used }) }), A('hasParent', has), A('components', [comps])];
+  r.step(0, 'A valid binary tree: exactly one root, every other node has exactly <b>one</b> parent, no cycles, everything connected. Union parent with each child and watch for a second parent or a cycle.', V(), {});
+  for (let u = 0; u < n; u++) for (const c of [left[u], right[u]]) { if (c === -1) continue; has[c] = 1; d.union(u, c); comps--; used.push([u, c]); r.step(ln(C_VBT, 'parent[b] = a'), `${u} → ${c}: ${c} had no parent and ${u}, ${c} were in different sets → union. ${comps} component(s) left.`, V(c), {}); }
+  r.step(ln(C_VBT, 'return components == 1'), 'One component, no node with two parents, no cycle: <b>valid</b>. (If node 1 also pointed to 3, node 3 would get a second parent: invalid.)', V(), {});
+  return r.steps;
+}
+const C_LEX = `
+for (int i = 0; i < s1.length(); i++) {
+    int a = find(parent, s1.charAt(i) - 'a'), b = find(parent, s2.charAt(i) - 'a');
+    if (a < b) parent[b] = a;               // the smaller letter always becomes the root
+    else parent[a] = b;
+}
+...each letter of baseStr -> (char) ('a' + find(parent, c - 'a'))`;
+function lexEq() {
+  const s1 = 'parker', s2 = 'morris', r = recorder(), d = mkDsu(26, { compress: true }), L = c => c.charCodeAt(0) - 97;
+  const par = () => { const p = {}; const ids = new Set(); [...s1, ...s2].forEach(c => ids.add(L(c))); ids.forEach(i => { p[String.fromCharCode(97 + i)] = d.parent[i] === i ? null : String.fromCharCode(97 + d.parent[i]); }); return p; };
+  const V = (act) => [tree('equivalence forest (smallest letter is the root)', par(), { cls: C({ active: act || [] }) })];
+  r.step(0, 'p≡m, a≡o, r≡r, k≡r, e≡i, r≡s: equivalence is transitive, so letters form groups. Rewrite every letter by the <b>smallest</b> of its group. Union-Find where the smaller letter is always the root gives that for free.', V(), {});
+  for (let i = 0; i < 6; i++) { const a = d.findC(L(s1[i])), b = d.findC(L(s2[i])); if (a < b) d.parent[b] = a; else d.parent[a] = b; r.step(ln(C_LEX, 'if (a < b)'), `${s1[i]} ≡ ${s2[i]}: roots ${String.fromCharCode(97 + a)} and ${String.fromCharCode(97 + b)} → the smaller becomes the root.`, V([s1[i], s2[i]]), {}); }
+  const out = [...'parser'].map(c => String.fromCharCode(97 + d.findC(L(c)))).join('');
+  r.step(0, `"parser" → <b>${out}</b>: p→m, a→a, r→k (r, s, k share a group with smallest k), s→k, e→e, r→k.`, V(), {});
+  return r.steps;
+}
+const C_PG = `
+Map<Integer, TreeSet<Integer>> online = new HashMap<>();
+for (int i = 1; i <= c; i++) online.computeIfAbsent(find(parent, i), k -> new TreeSet<>()).add(i);
+for (int[] q : queries) {
+    if (q[0] == 1) { if (!off[x]) result.add(x); else { TreeSet<Integer> set = online.get(find(parent, x)); result.add(set.isEmpty() ? -1 : set.first()); } }
+    else { off[x] = true; online.get(find(parent, x)).remove(x); }
+}`;
+function powerGrid() {
+  const E = [[1, 2], [2, 3], [3, 4], [4, 5]], N = { 1: [0, 0], 2: [1.5, 0], 3: [3, 0], 4: [4.5, 0], 5: [6, 0] }, qs = [[1, 3], [2, 1], [1, 1], [2, 2], [1, 2]], r = recorder(), off = [];
+  const V = (act) => [graph('stations (grey = offline)', N, E, { cls: C({ ghost: off.slice(), active: act !== undefined ? [act] : [] }) }), A('online stations of the grid (sorted set)', [1, 2, 3, 4, 5].filter(x => !off.includes(x)), { showIdx: false })];
+  r.step(0, 'All five stations form one grid (one component). Each component keeps its <b>online</b> stations in a sorted set. A check on station x is resolved by x itself if online, otherwise by the smallest online station of its grid.', V(), {});
+  const res = [];
+  for (const [t, x] of qs) { if (t === 2) { off.push(x); r.step(ln(C_PG, 'off[x] = true'), `Station ${x} goes offline: remove it from its set.`, V(x), {}); } else { const on = [1, 2, 3, 4, 5].filter(y => !off.includes(y)); const ans = off.includes(x) ? (on.length ? on[0] : -1) : x; res.push(ans); r.step(ln(C_PG, 'result.add'), `Check on ${x}: ${off.includes(x) ? `offline → smallest online station = ${ans}` : 'online → resolved by itself'}.`, V(x), { answer: ans }); } }
+  r.step(0, `Answers: [${res.join(', ')}]. Only the sets change; the component structure never does, so Union-Find (or one DFS) is built once.`, V(), {});
+  return r.steps;
+}
+const C_PEQ = `
+int[] component = new int[n];
+for (int i = 1; i < n; i++) component[i] = component[i - 1] + (nums[i] - nums[i - 1] > maxDiff ? 1 : 0);
+...answer[q] = component[queries[q][0]] == component[queries[q][1]];`;
+function pathQ() {
+  const nums = [2, 5, 6, 8], md = 2, r = recorder(), comp = [0];
+  r.step(0, 'nums is sorted, so if neighbours i and i + 1 are linked the whole range is, and any gap bigger than maxDiff cuts the line for good. No graph search is needed: just label the pieces.', [A('nums', nums, { showIdx: true })], {});
+  for (let i = 1; i < 4; i++) { const cut = nums[i] - nums[i - 1] > md; comp.push(comp[i - 1] + (cut ? 1 : 0)); r.step(ln(C_PEQ, 'component[i] ='), `nums[${i}] − nums[${i - 1}] = ${nums[i] - nums[i - 1]} ${cut ? '> ' : '≤ '}${md}: ${cut ? 'a gap, start a new component' : 'linked, same component'}.`, [A('nums', nums, { showIdx: true, active: [i - 1, i] }), A('component', comp, { showIdx: true })], {}); }
+  r.step(ln(C_PEQ, 'answer[q]'), 'Queries (0,1): 0 vs 1 → false. (0,2) false. (1,3): same component 1 → true. (2,3): true. Each query is O(1).', [A('component', comp, { showIdx: true, done: [1, 2, 3] })], {});
+  return r.steps;
+}
+
+mount({
+  title: "Disjoint Set Animations",
+  sub: "<b>Union-Find</b> keeps groups as trees of parent pointers. <b>find</b> climbs to the root (compress the path on the way back); <b>union</b> hangs one root under the other (smaller under bigger by rank or size). Both are almost O(1). Use it when edges arrive as a list, when you add connections over time, or when you need \"same group?\" fast. Tricks: union on <i>keys</i> (prime factors, letters, row/column), keep extra data per root (size, sum, AND), process offline in sorted order.",
+  problems: [
+    { name: "Disjoint Set (Union-Find)", hook: "Clubs with leaders: ask who your leader is, and make one club follow the other.", mantra: "find = climb to the root (compress); union = root under root", statement: "Implement a structure supporting union(a, b) and find(a) (are two elements in the same set?).",
+      anims: [{ name: "Plain", code: C_DSU, steps: dsuPlain() },
+      { name: "Rank + compression", code: C_DSU, steps: dsuRank() },
+      { name: "Size + compression", code: C_DSU, steps: dsuSize() }],
+      recall: [["Why union by rank?", "It keeps the trees shallow so find is short."], ["What does path compression do?", "After find, every node on the path points straight at the root."]], links: [["Redundant Connection", 1]] },
+    { name: "Redundant Connection", hook: "Add roads one at a time; the first road between two towns already connected is the redundant one.", mantra: "EDGE WHOSE ENDS ALREADY SHARE A ROOT", statement: "A tree with one extra edge is given. Return the extra edge (the last one in the input that can be removed).",
+      anims: [{ name: "Walkthrough", code: C_RED, steps: redundant() }],
+      recall: [["Why the last such edge?", "The first edge that closes a cycle in input order is the last edge of that cycle to appear."], ["Directed version?", "Redundant Connection II needs in-degree handling too."]], links: [["Number of Operations to Make Network Connected", 10]] },
+    { name: "Checking Existence of Edge Length Limited Paths", hook: "Open the gates in order of size; a visitor with limit L may use exactly the gates shorter than L.", mantra: "SORT EDGES AND QUERIES; UNION EDGES < LIMIT", statement: "Each query (p, q, limit) asks: is there a path from p to q using only edges with length &lt; limit?",
+      anims: [{ name: "Walkthrough", code: C_ELP, steps: limited() }],
+      recall: [["Why offline?", "The structure only grows; answering in limit order never needs deletions."], ["Why &lt; and not \u2264?", "The problem says strictly less than the limit."]], links: [] },
+    { name: "Count the Number of Complete Components", hook: "A complete component is a group where everybody knows everybody: edges = k(k \u2212 1)/2.", mantra: "EDGES == nodes \u00d7 (nodes \u2212 1) / 2", statement: "Count the connected components that are cliques.",
+      anims: [{ name: "Walkthrough", code: C_COMP, steps: complete() }],
+      recall: [["Why is degree sum k(k \u2212 1) the same test?", "Each edge adds 2 to the degree sum, so the sum is 2 \u00d7 edges."], ["Is a single node complete?", "Yes: 0 = 0 edges."]], links: [] },
+    { name: "Greatest Common Divisor Traversal", hook: "Numbers are friends if they share a prime: link each number to its primes instead of to each other.", mantra: "UNION INDEX WITH EACH PRIME FACTOR", statement: "Indices i and j can be traversed if gcd(nums[i], nums[j]) &gt; 1. Can every pair of indices be reached from each other?",
+      anims: [{ name: "Walkthrough", code: C_GCD, steps: gcdTraversal() }],
+      recall: [["Why union with primes?", "It replaces O(n\u00b2) pair checks by O(n log max) links."], ["When is the answer false immediately?", "If any value is 1 and n &gt; 1."]], links: [["Largest Component Size by Common Factor", 5]] },
+    { name: "Largest Component Size by Common Factor", hook: "Same trick as GCD Traversal: link each number with its factors, not with other numbers.", mantra: "UNION NUMBER WITH EACH FACTOR > 1", statement: "Link two numbers if they share a factor greater than 1. Return the size of the largest component.",
+      anims: [{ name: "Walkthrough", code: C_LCS, steps: largestComp() }],
+      recall: [["Why union with the factor, not with other numbers?", "Pairwise checks cost O(n\u00b2); factor nodes make it linear in the number of factors."], ["Why count only the given numbers?", "The factor nodes are helpers, not part of the array."]], links: [["Greatest Common Divisor Traversal", 4]] },
+    { name: "Maximize Spanning Tree Stability with Upgrades", hook: "Ask \"can every road be at least this strong?\" and double the weakest roads you are allowed to.", mantra: "BINARY SEARCH s; MUST \u2265 s, OPTIONAL FREE OR UPGRADE", statement: "Build a spanning tree that includes all mandatory edges. You may double the strength of at most k optional edges. Maximise the weakest edge in the tree (\u22121 if impossible).",
+      anims: [{ name: "Walkthrough", code: C_STAB, steps: stability() }],
+      recall: [["Why upgrade only when it connects different components?", "An upgrade that joins already connected nodes is wasted."], ["When is the answer \u22121?", "If the must edges form a cycle, or the graph cannot be spanned."]], links: [] },
+    { name: "Minimize Hamming Distance After Swap Operations", hook: "Inside a group of swappable seats people can be arranged in any order, so only who is in the group matters.", mantra: "COMPONENT MULTISET OF SOURCE vs TARGET", statement: "Swaps are allowed between listed index pairs, any number of times. Minimise the Hamming distance between source and target.",
+      anims: [{ name: "Walkthrough", code: C_HAM, steps: hamming() }],
+      recall: [["Why is any order possible inside a component?", "Repeated adjacent swaps along connected pairs can realise any permutation of the component."], ["Why a map per component?", "To count which values are still unused."]], links: [] },
+    { name: "Minimum Cost Walk in Weighted Graph", hook: "AND only clears bits, and you may reuse edges, so a walk can collect every edge of its component.", mantra: "ANSWER = AND OF ALL EDGES IN THE COMPONENT", statement: "The cost of a walk is the bitwise AND of its edge weights (edges may repeat). For each query (s, t) return the minimum cost, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_WALK, steps: walkCost() }],
+      recall: [["Why can we reuse every edge?", "Walk to the edge, cross it back and forth, return: the AND does not increase."], ["Why is s = t special?", "The empty walk costs 0 by the problem statement."]], links: [] },
+    { name: "Number of Good Paths", hook: "Let the water rise value by value: when level v appears, equal peaks in one pool form good paths.", mantra: "ADD NODES BY VALUE; COUNT EQUAL PAIRS PER COMPONENT", statement: "In a tree with node values, a good path has equal end values and no larger value on it. Count them (single nodes count).",
+      anims: [{ name: "Walkthrough", code: C_GP, steps: goodPaths() }],
+      recall: [["Why union only with smaller-or-equal neighbours?", "A larger value would break the \"no larger node on the path\" rule."], ["How are pairs counted?", "The c-th v-node in a component adds c \u2212 1 new pairs."]], links: [] },
+    { name: "Number of Operations to Make Network Connected", hook: "Spare cables (those that close a loop) can be unplugged and used to join separate islands.", mantra: "cables \u2265 n \u2212 1; ANSWER = components \u2212 1", statement: "Move cables to connect all n computers. Return the fewest moves, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_NET, steps: networkConn() }],
+      recall: [["Why n \u2212 1 cables suffice?", "They can form a spanning tree once rearranged."], ["Why components \u2212 1 moves?", "Each move merges two components."]], links: [["Redundant Connection", 1]] },
+    { name: "Remove Max Number of Edges to Keep Graph Fully Traversable", hook: "A road both people can use is worth more than two roads for one each: take shared roads first.", mantra: "TYPE 3 FIRST, THEN TYPE 1 AND TYPE 2; KEEP ONLY MERGES", statement: "Edges have type 1 (Alice), 2 (Bob) or 3 (both). Remove as many as possible while both Alice and Bob can still reach every node. Return the maximum removable, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_RME, steps: removeMax() }],
+      recall: [["Why type 3 first?", "A shared edge serves both people, so it can replace two single-person edges."], ["How many edges does a connected graph need?", "n \u2212 1 per person, but shared edges count for both."]], links: [] },
+    { name: "Satisfiability of Equality Equations", hook: "First merge everything declared equal; only then check that nothing declared different ended up together.", mantra: "UNION ALL ==; THEN CHECK ALL !=", statement: "Given equations \"a==b\" and \"a!=b\", can integer values be assigned to the variables to satisfy all?",
+      anims: [{ name: "Walkthrough", code: C_EQ, steps: equations() }],
+      recall: [["Why two passes?", "A \"!=\" cannot be judged before every \"==\" has been applied."], ["Why only 26 nodes?", "Variables are lowercase letters."]], links: [["Lexicographically Smallest Equivalent String", 15]] },
+    { name: "Similar String Groups", hook: "Anagrams one swap apart are neighbours; groups are the clusters of neighbours.", mantra: "SIMILAR = \u2264 2 DIFFERENT POSITIONS; COUNT COMPONENTS", statement: "Strings are similar if equal or they differ by one swap. Count the groups of strings connected through similarity.",
+      anims: [{ name: "Walkthrough", code: C_SIM, steps: simGroups() }],
+      recall: [["Why \u2264 2 differences?", "The strings are anagrams, so exactly 0 or 2 positions can differ for a single swap."], ["Cheaper when n is huge but L small?", "Generate the swap neighbours of each string and look them up in a set."]], links: [] },
+    { name: "Validate Binary Tree Nodes", hook: "A valid family tree: one ancestor, nobody with two parents, no loops, everyone connected.", mantra: "ONE PARENT EACH; NO CYCLE; ONE COMPONENT", statement: "Given leftChild and rightChild arrays, do all n nodes form exactly one valid binary tree?",
+      anims: [{ name: "Walkthrough", code: C_VBT, steps: validTree() }],
+      recall: [["How does the DSU spot a cycle?", "Linking parent to child when both are already in one set closes a loop."], ["Why check the number of roots?", "Two roots mean two separate trees (a forest)."]], links: [] },
+    { name: "Lexicographically Smallest Equivalent String", hook: "Equivalent letters form clubs; always crown the alphabetically smallest member.", mantra: "SMALLER LETTER BECOMES THE ROOT", statement: "Letters s1[i] and s2[i] are equivalent (transitively). Replace each letter of baseStr by the smallest equivalent letter.",
+      anims: [{ name: "Walkthrough", code: C_LEX, steps: lexEq() }],
+      recall: [["Why does the smaller letter go on top?", "So find returns the component minimum without extra bookkeeping."], ["Is the relation transitive?", "Yes: a \u2261 b and b \u2261 c implies a \u2261 c."]], links: [["Satisfiability of Equality Equations", 12]] },
+    { name: "Power Grid Maintenance", hook: "Each grid keeps a sorted list of working stations; a failed station is answered by the smallest working one.", mantra: "COMPONENT + SORTED SET OF ONLINE STATIONS", statement: "Stations are linked in grids. Query [1, x]: x resolves a check if online, else the smallest online station in its grid (or \u22121). Query [2, x]: x goes offline.",
+      anims: [{ name: "Walkthrough", code: C_PG, steps: powerGrid() }],
+      recall: [["Why a TreeSet?", "It gives the smallest online station in O(log c) and supports removal."], ["Why not recompute components?", "Going offline does not change connectivity of the grid for queries."]], links: [] },
+    { name: "Path Existence Queries in a Graph I", hook: "On a sorted line only big gaps break the chain.", mantra: "NEW COMPONENT WHEN nums[i] \u2212 nums[i \u2212 1] > maxDiff", statement: "Nodes with values nums (sorted); nodes i, j are connected when |nums[i] \u2212 nums[j]| \u2264 maxDiff. Answer queries about whether a path exists.",
+      anims: [{ name: "Walkthrough", code: C_PEQ, steps: pathQ() }],
+      recall: [["Why does sortedness help?", "Connectivity depends only on consecutive gaps."], ["Why is per-query DFS too slow?", "q \u00d7 (n + e) can reach 10\u00b9\u2070."]], links: [] }
+  ]
+});
+
+</script>
+</body>
+</html>

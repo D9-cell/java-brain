@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Segment Tree Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, tree, recorder, mount } = BrainAnim;
+// Line number of the first code line containing text
+const ln = (code, text, nth = 1) => { const ls = code.replace(/^\n/, '').split('\n'); for (let k = 0, seen = 0; k < ls.length; k++) if (ls[k].includes(text) && ++seen === nth) return k + 1; throw new Error('ln: ' + text); };
+
+// Generic recursive segment tree that records what it does
+class Seg {
+  constructor(a, combine, identity, opt = {}) {
+    this.a = [...a]; this.n = a.length; this.f = combine; this.id = identity; this.t = {}; this.rng = {}; this.P = {};
+    this.leaf = opt.leaf || (v => v); this.label = opt.label || (x => x);
+    const shape = (i, l, r, p) => { this.rng[i] = [l, r]; this.P[i] = p; if (l === r) return; const m = (l + r) >> 1; shape(2 * i + 1, l, m, i); shape(2 * i + 2, m + 1, r, i); };
+    shape(0, 0, this.n - 1, -1);
+  }
+  view(name, cls = {}, extra = {}) {
+    const labels = {}, badge = {};
+    for (const i in this.rng) { labels[i] = i in this.t ? this.label(this.t[i]) : '?'; badge[i] = extra[i] ?? `[${this.rng[i][0]},${this.rng[i][1]}]`; }
+    return tree(name, this.P, { labels, badge, cls });
+  }
+  buildAll(i = 0, l = 0, r = this.n - 1) { if (l === r) { this.t[i] = this.leaf(this.a[l]); return; } const m = (l + r) >> 1; this.buildAll(2 * i + 1, l, m); this.buildAll(2 * i + 2, m + 1, r); this.t[i] = this.f(this.t[2 * i + 1], this.t[2 * i + 2]); }
+  buildRec(rec, lines, extraLanes = () => []) {
+    const go = (i, l, r) => {
+      if (l === r) { this.t[i] = this.leaf(this.a[l]); rec.step(lines.leaf, `Leaf [${l}] stores a[${l}] → <b>${this.label(this.t[i])}</b>.`, [this.view('Segment tree (badge = range)', { [i]: 'active' }), ...extraLanes(l)]); return; }
+      const m = (l + r) >> 1; go(2 * i + 1, l, m); go(2 * i + 2, m + 1, r);
+      this.t[i] = this.f(this.t[2 * i + 1], this.t[2 * i + 2]);
+      rec.step(lines.merge, `Node [${l},${r}] = combine(left ${this.label(this.t[2 * i + 1])}, right ${this.label(this.t[2 * i + 2])}) = <b>${this.label(this.t[i])}</b>.`, [this.view('Segment tree (badge = range)', { [i]: 'done', [2 * i + 1]: 'warn', [2 * i + 2]: 'warn' }), ...extraLanes(-1)]);
+    };
+    go(0, 0, this.n - 1);
+  }
+  queryRec(rec, ql, qr, lines, extraLanes = () => []) {
+    const cls = {};
+    const go = (i, l, r) => {
+      if (r < ql || l > qr) { cls[i] = 'ghost'; rec.step(lines.none, `[${l},${r}] lies outside [${ql},${qr}] → return the identity <b>${this.label(this.id)}</b>.`, [this.view(`query [${ql},${qr}]`, { ...cls, [i]: 'bad' }), ...extraLanes()]); return this.id; }
+      if (ql <= l && r <= qr) { cls[i] = 'done'; rec.step(lines.full, `[${l},${r}] is fully inside → use the stored value <b>${this.label(this.t[i])}</b> and stop going down.`, [this.view(`query [${ql},${qr}]`, cls), ...extraLanes()]); return this.t[i]; }
+      cls[i] = 'warn'; rec.step(lines.part, `[${l},${r}] partly overlaps → ask both children.`, [this.view(`query [${ql},${qr}]`, cls), ...extraLanes()]);
+      const m = (l + r) >> 1; return this.f(go(2 * i + 1, l, m), go(2 * i + 2, m + 1, r));
+    };
+    return go(0, 0, this.n - 1);
+  }
+  updateRec(rec, idx, v, lines, extraLanes = () => []) {
+    const path = [];
+    const go = (i, l, r) => {
+      path.push(i);
+      if (l === r) { this.a[idx] = v; this.t[i] = this.leaf(v); rec.step(lines.leaf, `Reached leaf [${idx}] → set it to <b>${this.label(this.t[i])}</b>.`, [this.view(`update index ${idx}`, Object.fromEntries(path.map(p => [p, 'active']))), ...extraLanes()]); return; }
+      const m = (l + r) >> 1; idx <= m ? go(2 * i + 1, l, m) : go(2 * i + 2, m + 1, r);
+      this.t[i] = this.f(this.t[2 * i + 1], this.t[2 * i + 2]);
+      rec.step(lines.merge, `Back up at [${l},${r}]: recompute = <b>${this.label(this.t[i])}</b>. Only the ${Math.ceil(Math.log2(this.n)) + 1} nodes on this path change.`, [this.view(`update index ${idx}`, { ...Object.fromEntries(path.map(p => [p, 'ghost'])), ...Object.fromEntries(path.slice(path.indexOf(i)).map(p => [p, 'active'])), [i]: 'done' }), ...extraLanes()]);
+    };
+    go(0, 0, this.n - 1);
+  }
+}
+
+// ===== code snippets =====
+const C_SUM = `
+private void build(int i, int l, int r, int[] a) {
+    if (l == r) { tree[i] = a[l]; return; }
+    int mid = (l + r) >>> 1;
+    build(2 * i + 1, l, mid, a);
+    build(2 * i + 2, mid + 1, r, a);
+    tree[i] = tree[2 * i + 1] + tree[2 * i + 2];
+}
+
+private void update(int i, int l, int r, int idx, int val) {
+    if (l == r) { tree[i] = val; return; }
+    int mid = (l + r) >>> 1;
+    if (idx <= mid) update(2 * i + 1, l, mid, idx, val);
+    else update(2 * i + 2, mid + 1, r, idx, val);
+    tree[i] = tree[2 * i + 1] + tree[2 * i + 2];   // fix on the way up
+}
+
+private int query(int i, int l, int r, int ql, int qr) {
+    if (r < ql || l > qr) return 0;                  // no overlap
+    if (ql <= l && r <= qr) return tree[i];           // full overlap
+    int mid = (l + r) >>> 1;                          // partial overlap
+    return query(2 * i + 1, l, mid, ql, qr) + query(2 * i + 2, mid + 1, r, ql, qr);
+}`;
+const C_MIN = `
+static void build(int[] tree, int i, int l, int r, int[] a) {
+    if (l == r) { tree[i] = a[l]; return; }
+    int mid = (l + r) >>> 1;
+    build(tree, 2 * i + 1, l, mid, a);
+    build(tree, 2 * i + 2, mid + 1, r, a);
+    tree[i] = Math.min(tree[2 * i + 1], tree[2 * i + 2]);
+}
+
+static int query(int[] tree, int i, int l, int r, int ql, int qr) {
+    if (r < ql || l > qr) return Integer.MAX_VALUE;   // identity for min
+    if (ql <= l && r <= qr) return tree[i];
+    int mid = (l + r) >>> 1;
+    return Math.min(query(tree, 2 * i + 1, l, mid, ql, qr),
+                    query(tree, 2 * i + 2, mid + 1, r, ql, qr));
+}`;
+const C_IDX = `
+static int better(int[] a, int x, int y) {
+    if (x == -1) return y;
+    if (y == -1) return x;
+    return a[x] >= a[y] ? x : y;          // leftmost on ties
+}
+
+static void build(int[] tree, int i, int l, int r, int[] a) {
+    if (l == r) { tree[i] = l; return; }  // store the INDEX
+    int mid = (l + r) >>> 1;
+    build(tree, 2 * i + 1, l, mid, a);
+    build(tree, 2 * i + 2, mid + 1, r, a);
+    tree[i] = better(a, tree[2 * i + 1], tree[2 * i + 2]);
+}
+
+static int query(int[] tree, int i, int l, int r, int ql, int qr, int[] a) {
+    if (r < ql || l > qr) return -1;
+    if (ql <= l && r <= qr) return tree[i];
+    int mid = (l + r) >>> 1;
+    return better(a, query(tree, 2 * i + 1, l, mid, ql, qr, a),
+                     query(tree, 2 * i + 2, mid + 1, r, ql, qr, a));
+}`;
+const C_LAZY = `
+private void push(int i, int l, int r) {
+    if (lazy[i] == 0) return;
+    tree[i] += (r - l + 1) * lazy[i];     // apply to my whole range
+    if (l != r) {
+        lazy[2 * i + 1] += lazy[i];       // children owe it later
+        lazy[2 * i + 2] += lazy[i];
+    }
+    lazy[i] = 0;
+}
+
+private void update(int i, int l, int r, int ql, int qr, long val) {
+    push(i, l, r);
+    if (r < ql || l > qr) return;
+    if (ql <= l && r <= qr) {
+        lazy[i] += val;
+        push(i, l, r);
+        return;
+    }
+    int mid = (l + r) >>> 1;
+    update(2 * i + 1, l, mid, ql, qr, val);
+    update(2 * i + 2, mid + 1, r, ql, qr, val);
+    tree[i] = tree[2 * i + 1] + tree[2 * i + 2];
+}`;
+const C_SOQ = `
+public List<Integer> querySum(int n, int[] arr, int q, int[] queries) {
+    int[] tree = new int[4 * n];
+    build(tree, 0, 0, n - 1, arr);
+    List<Integer> res = new ArrayList<>();
+    for (int k = 0; k < 2 * q; k += 2)
+        res.add(query(tree, 0, 0, n - 1, queries[k] - 1, queries[k + 1] - 1));
+    return res;
+}
+// build / query = the standard sum tree (see Range Sum Query - Mutable)`;
+const C_TRIP = `
+public long goodTriplets(int[] nums1, int[] nums2) {
+    int n = nums1.length;
+    int[] pos2 = new int[n];
+    for (int i = 0; i < n; i++) pos2[nums2[i]] = i;
+    tree = new int[4 * n];
+    long res = 0;
+    for (int i = 0; i < n; i++) {
+        int p = pos2[nums1[i]];
+        long leftCommon = query(0, 0, n - 1, 0, p);
+        long leftNotCommon = i - leftCommon;
+        long rightCommon = (n - 1 - p) - leftNotCommon;
+        res += leftCommon * rightCommon;
+        update(0, 0, n - 1, p);
+    }
+    return res;
+}`;
+const C_FRUIT = `
+private boolean place(int i, int l, int r, int fruit) {
+    if (tree[i] < fruit) return false;              // nobody here is big enough
+    if (l == r) { tree[i] = -1; return true; }      // use this basket
+    int mid = (l + r) >>> 1;
+    boolean ok = tree[2 * i + 1] >= fruit
+            ? place(2 * i + 1, l, mid, fruit)       // leftmost: prefer left
+            : place(2 * i + 2, mid + 1, r, fruit);
+    tree[i] = Math.max(tree[2 * i + 1], tree[2 * i + 2]);
+    return ok;
+}`;
+const C_BUILD = `
+int a = min(q0, q1), b = max(q0, q1);
+if (a == b || h[b] > h[a]) { res[k] = b; continue; }
+int need = Math.max(h[a], h[b]), lo = b + 1, hi = n - 1, ans = -1;
+while (lo <= hi) {
+    int mid = (lo + hi) >>> 1;
+    if (h[query(0, 0, n - 1, b + 1, mid)] > need) { ans = mid; hi = mid - 1; }
+    else lo = mid + 1;
+}
+res[k] = ans;`;
+const C_DIST = `
+for (int i = 2; i < nums.length; i++) {
+    int cv = Arrays.binarySearch(sorted, nums[i]);   // compressed value
+    int c1 = t1.greaterThan(cv), c2 = t2.greaterThan(cv);
+    boolean toFirst = c1 != c2 ? c1 > c2 : a1.size() <= a2.size();
+    if (toFirst) { a1.add(nums[i]); t1.add(cv); }
+    else         { a2.add(nums[i]); t2.add(cv); }
+}
+// greaterThan(cv) = count(cv + 1 .. m - 1) on a frequency tree`;
+const C_BLOCK = `
+if (q[0] == 1) {
+    int pre = obstacles.lower(x);
+    Integer nxt = obstacles.higher(x);
+    set(0, 0, N - 1, x, x - pre);                  // gap ending at x
+    if (nxt != null) set(0, 0, N - 1, nxt, nxt - x); // next gap shrinks
+    obstacles.add(x);
+} else {
+    int pre = obstacles.floor(x);
+    int best = Math.max(max(0, 0, N - 1, 0, pre), x - pre);
+    res.add(best >= q[2]);
+}`;
+const C_REP = `
+static Node merge(Node L, Node R, int lenL, int lenR) {
+    boolean join = L.rc == R.lc;
+    int pre = (L.pre == lenL && join) ? L.pre + R.pre : L.pre;
+    int suf = (R.suf == lenR && join) ? R.suf + L.suf : R.suf;
+    int best = Math.max(L.best, R.best);
+    if (join) best = Math.max(best, L.suf + R.pre);
+    return new Node(pre, suf, best, L.lc, R.rc);
+}
+// update(pos, ch): set the leaf, re-merge up the path; answer = root.best`;
+const C_X = `
+private Node merge(Node L, Node R) {
+    Node res = new Node(k);
+    res.prod = L.prod * R.prod % k;
+    for (int x = 0; x < k; x++) res.cnt[x] += L.cnt[x];              // prefixes inside L
+    for (int x = 0; x < k; x++) res.cnt[L.prod * x % k] += R.cnt[x]; // all of L + prefix of R
+    return res;
+}
+// query: update(index, value); answer = query(start, n - 1).cnt[x]`;
+const C_BAL = `
+for (int r = 0; r < n; r++) {
+    int val = nums[r] % 2 == 0 ? 1 : -1;
+    Integer prev = last.get(nums[r]);
+    if (prev != null) add(0, 0, n - 1, 0, prev, -val);   // old copy stops counting
+    add(0, 0, n - 1, 0, r, val);                         // new copy counts for l <= r
+    int l = leftmostZero(0, 0, n - 1);
+    if (l != -1 && l <= r) best = Math.max(best, r - l + 1);
+    last.put(nums[r], r);
+}`;
+const C_ACT = `
+int low = lowerBound(be, l), high = lowerBound(bs, r + 1) - 1, gain = 0;
+if (low < high) {
+    int first = be.get(low) - Math.max(bs.get(low), l) + 1;   // clipped
+    int last = Math.min(be.get(high), r) - bs.get(high) + 1;   // clipped
+    if (high - low == 1) gain = first + last;
+    else gain = Math.max(Math.max(first + size[low + 1], size[high - 1] + last),
+                         query(0, 0, m - 2, low + 1, high - 2));   // RMQ on pairSum
+}
+res.add(ones + gain);`;
+
+// ===== simulations =====
+function sumTree() {
+  const r = recorder(), a = [5, 8, 6, 3, 2, 7], s = new Seg(a, (x, y) => x + y, 0), A = () => [lane('a[]', s.a, { showIdx: true })];
+  r.step(0, `Prefix sums give O(1) queries but O(n) updates. A segment tree gives <b>O(log n) for both</b>: each node stores the sum of a range.`, [s.view('Segment tree (badge = range)'), ...A()]);
+  s.buildRec(r, { leaf: ln(C_SUM, 'tree[i] = a[l]'), merge: ln(C_SUM, 'tree[i] = tree[2 * i + 1] + tree[2 * i + 2];') }, () => A());
+  const v = s.queryRec(r, 1, 4, { none: ln(C_SUM, 'return 0;'), full: ln(C_SUM, 'return tree[i];'), part: ln(C_SUM, 'partial overlap') }, () => A());
+  r.step(ln(C_SUM, 'return query('), `sumRange(1, 4) = 8 + 6 + 3 + 2 = <b>${v}</b>, using only a few nodes.`, [s.view('query [1,4]'), ...A()], { answer: v });
+  s.updateRec(r, 3, 10, { leaf: ln(C_SUM, 'tree[i] = val'), merge: ln(C_SUM, 'fix on the way up') }, () => A());
+  return r.steps;
+}
+function minTree() {
+  const r = recorder(), a = [4, 1, 7, 3, 9, 2, 8], s = new Seg(a, Math.min, '∞');
+  s.f = (x, y) => (x === '∞' ? y : y === '∞' ? x : Math.min(x, y));
+  r.step(0, `Same skeleton, different <b>combine</b> (min) and different <b>identity</b> (+∞, so it never wins).`, [s.view('Min tree')]);
+  s.buildAll(); r.step(ln(C_MIN, 'Math.min(tree'), `Built: every node = min of its range.`, [s.view('Min tree'), lane('a[]', a, { showIdx: true })]);
+  const v = s.queryRec(r, 2, 5, { none: ln(C_MIN, 'MAX_VALUE'), full: ln(C_MIN, 'return tree[i]'), part: ln(C_MIN, 'int mid') }, () => [lane('a[]', a, { showIdx: true, active: [2, 3, 4, 5] })]);
+  r.step(ln(C_MIN, 'return Math.min(query'), `RMQ(2, 5) = <b>${v}</b>. For range max, swap min→max and +∞→−∞.`, [s.view('Min tree'), lane('a[]', a, { showIdx: true, done: [5] })], { answer: v });
+  return r.steps;
+}
+function idxTree() {
+  const r = recorder(), a = [3, 9, 2, 9, 5, 1], better = (x, y) => (x === -1 ? y : y === -1 ? x : a[x] >= a[y] ? x : y);
+  const s = new Seg(a.map((_, i) => i), better, -1, { label: i => (i === -1 ? '−' : `i${i}`) });
+  s.buildAll();
+  r.step(ln(C_IDX, 'store the INDEX'), `Store <b>indices</b>, not values. Comparing needs the array: a[x] ≥ a[y] keeps the left one on ties.`, [s.view('Max-index tree'), lane('a[]', a, { showIdx: true })]);
+  const v = s.queryRec(r, 1, 4, { none: ln(C_IDX, 'return -1;'), full: ln(C_IDX, 'return tree[i];'), part: ln(C_IDX, 'int mid', 2) }, () => [lane('a[]', a, { showIdx: true, active: [1, 2, 3, 4] })]);
+  r.step(ln(C_IDX, 'return better(a, query'), `Max of a[1..4] is 9, at indices 1 and 3. The leftmost index is <b>${v}</b>.`, [s.view('Max-index tree'), lane('a[]', a, { showIdx: true, done: [v] })], { answer: v });
+  return r.steps;
+}
+function lazyTree() {
+  const r = recorder(), n = 6, tr = {}, lz = {}, P = {}, rng = {};
+  const shape = (i, l, r_, p) => { rng[i] = [l, r_]; P[i] = p; tr[i] = 0; lz[i] = 0; if (l === r_) return; const m = (l + r_) >> 1; shape(2 * i + 1, l, m, i); shape(2 * i + 2, m + 1, r_, i); };
+  shape(0, 0, n - 1, -1);
+  const V = (cls, title) => tree(title || 'Sum tree (badge = range | lazy)', P, { labels: Object.fromEntries(Object.keys(tr).map(i => [i, tr[i]])), badge: Object.fromEntries(Object.keys(rng).map(i => [i, `[${rng[i]}]${lz[i] ? ' +' + lz[i] : ''}`])), cls });
+  r.step(0, `Adding to a whole range one leaf at a time costs O(n). <b>Lazy</b>: when a node is fully covered, update it and leave an IOU (+val) for its children.`, [V({})]);
+  const push = (i, l, r_) => { if (!lz[i]) return; tr[i] += (r_ - l + 1) * lz[i]; if (l !== r_) { lz[2 * i + 1] += lz[i]; lz[2 * i + 2] += lz[i]; } lz[i] = 0; };
+  const upd = (i, l, r_, ql, qr, v) => {
+    push(i, l, r_);
+    if (r_ < ql || l > qr) return;
+    if (ql <= l && r_ <= qr) { lz[i] += v; push(i, l, r_); r.step(ln(C_LAZY, 'lazy[i] += val;'), `[${l},${r_}] is fully inside → add ${v}×${r_ - l + 1} here and write the IOU <b>+${v}</b> on its children. Stop.`, [V({ [i]: 'done', [2 * i + 1]: 'warn', [2 * i + 2]: 'warn' })]); return; }
+    r.step(ln(C_LAZY, 'int mid'), `[${l},${r_}] partly overlaps → go down.`, [V({ [i]: 'active' })]);
+    const m = (l + r_) >> 1; upd(2 * i + 1, l, m, ql, qr, v); upd(2 * i + 2, m + 1, r_, ql, qr, v);
+    tr[i] = tr[2 * i + 1] + tr[2 * i + 2];
+    r.step(ln(C_LAZY, 'tree[i] = tree[2 * i + 1] + tree[2 * i + 2];'), `Recompute [${l},${r_}] = <b>${tr[i]}</b>.`, [V({ [i]: 'done' })]);
+  };
+  upd(0, 0, n - 1, 0, 3, 5);
+  r.step(0, `Range add +5 on [0,3] touched only a few nodes. The leaves under [0,2] still say 0 but carry +5 IOUs.`, [V({})]);
+  const q = (i, l, r_, ql, qr) => { push(i, l, r_); if (r_ < ql || l > qr) return 0; if (ql <= l && r_ <= qr) return tr[i]; const m = (l + r_) >> 1; return q(2 * i + 1, l, m, ql, qr) + q(2 * i + 2, m + 1, r_, ql, qr); };
+  const v = q(0, 0, n - 1, 1, 1);
+  r.step(ln(C_LAZY, 'tree[i] += (r - l + 1) * lazy[i];'), `Query [1,1]: on the way down every visited node calls <b>push()</b>, so IOUs are cashed only where needed. Value = <b>${v}</b>.`, [V({ 3: 'done', 4: 'done' })], { 'a[1]': v });
+  return r.steps;
+}
+function soq() {
+  const r = recorder(), a = [1, 2, 3, 4], s = new Seg(a, (x, y) => x + y, 0);
+  s.buildAll();
+  r.step(ln(C_SOQ, 'build(tree'), `Build a sum tree once.`, [s.view('Sum tree'), lane('arr', a, { showIdx: true })]);
+  r.step(ln(C_SOQ, 'queries[k] - 1'), `GFG gives queries as flat pairs and <b>1-based</b>: (1,4) → [0,3], (2,3) → [1,2]. Subtract 1!`, [s.view('Sum tree'), lane('queries (flat)', [1, 4, 2, 3])]);
+  const v1 = s.queryRec(r, 0, 3, { none: 0, full: 0, part: 0 }), v2 = s.queryRec(r, 1, 2, { none: 0, full: 0, part: 0 });
+  r.step(ln(C_SOQ, 'return res'), `Answers <b>[${v1}, ${v2}]</b>. (A prefix-sum array also works here because there are no updates.)`, [s.view('Sum tree'), lane('answer', [v1, v2], { done: [0, 1] })]);
+  return r.steps;
+}
+function triplets() {
+  const r = recorder(), A = [4, 0, 1, 3, 2], B = [4, 1, 0, 2, 3], n = 5, pos = []; B.forEach((v, i) => pos[v] = i);
+  const seen = Array(n).fill(0); let res = 0;
+  const L = (o = {}) => [lane('nums1 (walk order)', A, { showIdx: true, ...o.a }), lane('nums2', B, { showIdx: true, ...o.b }), lane('seen positions in nums2 (count tree leaves)', seen, { showIdx: true, ...o.s })];
+  r.step(ln(C_TRIP, 'pos2[nums2[i]] = i'), `Fix the <b>middle</b> element y. Good triplets with middle y = (common elements before y in BOTH arrays) × (common elements after y in BOTH).`, L());
+  for (let i = 0; i < n; i++) {
+    const p = pos[A[i]], lc = seen.slice(0, p + 1).reduce((x, y) => x + y, 0), lnc = i - lc, rc = (n - 1 - p) - lnc; res += lc * rc;
+    r.step(ln(C_TRIP, 'res += leftCommon'), `y = ${A[i]} (nums2 pos ${p}). Seen with pos ≤ ${p}: <b>${lc}</b> (common on the left). Seen but after: ${lnc}, and those are not on its right in nums1. Right common = (${n - 1 - p}) − ${lnc} = <b>${rc}</b>. Add ${lc}×${rc}. Total = ${res}.`,
+      L({ a: { active: [i], ghost: [...Array(i).keys()] }, b: { active: [p] }, s: { done: [...Array(p + 1).keys()].filter(k => seen[k]) } }), { leftCommon: lc, rightCommon: rc, res });
+    seen[p] = 1;
+  }
+  r.step(ln(C_TRIP, 'return res'), `Answer <b>${res}</b>. The segment tree is just a fast "how many seen positions ≤ p".`, L());
+  return r.steps;
+}
+function fruits() {
+  const r = recorder(), F = [4, 2, 5], B = [3, 5, 4], s = new Seg(B, Math.max, -1); s.buildAll();
+  let un = 0;
+  r.step(0, `Each fruit takes the <b>leftmost</b> basket with capacity ≥ fruit. Max tree: if a subtree's max < fruit, nothing in it fits, so skip it.`, [s.view('Max tree over baskets'), lane('fruits', F)]);
+  for (const f of F) {
+    const path = []; let i = 0, l = 0, rr = B.length - 1, ok = s.t[0] >= f;
+    if (!ok) { un++; r.step(ln(C_FRUIT, 'nobody here'), `Fruit ${f}: root max ${s.t[0]} &lt; ${f} → <b>unplaced</b>.`, [s.view('Max tree', { 0: 'bad' }), lane('fruits', F, { active: [F.indexOf(f)] })], { unplaced: un }); continue; }
+    while (l !== rr) { path.push(i); const m = (l + rr) >> 1; if (s.t[2 * i + 1] >= f) { i = 2 * i + 1; rr = m; } else { i = 2 * i + 2; l = m + 1; } }
+    path.push(i);
+    r.step(ln(C_FRUIT, 'prefer left'), `Fruit ${f}: go left whenever the left max ≥ ${f}; otherwise go right → basket <b>${l}</b> (cap ${B[l]}).`, [s.view('Max tree', Object.fromEntries(path.map(p => [p, 'active']))), lane('fruits', F, { active: [F.indexOf(f)] })]);
+    s.a[l] = -1; s.t = {}; s.buildAll();
+    r.step(ln(C_FRUIT, 'tree[i] = -1'), `Mark the basket as used (−1) and recompute the maxima on the way up.`, [s.view('Max tree', { [i]: 'done' }), lane('fruits', F, { done: [F.indexOf(f)] })], { unplaced: un });
+  }
+  r.step(ln(C_FRUIT, 'return ok'), `Unplaced = <b>${un}</b>.`, [s.view('Max tree'), lane('fruits', F)], { unplaced: un });
+  return r.steps;
+}
+function building() {
+  const r = recorder(), h = [6, 4, 8, 5, 2, 7], q = [0, 3];
+  const H = o => lane('heights', h, { showIdx: true, ...o });
+  const a = 0, b = 3, need = Math.max(h[a], h[b]);
+  r.step(ln(C_BUILD, 'int a = min'), `Alice at ${a} (h=${h[a]}), Bob at ${b} (h=${h[b]}). Moving right only to taller buildings.`, [H({ active: [a, b] })]);
+  r.step(ln(C_BUILD, 'h[b] > h[a]'), `h[${b}] = ${h[b]} is not > h[${a}] = ${h[a]}, so Alice cannot just go to Bob's building. Find the leftmost j > ${b} with h[j] > ${need}.`, [H({ active: [a, b] })]);
+  let lo = b + 1, hi = h.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1; let mi = b + 1; for (let k = b + 1; k <= mid; k++) if (h[k] > h[mi]) mi = k;
+    const ok = h[mi] > need;
+    r.step(ln(C_BUILD, 'if (h[query'), `Binary search: max on [${b + 1}, ${mid}] (segment tree RMQ) is h[${mi}] = ${h[mi]} ${ok ? '&gt;' : '≤'} ${need} → ${ok ? 'answer is at or left of mid' : 'go right'}.`, [H({ warn: [...Array(mid - b).keys()].map(k => k + b + 1), done: ok ? [mi] : [] })], { lo, hi, mid });
+    if (ok) { ans = mid; hi = mid - 1; } else lo = mid + 1;
+  }
+  r.step(ln(C_BUILD, 'res[k] = ans'), `Meet at building <b>${ans}</b>. Each query is O(log² n).`, [H({ done: [ans] })], { answer: ans });
+  return r.steps;
+}
+function distribute() {
+  const r = recorder(), nums = [5, 14, 3, 1, 2], a1 = [5], a2 = [14];
+  const L = () => [lane('nums', nums, { showIdx: true }), lane('arr1', [...a1]), lane('arr2', [...a2])];
+  r.step(0, `Rule: send nums[i] to the array with MORE elements greater than it; on a tie, to the shorter array (arr1 if equal). Values are big, so <b>compress them</b> and keep a frequency tree per array.`, L());
+  for (let i = 2; i < nums.length; i++) {
+    const v = nums[i], c1 = a1.filter(x => x > v).length, c2 = a2.filter(x => x > v).length, first = c1 !== c2 ? c1 > c2 : a1.length <= a2.length;
+    (first ? a1 : a2).push(v);
+    r.step(ln(C_DIST, 'boolean toFirst'), `nums[${i}] = ${v}: greaterCount(arr1) = ${c1}, greaterCount(arr2) = ${c2} → goes to <b>arr${first ? 1 : 2}</b>.`, L(), { c1, c2 });
+  }
+  r.step(ln(C_DIST, 'greaterThan(cv) ='), `Result = arr1 + arr2 = <b>[${[...a1, ...a2]}]</b>. Each "greater than" count is a range-sum query on the compressed values (cv+1 … m−1).`, L());
+  return r.steps;
+}
+function block() {
+  const r = recorder(), obs = [0], gaps = {};
+  const V = (hl) => [lane('obstacles (0 is a virtual one)', [...obs].sort((a, b) => a - b)), lane('gap stored at each obstacle (max tree leaves)', Object.keys(gaps).sort((a, b) => a - b).map(k => `${k}: ${gaps[k]}`), { active: hl })];
+  r.step(0, `Idea: store, at each obstacle x, the gap to the previous obstacle. A block of size sz fits before x if some gap up to prev(x) ≥ sz, or the tail x − prev(x) ≥ sz.`, V());
+  const Q = [[1, 7], [2, 7, 6], [1, 2], [2, 7, 5], [2, 7, 6]];
+  for (const q of Q) {
+    const s = [...obs].sort((a, b) => a - b);
+    if (q[0] === 1) {
+      const x = q[1], pre = Math.max(...s.filter(v => v < x)), nx = s.find(v => v > x);
+      gaps[x] = x - pre; if (nx !== undefined) gaps[nx] = nx - x; obs.push(x);
+      r.step(ln(C_BLOCK, 'gap ending at x'), `Place obstacle ${x}: gap[${x}] = ${x} − ${pre} = ${x - pre}${nx !== undefined ? `, and gap[${nx}] shrinks to ${nx - x}` : ''}.`, V([Object.keys(gaps).sort((a, b) => a - b).indexOf(String(x))]));
+    } else {
+      const x = q[1], sz = q[2], pre = Math.max(...s.filter(v => v <= x)), mg = Math.max(0, ...Object.entries(gaps).filter(([k]) => +k <= pre).map(([, v]) => v)), best = Math.max(mg, x - pre);
+      r.step(ln(C_BLOCK, 'res.add(best >= q[2])'), `Query x=${x}, sz=${sz}: max gap in [0, ${pre}] = ${mg}, tail = ${x} − ${pre} = ${x - pre}. Best ${best} ≥ ${sz}? → <b>${best >= sz}</b>.`, V());
+    }
+  }
+  return r.steps;
+}
+function repeating() {
+  const r = recorder(), s0 = 'babacc';
+  const mk = c => ({ pre: 1, suf: 1, best: 1, lc: c, rc: c, len: 1 });
+  const merge = (L, R) => { const j = L.rc === R.lc; return { pre: L.pre === L.len && j ? L.pre + R.pre : L.pre, suf: R.suf === R.len && j ? R.suf + L.suf : R.suf, best: Math.max(L.best, R.best, j ? L.suf + R.pre : 0), lc: L.lc, rc: R.rc, len: L.len + R.len }; };
+  const s = new Seg([...s0], merge, null, { leaf: mk, label: x => x.lc === x.rc && x.len === 1 ? x.lc : x.best });
+  s.buildAll();
+  const ex = () => Object.fromEntries(Object.keys(s.t).map(i => [i, `p${s.t[i].pre} s${s.t[i].suf}`]));
+  r.step(0, `Each node stores a <b>summary</b>: pre (run at the left edge), suf (run at the right edge), best (longest anywhere), plus its edge chars. Node label = best; badge = pre/suf.`, [s.view('Summary tree', {}, ex()), lane('s', [...s0], { showIdx: true })]);
+  r.step(ln(C_REP, 'L.suf + R.pre'), `The key merge: if the touching chars match, a run can <b>cross the middle</b>: L.suf + R.pre. A prefix grows across only if the whole left side is one run.`, [s.view('Summary tree', { 0: 'done' }, ex()), lane('s', [...s0], { showIdx: true })], { 'root.best': s.t[0].best });
+  const ups = [[1, 'b'], [3, 'c'], [3, 'b']], out = [];
+  for (const [p, c] of ups) {
+    s.updateRec(recorder(), p, c, { leaf: 0, merge: 0 });
+    out.push(s.t[0].best);
+    r.step(ln(C_REP, 'answer = root.best'), `Set s[${p}] = '${c}' → "${s.a.join('')}". Only ~log n summaries are re-merged. root.best = <b>${s.t[0].best}</b>.`, [s.view('Summary tree', { 0: 'done' }, ex()), lane('s', s.a, { showIdx: true, active: [p] }), lane('answers', [...out])]);
+  }
+  return r.steps;
+}
+function xvalue() {
+  const r = recorder(), k = 3, a = [1, 2, 3, 4, 5];
+  const leaf = v => { const c = Array(k).fill(0); c[v % k] = 1; return { prod: v % k, cnt: c }; };
+  const merge = (L, R) => { const c = [...L.cnt]; R.cnt.forEach((v, x) => c[L.prod * x % k] += v); return { prod: L.prod * R.prod % k, cnt: c }; };
+  const s = new Seg(a, merge, null, { leaf, label: x => x.prod });
+  s.buildAll();
+  const ex = () => Object.fromEntries(Object.keys(s.t).map(i => [i, `[${s.t[i].cnt}]`]));
+  r.step(0, `k = 3. Node label = product mod k of its range; badge = cnt[] where cnt[x] = how many <b>prefixes</b> of that range have product ≡ x.`, [s.view('Product-prefix tree', {}, ex()), lane('nums', a, { showIdx: true })]);
+  r.step(ln(C_X, 'prefixes inside L'), `Merge: prefixes that end inside L are copied as they are…`, [s.view('Product-prefix tree', { 0: 'active', 1: 'warn' }, ex()), lane('nums', a, { showIdx: true })]);
+  r.step(ln(C_X, 'all of L + prefix of R'), `…and prefixes that extend into R = (all of L) × (a prefix of R) → remainder L.prod·x mod k.`, [s.view('Product-prefix tree', { 0: 'active', 2: 'warn' }, ex()), lane('nums', a, { showIdx: true })]);
+  s.updateRec(recorder(), 2, 2, { leaf: 0, merge: 0 });
+  r.step(ln(C_X, 'answer = query'), `Query [2,2,0,2]: set nums[2] = 2 → [${s.a}]. Remove nothing from the front (start 0); the root's cnt[2] = <b>${s.t[0].cnt[2]}</b>.`, [s.view('Product-prefix tree', { 0: 'done' }, ex()), lane('nums', s.a, { showIdx: true, active: [2] })], { answer: s.t[0].cnt[2] });
+  return r.steps;
+}
+function balanced() {
+  const r = recorder(), nums = [3, 2, 2, 5, 4], n = 5, val = Array(n).fill(null), last = {};
+  let best = 0;
+  const V = (o = {}) => [lane('nums', nums, { showIdx: true, ...o.n }), lane('value[l] = distinctEven − distinctOdd in nums[l..r]', val, { showIdx: true, emptyVal: null, ...o.v })];
+  r.step(0, `Fix the right end r. For every start l keep value[l] = (#distinct evens − #distinct odds). Balanced ⇔ value[l] = 0. We want the <b>leftmost</b> l with 0.`, V());
+  for (let rr = 0; rr < n; rr++) {
+    const v = nums[rr] % 2 === 0 ? 1 : -1, prev = last[nums[rr]];
+    if (prev !== undefined) { for (let l = 0; l <= prev; l++) val[l] -= v; r.step(ln(C_BAL, 'old copy stops counting'), `${nums[rr]} was seen at ${prev}: for l ≤ ${prev} it was already counted, so remove the old count (range add ${-v} on [0, ${prev}]).`, V({ n: { active: [rr] }, v: { warn: [...Array(prev + 1).keys()] } })); }
+    for (let l = 0; l <= rr; l++) val[l] = (val[l] ?? 0) + v;
+    const z = val.findIndex((x, i) => i <= rr && x === 0);
+    if (z !== -1) best = Math.max(best, rr - z + 1);
+    r.step(ln(C_BAL, 'leftmostZero'), `r = ${rr}: ${nums[rr]} is ${v > 0 ? 'even (+1)' : 'odd (−1)'} → range add on [0, ${rr}]. Leftmost zero = ${z === -1 ? 'none' : z}${z !== -1 ? ` → length ${rr - z + 1}` : ''}. best = <b>${best}</b>.`, V({ n: { active: [rr] }, v: { done: z === -1 ? [] : [z], active: [...Array(rr + 1).keys()].filter(i => i !== z) } }), { r: rr, best });
+    last[nums[rr]] = rr;
+  }
+  r.step(0, `The segment tree does "range add" lazily and finds the leftmost 0 by descending into the left child whenever <b>min ≤ 0 ≤ max</b> there (values move by ±1, so a zero must exist in that range).`, V());
+  return r.steps;
+}
+function active() {
+  const r = recorder(), s = '1000100', L = 1, R = 5;
+  const chars = [...s], ones = chars.filter(c => c === '1').length;
+  r.step(0, `A trade turns a 1-block surrounded by 0s into 0s, which <b>merges its two neighbouring 0-blocks</b>, then turns that merged 0-block into 1s. Gain = the sum of two adjacent 0-blocks.`, [lane('s', chars, { showIdx: true })], { ones });
+  r.step(ln(C_ACT, 'int low'), `Zero blocks: [1..3] (size 3), [5..6] (size 2). pairSum = [5]. Query [${L}, ${R}] → the blocks inside are low = 0 … high = 1.`, [lane('s', chars, { showIdx: true, warn: [1, 2, 3, 5, 6], active: [1, 2, 3, 4, 5] })]);
+  r.step(ln(C_ACT, 'clipped'), `Edge blocks are <b>clipped</b> to the query: first = 3 (all of [1..3]), last = 1 (only index 5 is inside).`, [lane('s', chars, { showIdx: true, done: [1, 2, 3, 5], ghost: [0, 6] })], { first: 3, last: 1 });
+  r.step(ln(C_ACT, 'gain = first + last'), `Exactly two blocks → gain = 3 + 1 = 4. Answer = ones (${ones}) + 4 = <b>${ones + 4}</b>.`, [lane('s after trade (inside query)', ['1', '1', '1', '1', '1', '1', '0'], { showIdx: true, done: [1, 2, 3, 4, 5] })], { answer: ones + 4 });
+  r.step(ln(C_ACT, 'RMQ on pairSum'), `With more blocks inside, the middle pairs are full-size, so a <b>range max over pairSum</b> (segment tree) covers them in O(log n). Only the two edge pairs need clipping.`, [lane('pairSum[i] = size[i] + size[i+1]', [5])]);
+  return r.steps;
+}
+
+const P = (name, hook, mantra, statement, code, steps, recall, links) => ({ name, hook, mantra, statement, anims: [{ name: 'Walkthrough', code, steps }], recall, links });
+mount({
+  title: 'Segment Tree Animations',
+  sub: 'One template, many problems: node i covers [l, r]; its children are 2i+1 and 2i+2. Change only the <b>combine</b> function, the <b>identity</b> and <b>what a node stores</b>.',
+  problems: [
+    P('Range Sum Mutable (307)', 'A <b>company org chart</b>: each manager knows the total of their team. Asking a range = asking a few managers; a change at the bottom only travels up one chain of managers.', 'NO → 0, FULL → NODE, PARTIAL → BOTH KIDS',
+      'Support update(index, val) and sumRange(left, right) quickly.', C_SUM, sumTree(),
+      [['Three query cases?', 'No overlap → identity; full overlap → node value; partial → combine both children.'], ['Why a 4n array?', 'The recursive tree on n leaves needs fewer than 4n slots.'], ['Update cost?', 'O(log n): one root-to-leaf path is recomputed.']], [['Range Minimum Query', 1], ['Lazy Propagation', 3]]),
+    P('Range Min Query (GFG)', 'Same org chart, but every manager reports the <b>weakest</b> member. An out-of-range answer must be a value that never wins: +∞.', 'COMBINE = MIN, IDENTITY = +∞',
+      'Build once, answer min over [a, b].', C_MIN, minTree(),
+      [['What identity for min / max / sum / gcd?', '+∞ / −∞ / 0 / 0.'], ['How do you change it into range max?', 'Swap min→max and the identity to −∞.']], [['Range Max Index', 2]]),
+    P('Range Max Index Query', 'Managers report <b>who</b> is strongest (an employee ID), not how strong. The comparison looks the value up in the array.', 'STORE INDEX, COMPARE a[x] ≥ a[y]',
+      'Return the index of the maximum element in [a, b] (leftmost on ties).', C_IDX, idxTree(),
+      [['Identity when storing indices?', '-1, handled explicitly in better().'], ['Where is this used?', 'Find Building Where Alice and Bob Can Meet.']], [['Find Building (uses this)', 7]]),
+    P('Lazy Propagation (GFG)', 'A manager receives a raise for the whole team, applies it to the team total, and leaves an <b>IOU note</b> for sub-managers. It is cashed only when someone visits them.', 'PUSH FIRST, FULL → TAG + STOP',
+      'Range add val to [l, r] and range-sum queries, both in O(log n).', C_LAZY, lazyTree(),
+      [['When must push() run?', 'At the start of every update/query visit to a node, before reading or changing it.'], ['Why multiply by (r − l + 1)?', 'A sum node covers that many elements, each getting +val.'], ['Where else does lazy show up?', 'Longest Balanced Subarray II (range add + min/max).']], [['Longest Balanced Subarray II', 12]]),
+    P('Sum of Query II (GFG)', 'The same org chart; just remember GFG speaks <b>1-based</b>.', 'BUILD ONCE, SUBTRACT 1, QUERY',
+      'Given arr and q (l, r) pairs (1-based, flattened), return each range sum.', C_SOQ, soq(),
+      [['Easier alternative without updates?', 'A prefix-sum array, O(1) per query.'], ['Index pitfall?', 'Convert 1-based (l, r) to 0-based.']], [['Range Sum Mutable', 0]]),
+    P('Good Triplets (2179)', 'Pick the <b>middle child</b> in a group photo taken twice. Count friends standing to the left in both photos and to the right in both photos.', 'MAP TO nums2 POS, LEFT × RIGHT',
+      'Count triplets (x, y, z) whose order is increasing in both permutations.', C_TRIP, triplets(),
+      [['What does the segment tree count?', 'How many already-seen values sit at nums2 positions ≤ p.'], ['Why is rightCommon = (n−1−p) − leftNotCommon?', 'Of the values after p in nums2, those already seen in nums1 are not on y\'s right in nums1.'], ['Alternative structure?', 'Fenwick tree (BIT), same counts.']], [['Distribute Elements II (count tree)', 8]]),
+    P('Fruits Into Baskets III (3479)', 'A <b>store with signposts</b>: each aisle sign shows the biggest basket inside. Walk toward the leftmost aisle whose sign is big enough.', 'MAX TREE, DESCEND LEFT-FIRST, MARK −1',
+      'Each fruit, in order, takes the leftmost unused basket with capacity ≥ fruit. Count unplaced fruits.', C_FRUIT, fruits(),
+      [['Why descend left when the left max ≥ fruit?', 'That guarantees the leftmost fitting basket.'], ['How is a basket "used"?', 'Set its leaf to −1 and recompute the maxima upward.'], ['Part II?', 'The same code works; n is small, so O(n²) is also fine.']], [['Find Building (also "first index > value")', 7]]),
+    P('Find Building (2940)', 'Alice and Bob climb only <b>upward and rightward</b>. If Bob is already taller, meet at Bob\'s; otherwise binary-search the first tower taller than both, using a range-max lookup.', 'BOB TALLER? BOB : BINARY SEARCH + RMQ',
+      'For each query (a, b), return the leftmost building index where both can meet (moving only right to strictly taller buildings), or -1.', C_BUILD, building(),
+      [['When is the answer simply b (with a ≤ b)?', 'If a == b or h[b] > h[a].'], ['What does the binary search look for?', 'The smallest mid such that max(h[b+1..mid]) > max(h[a], h[b]).'], ['Faster version?', 'Descend the max tree directly for the "first index > value": O(log n) instead of O(log² n).']], [['Range Max Index (used here)', 2]]),
+    P('Distribute Elements II (3072)', 'Two queues at a ticket gate: you join the queue with <b>more people taller than you</b>. A frequency tree counts "taller" fast.', 'COMPRESS, COUNT > v PER ARRAY, ROUTE',
+      'Distribute nums into arr1/arr2 by greaterCount (ties → the shorter array, then arr1); return arr1 + arr2.', C_DIST, distribute(),
+      [['Why coordinate compression?', 'Values go up to 1e9; we index the tree by rank instead.'], ['greaterCount(v) as a tree query?', 'Range sum over compressed values (cv+1 … m−1).']], [['Good Triplets (count tree)', 5]]),
+    P('Block Placement (3161)', 'Fence posts on a road: at each post write the gap to the previous post. A block fits if some gap before x, or the tail stretch up to x, is long enough.', 'GAP AT EACH OBSTACLE, MAX UP TO prev(x), CHECK TAIL',
+      'Type 1: add an obstacle at x. Type 2: can a block of size sz fit in [0, x] without overlapping obstacles?', C_BLOCK, block(),
+      [['Which gaps change when inserting x?', 'The gap ending at x, and the gap of the next obstacle after x.'], ['Why also check x − prev(x)?', 'The final stretch up to x is not stored as a gap.'], ['Java tools?', 'TreeSet lower/higher/floor plus a max segment tree.']], [['Fruits (max tree)', 6]]),
+    P('Longest Repeating (2213)', 'Each node is a <b>summary card</b>: longest run touching the left edge, the right edge, and anywhere. Glue two cards; a run can cross the glue line.', 'PRE · SUF · BEST, CROSS = L.suf + R.pre',
+      'After each character update, report the length of the longest substring of one repeating character.', C_REP, repeating(),
+      [['When does pre grow across the middle?', 'When the whole left part is one run AND the touching chars match.'], ['What is the answer?', 'root.best after each update.']], [['Find X Value (custom node)', 11]]),
+    P('Find X Value II (3525)', 'Each node carries a <b>remainder histogram</b> of its prefixes. Gluing: the left prefixes stay; the right prefixes get multiplied by the whole left product.', 'cnt[] OF PREFIX PRODUCTS, MERGE = SHIFT BY L.prod',
+      'After each point update, count the subarrays nums[start..j] (j ≥ start) whose product mod k equals x.', C_X, xvalue(),
+      [['Why is the merge order-sensitive?', 'Prefixes start at the left edge, so L must be the left neighbour.'], ['Why does the query merge only overlapping parts?', 'No identity node is used, so return a child directly when the range lies on one side.']], [['Longest Repeating (custom node)', 10]]),
+    P('Longest Balanced II (3721)', 'Fix the right end and keep a <b>scoreboard for every start</b>: even distinct (+1) vs odd distinct (−1). Lazy range adds update the board; find the first 0.', 'RANGE ADD ±1, UNDO OLD COPY, LEFTMOST ZERO',
+      'Longest subarray with equally many distinct even and distinct odd numbers.', C_BAL, balanced(),
+      [['Why subtract on [0, prev]?', 'For starts ≤ prev the value was already counted as distinct; only the last occurrence should count.'], ['How do you find the leftmost zero?', 'Descend: prefer the left child if min ≤ 0 ≤ max there (±1 steps guarantee a zero exists).']], [['Lazy Propagation', 3]]),
+    P('Active Section Trade II (3501)', 'Two lakes separated by a thin island: sink the island and the lakes merge; then drain the big lake into land. Gain = two neighbouring lakes.', 'ZERO BLOCKS, PAIR SUMS, CLIP EDGES, RMQ MIDDLE',
+      'For each [l, r], the maximum number of 1s in s after one optimal trade inside the augmented substring.', C_ACT, active(),
+      [['What is the gain of a trade?', 'The size of two adjacent zero blocks (within the query).'], ['Why clip the first and last blocks?', 'They may stick out of [l, r].'], ['When is the answer just the count of ones?', 'When fewer than two zero blocks lie inside the query.']], [['Range Min Query (max variant)', 1]])
+  ]
+});
+</script>
+</body>
+</html>

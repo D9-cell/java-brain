@@ -1,0 +1,1363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sliding Window Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, recorder, mount, ln } = BrainAnim;
+const range = (a, b) => { const r = []; for (let t = a; t <= b; t++) r.push(t); return r; };
+// Window lane: cells in [i..j] lit, cells already left behind faded, pointers i and j on top
+const W = (name, arr, i, j, o = {}) => {
+  const mark = new Set([...(o.done || []), ...(o.warn || []), ...(o.bad || [])]), ptr = {};
+  if (i >= 0 && i < arr.length) ptr[i] = 'i';
+  if (j >= 0 && j < arr.length) ptr[j] = ptr[j] ? 'i,j' : 'j';
+  Object.assign(ptr, o.ptr || {});
+  const active = [], ghost = [];
+  arr.forEach((_, t) => { if (mark.has(t)) return; if (t >= i && t <= j) active.push(t); else if (t < i && !o.noGhost) ghost.push(t); });
+  return lane(name, arr, { active, ghost, done: o.done, warn: o.warn, bad: o.bad, ptr, showIdx: true, tag: o.tag || (j >= i ? `window [${i}..${j}], length ${j - i + 1}` : 'empty window') });
+};
+// Map lane from a JS Map, one "key:count" cell per entry
+const M = (name, m, hl) => { const ks = [...m.keys()]; return lane(name, ks.map(k => `${k}:${m.get(k)}`), { active: ks.includes(hl) ? [ks.indexOf(hl)] : [], tag: `size ${ks.length}` }); };
+// Adds d to m[k], deleting the key at zero; returns the new count
+const inc = (m, k, d = 1) => { const v = (m.get(k) || 0) + d; if (v === 0) m.delete(k); else m.set(k, v); return v; };
+const story = list => { const r = recorder(); for (const [line, say, lanes, vars] of list) r.step(line, say, lanes, vars); return r.steps; };
+const isV = c => 'aeiou'.includes(c);
+
+const C_ALT = `
+int N = n + k - 1;                       // read the circle once, plus k-1 wrap tiles
+for (int i = 0, j = 1; j < N; j++) {
+    if (colors[j % n] == colors[(j - 1) % n]) {
+        i = j;                           // two equal neighbours: restart here
+        continue;
+    }
+    if (j - i + 1 == k) {
+        result++;                        // a full alternating group
+        i++;                             // slide by one
+    }
+}`;
+function alt() {
+  const c = [0, 1, 0, 1, 0], k = 3, n = c.length, ext = [...c, ...c.slice(0, k - 1)], r = recorder(); let res = 0, i = 0;
+  r.step(ln(C_ALT, 'int N'), `Circle [0,1,0,1,0], k = 3. A group may wrap around, so read the first k−1 tiles again at the end (shown greyed as extra cells 5, 6).`, [W('colors (circle read twice)', ext, 0, 0)], { result: 0 });
+  for (let j = 1; j < ext.length; j++) {
+    if (ext[j] === ext[j - 1]) { i = j; r.step(ln(C_ALT, 'restart here'), `colors[${j}] = colors[${j - 1}] = ${ext[j]}: no group can contain both → i jumps to ${j}.`, [W('colors (circle read twice)', ext, i, j, { bad: [j - 1, j] })], { result: res }); continue; }
+    if (j - i + 1 === k) { res++; r.step(ln(C_ALT, 'a full alternating group'), `[${i}..${j}] alternates and has length k → group #${res}. Then i++ keeps the window at k.`, [W('colors (circle read twice)', ext, i, j, { done: range(i, j) })], { result: res }); i++; }
+    else r.step(ln(C_ALT, 'for (int i'), `colors[${j}] ≠ colors[${j - 1}]: the run grows to length ${j - i + 1}.`, [W('colors (circle read twice)', ext, i, j)], { result: res });
+  }
+  r.step(0, `Every start on the circle was a full group: answer <b>${res}</b>.`, [lane('colors', c, { done: range(0, n - 1) })], { result: res });
+  return r.steps;
+}
+
+const C_STOCK = `
+for (int i = 0, j = 0; j < n; j++) {
+    original += profit[j];                       // what the window earns today
+    if (j - i + 1 > k / 2) modified += prices[j];  // second half: sell (strategy 1)
+    if (j - i + 1 > k) {
+        original -= profit[i];
+        modified -= prices[i + k / 2];           // that day slid into the first half
+        i++;
+    }
+    if (j - i + 1 == k) maxGain = Math.max(maxGain, modified - original);
+}
+return actual + maxGain;`;
+function stock() {
+  const p = [4, 7, 1, 9, 3, 8], st = [1, -1, 0, -1, 1, 0], k = 4, n = p.length, prof = p.map((x, d) => x * st[d]), r = recorder();
+  const actual = prof.reduce((a, b) => a + b, 0); let orig = 0, mod = 0, gain = 0;
+  r.step(0, `profit[d] = strategy·price = [${prof.join(', ')}], base total ${actual}. One modification over k = 4 days: first half becomes 0 (hold), second half becomes 1 (sell). Find the window with the biggest gain.`, [lane('prices', p, { showIdx: true }), lane('strategy', st), lane('profit', prof)], { actual });
+  for (let i = 0, j = 0; j < n; j++) {
+    orig += prof[j]; if (j - i + 1 > k / 2) mod += p[j];
+    if (j - i + 1 > k) { orig -= prof[i]; mod -= p[i + k / 2]; i++; }
+    if (j - i + 1 === k) { gain = Math.max(gain, mod - orig); r.step(ln(C_STOCK, 'maxGain = Math.max'), `Window [${i}..${j}]: originally earns ${orig}; modified it earns ${mod} (sell days ${i + k / 2}..${j}). Gain ${mod - orig}.`, [W('prices', p, i, j, { warn: range(i + k / 2, j) }), lane('profit', prof)], { original: orig, modified: mod, maxGain: gain }); }
+    else r.step(ln(C_STOCK, 'original += profit[j]'), `Grow to day ${j}. Days past the first half add their price to "modified".`, [W('prices', p, i, j), lane('profit', prof)], { original: orig, modified: mod });
+  }
+  r.step(ln(C_STOCK, 'return actual'), `Answer = ${actual} + ${gain} = <b>${actual + gain}</b>.`, [lane('prices', p)], { answer: actual + gain });
+  return r.steps;
+}
+
+const C_BIN = `
+for (int i = 0, j = 0; j < nums.length; j++) {
+    sum += nums[j];
+    while (i < j && (nums[i] == 0 || sum > goal)) {   // drop leading 0s and excess
+        prefixZeros = nums[i] == 1 ? 0 : prefixZeros + 1;
+        sum -= nums[i];
+        i++;
+    }
+    if (sum == goal) count += 1 + prefixZeros;        // each dropped 0 is another start
+}`;
+function bin() {
+  const a = [1, 0, 1, 0, 1], goal = 2, r = recorder(); let pz = 0, sum = 0, cnt = 0;
+  r.step(0, `nums = [1,0,1,0,1], goal 2. Zeros make plain shrinking miss starts, so remember how many leading zeros we dropped (prefixZeros): each one is an extra start.`, [W('nums', a, 0, -1)], { count: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    sum += a[j];
+    while (i < j && (a[i] === 0 || sum > goal)) { pz = a[i] === 1 ? 0 : pz + 1; sum -= a[i]; i++; r.step(ln(C_BIN, 'drop leading 0s'), `Drop nums[${i - 1}] = ${a[i - 1]} → prefixZeros = ${pz}.`, [W('nums', a, i, j)], { sum, prefixZeros: pz, count: cnt }); }
+    if (sum === goal) { cnt += 1 + pz; r.step(ln(C_BIN, 'each dropped 0'), `sum == goal at j = ${j}: 1 + ${pz} subarrays end here → count ${cnt}.`, [W('nums', a, i, j, { done: range(i, j) })], { sum, prefixZeros: pz, count: cnt }); }
+    else r.step(ln(C_BIN, 'sum += nums[j]'), `j = ${j}: sum = ${sum}.`, [W('nums', a, i, j)], { sum, prefixZeros: pz, count: cnt });
+  }
+  r.step(0, `Answer <b>${cnt}</b>. (Prefix-sum map version: count earlier prefixes equal to sum − goal.)`, [lane('nums', a)], { count: cnt });
+  return r.steps;
+}
+
+const C_DUP = `
+for (int i = 0, j = 0; j < nums.length; j++) {
+    if (j - i > k) window.remove(nums[i++]);   // keep only the last k values
+    if (!window.add(nums[j])) return true;      // already inside: distance ≤ k
+}
+return false;`;
+function dup() {
+  const a = [1, 2, 3, 4, 2, 5], k = 2, r = recorder(), s = new Set();
+  r.step(0, `nums = [1,2,3,4,2,5], k = 2. A set holds only the last k values: a repeat inside it is at distance ≤ k.`, [W('nums', a, 0, -1), lane('set', [])]);
+  for (let i = 0, j = 0; j < a.length; j++) {
+    if (j - i > k) { s.delete(a[i]); i++; r.step(ln(C_DUP, 'keep only the last k'), `Window too wide: evict nums[${i - 1}] = ${a[i - 1]}.`, [W('nums', a, i, j - 1, { ptr: { [j]: 'j' } }), lane('set', [...s])]); }
+    if (s.has(a[j])) { r.step(ln(C_DUP, 'already inside'), `${a[j]} is already in the set → <b>true</b>.`, [W('nums', a, i, j, { bad: [j] }), lane('set', [...s], { bad: [[...s].indexOf(a[j])] })]); return r.steps; }
+    s.add(a[j]); r.step(ln(C_DUP, 'already inside'), `Add ${a[j]}.`, [W('nums', a, i, j), lane('set', [...s])]);
+  }
+  r.step(ln(C_DUP, 'return false'), `The two 2s are 3 apart, more than k = 2, so 2 was evicted first → <b>false</b>.`, [lane('nums', a, { warn: [1, 4] }), lane('set', [...s])]);
+  return r.steps;
+}
+
+const C_CONT = `
+for (int i = 0, j = 0; j < nums.length; j++) {
+    win.merge(nums[j], 1, Integer::sum);            // TreeMap: sorted value → count
+    while (win.lastKey() - win.firstKey() > 2) {     // max − min too big: shrink
+        if (win.merge(nums[i], -1, Integer::sum) == 0) win.remove(nums[i]);
+        i++;
+    }
+    count += j - i + 1;                              // every start in [i..j] works
+}`;
+function cont() {
+  const a = [5, 4, 2, 4], r = recorder(), m = new Map(); let cnt = 0;
+  const T = () => { const ks = [...m.keys()].sort((x, y) => x - y); return lane('TreeMap (sorted)', ks.map(k => `${k}:${m.get(k)}`), { tag: ks.length ? `min ${ks[0]}, max ${ks[ks.length - 1]}` : '' }); };
+  r.step(0, `nums = [5,4,2,4]. Valid = max − min ≤ 2. A TreeMap gives min and max of the window instantly.`, [W('nums', a, 0, -1), T()], { count: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    inc(m, a[j]); const span = () => Math.max(...m.keys()) - Math.min(...m.keys());
+    while (span() > 2) { r.step(ln(C_CONT, 'max − min too big'), `max − min = ${span()} > 2 → drop nums[${i}] = ${a[i]}.`, [W('nums', a, i, j, { bad: [i] }), T()], { count: cnt }); inc(m, a[i], -1); i++; }
+    cnt += j - i + 1; r.step(ln(C_CONT, 'every start'), `Window [${i}..${j}] is valid → +${j - i + 1} subarrays ending at ${j}.`, [W('nums', a, i, j), T()], { count: cnt });
+  }
+  r.step(0, `Answer <b>${cnt}</b>. Why "~O(n)": the map never holds more than 3 distinct values.`, [lane('nums', a)], { count: cnt });
+  return r.steps;
+}
+
+const C_CCS = `
+int total = number of distinct values in nums;
+for (int i = 0, j = 0; j < n; j++) {
+    win.merge(nums[j], 1, Integer::sum);
+    while (win.size() == total) {        // [i..j] is complete
+        res += n - j;                    // so is [i..j+1], ..., [i..n-1]
+        drop nums[i++] from win;
+    }
+}`;
+function ccs() {
+  const a = [1, 3, 1, 2, 2], n = a.length, total = 3, r = recorder(), m = new Map(); let res = 0;
+  r.step(ln(C_CCS, 'int total'), `[1,3,1,2,2] has 3 distinct values. Complete = window holds all 3.`, [W('nums', a, 0, -1), M('window', m)], { total, res: 0 });
+  for (let i = 0, j = 0; j < n; j++) {
+    inc(m, a[j]); r.step(ln(C_CCS, 'win.merge'), `Add ${a[j]} → ${m.size} distinct.`, [W('nums', a, i, j), M('window', m, a[j])], { res });
+    while (m.size === total) { res += n - j; r.step(ln(C_CCS, 'so is [i..j+1]'), `[${i}..${j}] complete → it and every extension right count: +${n - j}.`, [W('nums', a, i, j, { done: range(j, n - 1) }), M('window', m)], { res }); inc(m, a[i], -1); i++; }
+  }
+  r.step(0, `Answer <b>${res}</b>.`, [lane('nums', a)], { res });
+  return r.steps;
+}
+
+const C_CCSUB = `
+split word where |w[i] − w[i−1]| > 2;           // condition 2 cuts the string
+for (int chars = 1; chars * k <= pieceLength; chars++) {
+    fixed window of length chars * k;
+    good = letters whose count is exactly k;
+    if (good == chars) result++;                // every letter appears exactly k times
+}`;
+function ccsub() {
+  const w = 'igigee', k = 2, r = recorder(); let res = 0;
+  r.step(ln(C_CCSUB, 'split word'), `"igigee", k = 2. Neighbours i–g, g–e differ by ≤ 2, so the whole string is one piece. A complete substring with c distinct letters has length exactly c·k → try every c with a fixed window.`, [lane('word', [...w], { showIdx: true })], { result: 0 });
+  for (let chars = 1; chars * k <= w.length; chars++) {
+    const L = chars * k;
+    for (let s = 0; s + L <= w.length; s++) {
+      const cnt = {}; for (const ch of w.slice(s, s + L)) cnt[ch] = (cnt[ch] || 0) + 1;
+      const good = Object.values(cnt).filter(x => x === k).length, ok = good === chars; if (ok) res++;
+      r.step(ln(C_CCSUB, ok ? 'result++' : 'good = letters'), `chars = ${chars}, window "${w.slice(s, s + L)}": counts ${JSON.stringify(cnt).replace(/"/g, '')} → good = ${good}${ok ? ' = chars ✓' : ''}.`, [W('word', [...w], s, s + L - 1, ok ? { done: range(s, s + L - 1) } : {})], { chars, window: L, result: res });
+    }
+  }
+  r.step(0, `Answer <b>${res}</b>: "ee", "igig", "igigee".`, [lane('word', [...w])], { result: res });
+  return r.steps;
+}
+
+const C_OCC = `
+int[] count = counts of pat;
+for (int i = 0, j = 0; j < txt.length(); j++) {
+    count[txt.charAt(j) - 'a']--;        // letter enters: use it up
+    if (j - i + 1 == k) {
+        if (allZero(count)) result++;    // window used every letter exactly
+        count[txt.charAt(i++) - 'a']++;  // letter leaves: give it back
+    }
+}`;
+function occ() {
+  const pat = 'for', t = 'forxxorfxdofr', k = 3, r = recorder(), cnt = { f: 1, o: 1, r: 1 }; let res = 0;
+  const C = () => lane('count (pat − window)', Object.keys(cnt).map(c => `${c}:${cnt[c]}`), { tag: 'all 0 ⇒ anagram' });
+  r.step(ln(C_OCC, 'int[] count'), `pat = "for": start from its letter counts. Entering letters subtract, leaving letters add back.`, [W('txt', [...t], 0, -1), C()], { result: 0 });
+  for (let i = 0, j = 0; j < t.length; j++) {
+    cnt[t[j]] = (cnt[t[j]] || 0) - 1;
+    if (j - i + 1 === k) {
+      const zero = Object.values(cnt).every(x => x === 0); if (zero) res++;
+      r.step(ln(C_OCC, 'allZero'), `Window "${t.slice(i, j + 1)}": ${zero ? 'all counts 0 → anagram #' + res : 'not all zero'}.`, [W('txt', [...t], i, j, zero ? { done: range(i, j) } : {}), C()], { result: res });
+      cnt[t[i]]++; i++;
+    }
+  }
+  r.step(0, `Answer <b>${res}</b> ("for", "orf", "ofr").`, [lane('txt', [...t])], { result: res });
+  return r.steps;
+}
+
+const C_MAXK = `
+for (int i = 0, j = 0; j < n; j++) {
+    if (nums[j] == maxE) countMax++;
+    while (countMax >= k) {              // [i..j] already has k copies of the max
+        result += n - j;                 // so does every extension to the right
+        if (nums[i++] == maxE) countMax--;
+    }
+}`;
+function maxk() {
+  const a = [1, 3, 2, 3, 3], k = 2, n = a.length, mx = 3, r = recorder(); let res = 0, c = 0;
+  r.step(0, `[1,3,2,3,3], k = 2, max = 3. "At least k" is monotone: once a window qualifies, all its right extensions do too.`, [W('nums', a, 0, -1)], { countMax: 0, result: 0 });
+  for (let i = 0, j = 0; j < n; j++) {
+    if (a[j] === mx) c++; r.step(ln(C_MAXK, 'countMax++'), `j = ${j}: countMax = ${c}.`, [W('nums', a, i, j)], { countMax: c, result: res });
+    while (c >= k) { res += n - j; r.step(ln(C_MAXK, 'so does every extension'), `[${i}..${j}] has ${c} threes → +${n - j}; then shrink.`, [W('nums', a, i, j, { done: range(j, n - 1) })], { countMax: c, result: res }); if (a[i] === mx) c--; i++; }
+  }
+  r.step(0, `Answer <b>${res}</b>.`, [lane('nums', a)], { result: res });
+  return r.steps;
+}
+
+const C_FIX = `
+for (int i = 0; i < nums.length; i++) {
+    if (nums[i] < minK || nums[i] > maxK) bad = i;   // nothing can cross this
+    if (nums[i] == minK) minPos = i;
+    if (nums[i] == maxK) maxPos = i;
+    ans += Math.max(0, Math.min(minPos, maxPos) - bad); // starts in (bad, min(minPos,maxPos)]
+}`;
+function fix() {
+  const a = [1, 3, 5, 2, 7, 5], lo = 1, hi = 5, r = recorder(); let bad = -1, mn = -1, mx = -1, ans = 0;
+  r.step(0, `[1,3,5,2,7,5], minK 1, maxK 5. For each end i, a valid start must be after the last out-of-range index and at or before both the last 1 and the last 5.`, [lane('nums', a, { showIdx: true })], { ans: 0 });
+  a.forEach((x, i) => {
+    if (x < lo || x > hi) bad = i; if (x === lo) mn = i; if (x === hi) mx = i;
+    const add = Math.max(0, Math.min(mn, mx) - bad); ans += add;
+    const ptr = {}; if (bad >= 0) ptr[bad] = 'bad'; if (mn >= 0) ptr[mn] = (ptr[mn] ? ptr[mn] + ',' : '') + 'min'; if (mx >= 0) ptr[mx] = (ptr[mx] ? ptr[mx] + ',' : '') + 'max';
+    r.step(ln(C_FIX, 'starts in'), `i = ${i}: bad = ${bad}, minPos = ${mn}, maxPos = ${mx} → +${add}.`, [lane('nums', a, { showIdx: true, ptr, active: [i], bad: bad >= 0 ? [bad] : [], done: add ? range(bad + 1, Math.min(mn, mx)) : [] })], { ans });
+  });
+  r.step(0, `Answer <b>${ans}</b>: [1,3,5] and [1,3,5,2].`, [lane('nums', a)], { ans });
+  return r.steps;
+}
+
+const C_SCORE = `
+for (int i = 0, j = 0; j < nums.length; j++) {
+    sum += nums[j];
+    while (i <= j && sum * (j - i + 1) >= k) sum -= nums[i++];   // score too big
+    result += j - i + 1;                                          // all shorter ones fit
+}`;
+function score() {
+  const a = [2, 1, 4, 3, 5], k = 10, r = recorder(); let sum = 0, res = 0;
+  r.step(0, `[2,1,4,3,5], k = 10. Score = sum × length only grows when the window grows, so shrink until it fits.`, [W('nums', a, 0, -1)], { result: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    sum += a[j];
+    while (i <= j && sum * (j - i + 1) >= k) { r.step(ln(C_SCORE, 'score too big'), `score ${sum}×${j - i + 1} = ${sum * (j - i + 1)} ≥ 10 → drop ${a[i]}.`, [W('nums', a, i, j, { bad: [i] })], { sum, result: res }); sum -= a[i]; i++; }
+    res += j - i + 1; r.step(ln(C_SCORE, 'all shorter ones fit'), `[${i}..${j}] fits (score ${sum * (j - i + 1)}) → +${j - i + 1}.`, [W('nums', a, i, j)], { sum, result: res });
+  }
+  r.step(0, `Answer <b>${res}</b>.`, [lane('nums', a)], { result: res });
+  return r.steps;
+}
+
+const C_KC = `
+for (int i = 0, j = 0; j < s.length(); j++) {
+    if (s.charAt(j) == '0') c0++; else c1++;
+    while (c0 > k && c1 > k) {           // both over: invalid
+        if (s.charAt(i++) == '0') c0--; else c1--;
+    }
+    result += j - i + 1;                 // every substring ending at j from i on
+}`;
+function kc() {
+  const s = '10101', k = 1, r = recorder(); let c0 = 0, c1 = 0, res = 0;
+  r.step(0, `"10101", k = 1. Valid while 0s ≤ k OR 1s ≤ k. Invalid only when BOTH exceed k.`, [W('s', [...s], 0, -1)], { result: 0 });
+  for (let i = 0, j = 0; j < s.length; j++) {
+    if (s[j] === '0') c0++; else c1++;
+    while (c0 > k && c1 > k) { r.step(ln(C_KC, 'both over'), `0s = ${c0}, 1s = ${c1}: both > 1 → drop s[${i}].`, [W('s', [...s], i, j, { bad: [i] })], { c0, c1, result: res }); if (s[i] === '0') c0--; else c1--; i++; }
+    res += j - i + 1; r.step(ln(C_KC, 'every substring ending'), `[${i}..${j}] valid → +${j - i + 1}.`, [W('s', [...s], i, j)], { c0, c1, result: res });
+  }
+  r.step(0, `Answer <b>${res}</b>.`, [lane('s', [...s])], { result: res });
+  return r.steps;
+}
+const C_KC2 = `
+leftMost[j]  = smallest valid start for end j      (window left → right)
+rightMost[i] = largest valid end for start i       (window right → left)
+cum[j] = Σ (j' − leftMost[j'] + 1) for j' ≤ j
+query [l, r]: v = min(r, rightMost[l]);
+    answer = len(l..v)·(len+1)/2 + cum[r] − cum[v]`;
+function kc2() {
+  const s = '0001111', k = 2, n = s.length, L = Array(n), R = Array(n), cum = Array(n);
+  for (let i = 0, j = 0, c = [0, 0]; j < n; j++) { c[+s[j]]++; while (c[0] > k && c[1] > k) c[+s[i++]]--; L[j] = i; }
+  for (let i = n - 1, j = n - 1, c = [0, 0]; j >= 0; j--) { c[+s[j]]++; while (c[0] > k && c[1] > k) c[+s[i--]]--; R[j] = i; }
+  for (let j = 0; j < n; j++) cum[j] = (j ? cum[j - 1] : 0) + j - L[j] + 1;
+  const lo = 0, hi = 6, v = Math.min(hi, R[lo]), len = v - lo + 1, ans = len * (len + 1) / 2 + cum[hi] - cum[v];
+  return story([[0, `Part II asks many ranges [l, r] on s = "0001111", k = 2. Precompute two windows once, then answer each query in O(1).`, [lane('s', [...s], { showIdx: true })]],
+    [ln(C_KC2, 'leftMost[j]'), `leftMost = [${L}]: at j = 5 the window [0..5] has three 0s and three 1s, so the start moves to 1.`, [lane('leftMost', L, { showIdx: true })]],
+    [ln(C_KC2, 'rightMost[i]'), `rightMost = [${R}]: from start 0 we can only reach end 4.`, [lane('rightMost', R, { showIdx: true })]],
+    [ln(C_KC2, 'cum[j]'), `cum = [${cum}] (valid substrings ending at each j, prefix-summed).`, [lane('cum', cum, { showIdx: true })]],
+    [ln(C_KC2, 'answer ='), `Query [${lo}, ${hi}]: v = min(${hi}, ${R[lo]}) = ${v}. Ends ${lo}..${v} take every start: ${len}·${len + 1}/2 = ${len * (len + 1) / 2}. Ends ${v + 1}..${hi} are limited by leftMost (all ≥ l here): cum[${hi}] − cum[${v}] = ${cum[hi] - cum[v]}. Total <b>${ans}</b>.`, [lane('ends', range(0, n - 1), { done: range(lo, v), warn: range(v + 1, hi) })], { answer: ans }]]);
+}
+
+const C_VOW = `
+nextCons[i] = index of the first consonant after i (or n);
+for (int i = 0, j = 0; j < n; j++) {
+    add word[j] (vowel → map, consonant → cons++);
+    while (cons > k) drop word[i++];
+    while (map has all 5 vowels && cons == k) {
+        count += nextCons[j] - j;        // can extend j over vowels only
+        drop word[i++];
+    }
+}`;
+function vow() {
+  const w = 'ieaouqqieaouqq', k = 1, n = w.length, r = recorder(), m = new Map(); let cons = 0, cnt = 0;
+  const nc = Array(n); for (let t = n - 1, last = n; t >= 0; t--) { nc[t] = last; if (!isV(w[t])) last = t; }
+  r.step(ln(C_VOW, 'nextCons[i]'), `k = 1. Exactly-k consonants is not monotone, but past a valid window we can extend j over vowels until the next consonant: nextCons[j] − j extra ends.`, [W('word', [...w], 0, -1), lane('nextCons', nc)], { count: 0 });
+  for (let i = 0, j = 0; j < n; j++) {
+    if (isV(w[j])) inc(m, w[j]); else cons++;
+    while (cons > k) { if (isV(w[i])) inc(m, w[i], -1); else cons--; i++; r.step(ln(C_VOW, 'while (cons > k)'), `Too many consonants → i = ${i}.`, [W('word', [...w], i, j), M('vowels', m)], { cons, count: cnt }); }
+    let any = false;
+    while (m.size === 5 && cons === k) { any = true; cnt += nc[j] - j; r.step(ln(C_VOW, 'can extend j'), `[${i}..${j}] has all vowels and 1 consonant → +${nc[j] - j} (ends ${j}..${nc[j] - 1}).`, [W('word', [...w], i, j, { warn: range(j + 1, nc[j] - 1) }), M('vowels', m)], { cons, count: cnt }); if (isV(w[i])) inc(m, w[i], -1); else cons--; i++; }
+    if (!any) r.step(ln(C_VOW, 'add word[j]'), `Add '${w[j]}'.`, [W('word', [...w], i, j), M('vowels', m, w[j])], { cons, count: cnt });
+  }
+  r.step(0, `Answer <b>${cnt}</b>.`, [lane('word', [...w])], { count: cnt });
+  return r.steps;
+}
+
+const C_GOOD = `
+for (int i = 0, j = 0; j < n; j++) {
+    pairs += count of nums[j] already in window;   // new pairs with each copy
+    add nums[j];
+    while (pairs >= k) {
+        result += n - j;                           // every extension stays good
+        remove nums[i]; pairs -= copies left of it;
+        i++;
+    }
+}`;
+function good() {
+  const a = [3, 1, 4, 3, 2, 2, 4], k = 2, n = a.length, r = recorder(), m = new Map(); let pairs = 0, res = 0;
+  r.step(0, `[3,1,4,3,2,2,4], k = 2. A new copy of x pairs with every copy already inside. Good = pairs ≥ k (monotone).`, [W('nums', a, 0, -1), M('window', m)], { pairs: 0, result: 0 });
+  for (let i = 0, j = 0; j < n; j++) {
+    const before = m.get(a[j]) || 0; pairs += before; inc(m, a[j]);
+    r.step(ln(C_GOOD, 'new pairs'), `Add ${a[j]}: ${before} earlier copies → pairs ${pairs}.`, [W('nums', a, i, j), M('window', m, a[j])], { pairs, result: res });
+    while (pairs >= k) { res += n - j; r.step(ln(C_GOOD, 'every extension stays good'), `pairs ${pairs} ≥ 2 → +${n - j}.`, [W('nums', a, i, j, { done: range(j, n - 1) }), M('window', m)], { pairs, result: res }); const left = inc(m, a[i], -1); pairs -= left; i++; }
+  }
+  r.step(0, `Answer <b>${res}</b>.`, [lane('nums', a)], { result: res });
+  return r.steps;
+}
+
+const C_DIV = `
+for each i (window of candidate starts [i − dist .. i]):
+    add i to chosen; if chosen.size() > k − 1: move its largest to rest;
+    result = Math.min(result, sum of chosen);
+    remove index i − dist: if it was chosen, promote rest.first();
+return nums[0] + result;`;
+function div() {
+  const a = [1, 3, 2, 6, 4, 2], k = 3, dist = 3, n = a.length, r = recorder(); let ch = [], rest = [], res = Infinity;
+  const byV = (x, y) => a[x] - a[y] || x - y, L = () => [lane('chosen (k−1 smallest)', ch.map(x => `${a[x]}@${x}`), { tag: 'sum ' + ch.reduce((s, x) => s + a[x], 0) }), lane('rest', rest.map(x => `${a[x]}@${x}`))];
+  const add = i => { ch.push(i); ch.sort(byV); if (ch.length > k - 1) { rest.push(ch.pop()); rest.sort(byV); } };
+  r.step(0, `[1,3,2,6,4,2], k = 3, dist = 3. The first subarray starts at 0 (cost nums[0]). Pick k−1 = 2 more start indices, all within a span of dist → slide a window of dist+1 candidates and keep its 2 smallest.`, [lane('nums', a, { showIdx: true }), ...L()]);
+  let i = 1; for (; i - dist < 1; i++) add(i);
+  r.step(ln(C_DIV, 'add i to chosen'), `Preload candidates 1..${i - 1}.`, [W('nums', a, 1, i - 1), ...L()]);
+  for (; i < n; i++) {
+    add(i); const s = ch.reduce((t, x) => t + a[x], 0); res = Math.min(res, s);
+    r.step(ln(C_DIV, 'result = Math.min'), `Window [${i - dist}..${i}]: two smallest sum to ${s}.`, [W('nums', a, i - dist, i, { done: [...ch] }), ...L()], { best: res });
+    const out = i - dist, at = ch.indexOf(out);
+    if (at >= 0) { ch.splice(at, 1); if (rest.length) { ch.push(rest.shift()); ch.sort(byV); } } else rest.splice(rest.indexOf(out), 1);
+  }
+  r.step(ln(C_DIV, 'return nums[0]'), `Answer ${a[0]} + ${res} = <b>${a[0] + res}</b>.`, [lane('nums', a)], { answer: a[0] + res });
+  return r.steps;
+}
+
+const C_ANA = `
+for (int i = 0, j = 0; j < s.length(); j++) {
+    count[s.charAt(j) - 'a']--;                    // enters
+    if (j - i + 1 == p.length()) {
+        if (all counts are 0) result.add(i);       // perfect match
+        count[s.charAt(i++) - 'a']++;              // leaves
+    }
+}`;
+function ana() {
+  const s = 'cbaebabacd', p = 'abc', r = recorder(), cnt = { a: 1, b: 1, c: 1 }, out = [];
+  const C = () => lane('count (p − window)', Object.keys(cnt).filter(c => cnt[c] !== 0 || 'abc'.includes(c)).map(c => `${c}:${cnt[c]}`));
+  r.step(0, `s = "cbaebabacd", p = "abc". Fixed window of 3; counts go to 0 exactly when the window is an anagram.`, [W('s', [...s], 0, -1), C()], { result: '[]' });
+  for (let i = 0, j = 0; j < s.length; j++) {
+    cnt[s[j]] = (cnt[s[j]] || 0) - 1;
+    if (j - i + 1 === p.length) {
+      const z = Object.values(cnt).every(x => x === 0); if (z) out.push(i);
+      r.step(ln(C_ANA, 'perfect match'), `"${s.slice(i, j + 1)}" at ${i}: ${z ? 'anagram ✓' : 'no'}.`, [W('s', [...s], i, j, z ? { done: range(i, j) } : {}), C()], { result: `[${out}]` });
+      cnt[s[i]]++; i++;
+    }
+  }
+  r.step(0, `Answer <b>[${out}]</b>.`, [lane('s', [...s])], { result: `[${out}]` });
+  return r.steps;
+}
+
+const C_AND = `
+for (int i = 0, j = 0; j < n; j++) {
+    windowAnd &= nums[j];  update(bits, nums[j], +1);
+    result = min(result, |k − windowAnd|);
+    if (windowAnd == k) return 0;
+    while (i <= j && windowAnd < k) {          // AND too small: shrink
+        update(bits, nums[i++], -1);
+        windowAnd = bits set in all (j − i + 1) numbers;
+        result = min(result, |k − windowAnd|);
+    }
+}`;
+function and() {
+  const a = [1, 2, 4, 5], k = 3, r = recorder(), bits = Array(3).fill(0); let wa = a[0], res = Infinity;
+  const B = (len) => lane('bit counts [b2 b1 b0]', [bits[2], bits[1], bits[0]], { tag: `window length ${len}` });
+  r.step(0, `[1,2,4,5], k = 3. AND only shrinks as the window grows. Too small → shrink from the left; bit counts let us "un-AND".`, [W('nums', a, 0, -1), B(0)], { result: '∞' });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    wa &= a[j]; for (let b = 0; b < 3; b++) if (a[j] >> b & 1) bits[b]++; res = Math.min(res, Math.abs(k - wa));
+    r.step(ln(C_AND, 'windowAnd &= nums[j]'), `Add ${a[j]} (${a[j].toString(2)}): AND = ${wa}, |3 − ${wa}| = ${Math.abs(k - wa)}.`, [W('nums', a, i, j), B(j - i + 1)], { windowAnd: wa, result: res });
+    while (i <= j && wa < k) {
+      for (let b = 0; b < 3; b++) if (a[i] >> b & 1) bits[b]--; i++;
+      wa = 0; for (let b = 0; b < 3; b++) if (bits[b] === j - i + 1) wa |= 1 << b; if (i > j) wa = -1;
+      if (wa >= 0) res = Math.min(res, Math.abs(k - wa));
+      r.step(ln(C_AND, 'AND too small'), i > j ? `Window empty; continue with the next number.` : `Shrink: [${i}..${j}] AND = ${wa} → |3 − ${wa}| = ${Math.abs(k - wa)}.`, [W('nums', a, i, j), B(j - i + 1)], { windowAnd: wa < 0 ? 'all ones' : wa, result: res });
+      if (wa < 0) wa = ~0;
+    }
+  }
+  r.step(0, `Answer <b>${res}</b> (subarray [2] or [4]).`, [lane('nums', a)], { result: res });
+  return r.steps;
+}
+
+const C_TWO = `
+for (int i = 0, j = 0; j < n; j++) {
+    sum += arr[j];
+    while (i < j && sum > target) sum -= arr[i++];
+    if (sum == target) {
+        int len = j - i + 1;
+        if (i > 0 && best[i - 1] != MAX) result = min(result, len + best[i - 1]);  // pair with left part
+        bestLen = min(bestLen, len);
+    }
+    best[j] = bestLen;                    // shortest match ending at or before j
+}`;
+function two() {
+  const a = [3, 1, 1, 1, 5, 1, 2, 1], t = 3, n = a.length, r = recorder(), best = Array(n).fill('∞'); let sum = 0, bl = Infinity, res = Infinity;
+  r.step(0, `arr = [3,1,1,1,5,1,2,1], target 3. Each match [i..j] pairs with the shortest match that ends before i: best[i−1].`, [W('arr', a, 0, -1), lane('best', best, { showIdx: true })], { result: '∞' });
+  for (let i = 0, j = 0; j < n; j++) {
+    sum += a[j]; while (i < j && sum > t) sum -= a[i++];
+    if (sum === t) {
+      const len = j - i + 1, pair = i > 0 && best[i - 1] !== '∞'; if (pair) res = Math.min(res, len + best[i - 1]); bl = Math.min(bl, len); best[j] = bl;
+      r.step(ln(C_TWO, pair ? 'pair with left part' : 'bestLen = min'), `Match [${i}..${j}] (length ${len})${pair ? ` + best[${i - 1}] = ${best[i - 1]} → total ${len + best[i - 1]}` : ''}.`, [W('arr', a, i, j, { done: range(i, j) }), lane('best', best, { showIdx: true, active: [j], warn: pair ? [i - 1] : [] })], { result: res === Infinity ? '∞' : res });
+    } else { best[j] = bl === Infinity ? '∞' : bl; r.step(ln(C_TWO, 'best[j] = bestLen'), `j = ${j}: sum ${sum}.`, [W('arr', a, i, j), lane('best', best, { showIdx: true, active: [j] })], { result: res === Infinity ? '∞' : res }); }
+  }
+  r.step(0, `Answer <b>${res === Infinity ? -1 : res}</b>: [3] and [2,1].`, [lane('arr', a)], { result: res });
+  return r.steps;
+}
+
+const C_XS = `
+slide a frequency map over windows of k;
+each count change: remove (oldFreq, v), insert (newFreq, v);
+insert: goes to TOP if top has < x pairs or beats top.first(); overflow → rest
+remove: if it was in TOP, promote rest.last();
+answer for the window = sum of freq · value over TOP`;
+function xs() {
+  const a = [1, 1, 2, 2, 3, 4, 2, 3], k = 6, x = 2, r = recorder(), out = [];
+  r.step(0, `k = 6, x = 2. x-sum = Σ freq·value over the x most frequent values (ties: bigger value). Two ordered sets: TOP (x best pairs, with a running sum) and REST.`, [lane('nums', a, { showIdx: true })]);
+  for (let s = 0; s + k <= a.length; s++) {
+    const f = new Map(); for (let t = s; t < s + k; t++) inc(f, a[t]);
+    const ps = [...f].map(([v, c]) => [c, v]).sort((p, q) => q[0] - p[0] || q[1] - p[1]), top = ps.slice(0, x), rest = ps.slice(x), sum = top.reduce((z, [c, v]) => z + c * v, 0); out.push(sum);
+    r.step(ln(C_XS, 'answer for the window'), `Window [${s}..${s + k - 1}]: TOP = ${top.map(([c, v]) => `${v}×${c}`).join(', ')} → x-sum ${sum}.`, [W('nums', a, s, s + k - 1), lane('TOP (freq×value)', top.map(([c, v]) => `${v}×${c}`), { done: range(0, top.length - 1) }), lane('REST', rest.map(([c, v]) => `${v}×${c}`))], { answer: `[${out}]` });
+    if (s + k < a.length) r.step(ln(C_XS, 'each count change'), `Slide: ${a[s]} leaves (its pair is re-filed with freq − 1), ${a[s + k]} enters (freq + 1). Only those two pairs move between TOP and REST: O(log n).`, [W('nums', a, s + 1, s + k, { bad: [s], warn: [s + k] })], { answer: `[${out}]` });
+  }
+  r.step(0, `Answer <b>[${out}]</b>.`, [lane('nums', a)]);
+  return r.steps;
+}
+
+const C_EVEN = `
+int[] first = new int[32];  fill -2;  first[0] = -1;
+for (int i = 0; i < s.length(); i++) {
+    if (s[i] is a vowel v) mask ^= 1 << v;     // flip that vowel's parity
+    if (first[mask] == -2) first[mask] = i;    // remember the earliest index
+    maxLen = Math.max(maxLen, i - first[mask]); // same mask ⇒ even counts between
+}`;
+function even() {
+  const s = 'eleetminicoworoep', r = recorder(), first = new Map([[0, -1]]); let mask = 0, best = 0;
+  const F = hl => lane('first[mask]', [...first].map(([m, i]) => `${m.toString(2).padStart(5, '0')}:${i}`), { active: [...first.keys()].includes(hl) ? [[...first.keys()].indexOf(hl)] : [] });
+  r.step(ln(C_EVEN, 'first[0] = -1'), `Not a sliding window: shrinking has no clear direction. Track a 5-bit parity mask (u o i e a). Equal masks at two indices ⇒ every vowel appears an even number of times in between.`, [lane('s', [...s], { showIdx: true }), F()], { mask: '00000', maxLen: 0 });
+  for (let i = 0; i < s.length; i++) {
+    const v = 'aeiou'.indexOf(s[i]); if (v >= 0) mask ^= 1 << v; if (!first.has(mask)) first.set(mask, i); best = Math.max(best, i - first.get(mask));
+    r.step(ln(C_EVEN, v >= 0 ? 'flip that vowel' : 'same mask'), `'${s[i]}'${v >= 0 ? ' flips bit ' + v : ''}: mask ${mask.toString(2).padStart(5, '0')}, first seen at ${first.get(mask)} → length ${i - first.get(mask)}.`, [lane('s', [...s], { showIdx: true, active: [i], done: first.get(mask) + 1 <= i ? range(first.get(mask) + 1, i - 1) : [] }), F(mask)], { mask: mask.toString(2).padStart(5, '0'), maxLen: best });
+  }
+  r.step(0, `Answer <b>${best}</b>.`, [lane('s', [...s])], { maxLen: best });
+  return r.steps;
+}
+
+const C_POW = `
+count = 1;                                       // length of the current +1 run
+for (int j = 1; j < n; j++) {
+    count = nums[j] == nums[j - 1] + 1 ? count + 1 : 1;
+    if (j >= k - 1)
+        result[j - k + 1] = count >= k ? nums[j] : -1;   // run covers the whole window
+}`;
+function pow() {
+  const a = [1, 2, 3, 4, 3, 2, 5], k = 3, r = recorder(), res = Array(a.length - k + 1).fill('?'); let c = 1;
+  r.step(ln(C_POW, 'count = 1'), `[1,2,3,4,3,2,5], k = 3. A window is "consecutive ascending" exactly when the +1 run ending at its right edge is at least k long.`, [W('nums', a, 0, 0), lane('result', res)], { run: 1 });
+  for (let j = 1; j < a.length; j++) {
+    c = a[j] === a[j - 1] + 1 ? c + 1 : 1;
+    if (j >= k - 1) { res[j - k + 1] = c >= k ? a[j] : -1; r.step(ln(C_POW, 'run covers'), `Window [${j - k + 1}..${j}]: run = ${c} ${c >= k ? '≥' : '<'} 3 → ${res[j - k + 1]}.`, [W('nums', a, j - k + 1, j, c >= k ? { done: range(j - k + 1, j) } : {}), lane('result', res, { active: [j - k + 1] })], { run: c }); }
+    else r.step(ln(C_POW, 'count = nums[j]'), `j = ${j}: run = ${c}.`, [W('nums', a, 0, j), lane('result', res)], { run: c });
+  }
+  r.step(0, `Answer <b>[${res}]</b>.`, [lane('result', res)]);
+  return r.steps;
+}
+
+const C_NEG = `
+for (int i = 0, j = 0; j < n; j++) {
+    if (a[j] < 0) negs.addLast(a[j]);            // queue of negatives in the window
+    if (j - i + 1 == k) {
+        result.add(negs.isEmpty() ? 0 : negs.peekFirst());
+        if (a[i] < 0) negs.pollFirst();          // the leaving negative is the front
+        i++;
+    }
+}`;
+function neg() {
+  const a = [12, -1, -7, 8, -15, 30, 16, 28], k = 3, r = recorder(), q = [], out = [];
+  r.step(0, `k = 3. Keep a queue of the negatives inside the window, in order. Its front is the answer.`, [W('A', a, 0, -1), lane('queue', [])]);
+  for (let i = 0, j = 0; j < a.length; j++) {
+    if (a[j] < 0) q.push(a[j]);
+    if (j - i + 1 === k) {
+      out.push(q.length ? q[0] : 0);
+      r.step(ln(C_NEG, 'result.add'), `Window [${i}..${j}]: first negative = ${out[out.length - 1]}.`, [W('A', a, i, j), lane('queue', q, { active: q.length ? [0] : [] }), lane('result', out)]);
+      if (a[i] < 0) q.shift(); i++;
+    } else r.step(ln(C_NEG, 'queue of negatives'), `Add ${a[j]}${a[j] < 0 ? ' to the queue' : ''}.`, [W('A', a, i, j), lane('queue', q)]);
+  }
+  r.step(0, `Answer <b>[${out}]</b>.`, [lane('result', out)]);
+  return r.steps;
+}
+
+const C_FREQ = `
+Arrays.sort(nums);
+for (int i = 0, j = 0; j < n; j++) {
+    sum += nums[j];
+    while ((long) (j - i + 1) * nums[j] - sum > k) sum -= nums[i++];  // cost to raise all to nums[j]
+    result = Math.max(result, j - i + 1);
+}`;
+function freq() {
+  const a = [1, 4, 8, 13], k = 5, r = recorder(); let sum = 0, best = 0;
+  r.step(ln(C_FREQ, 'Arrays.sort'), `Sorted [1,4,8,13], k = 5 increments. Make the window equal to its largest value nums[j]: cost = length·nums[j] − sum.`, [W('nums', a, 0, -1)], { result: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    sum += a[j];
+    while ((j - i + 1) * a[j] - sum > k) { r.step(ln(C_FREQ, 'cost to raise'), `Raise [${i}..${j}] to ${a[j]}: ${(j - i + 1) * a[j]} − ${sum} = ${(j - i + 1) * a[j] - sum} > 5 → drop ${a[i]}.`, [W('nums', a, i, j, { bad: [i] })], { sum, result: best }); sum -= a[i]; i++; }
+    best = Math.max(best, j - i + 1); r.step(ln(C_FREQ, 'result = Math.max'), `[${i}..${j}] costs ${(j - i + 1) * a[j] - sum} ≤ 5 → frequency ${j - i + 1}.`, [W('nums', a, i, j)], { sum, result: best });
+  }
+  r.step(0, `Answer <b>${best}</b>. Use long for the cost: the C++ binary-search version stores it in an int and overflows on large inputs.`, [lane('nums', a)], { result: best });
+  return r.steps;
+}
+
+const C_FRUIT = `
+for (int i = 0, j = 0; j < n; j++) {
+    win.merge(fruits[j], 1, Integer::sum);
+    if (win.size() <= 2) best = Math.max(best, j - i + 1);
+    else {                               // 3 types: slide (do not shrink fully)
+        remove one fruits[i];
+        i++;
+    }
+}`;
+function fruit() {
+  const a = [1, 2, 3, 2, 2], r = recorder(), m = new Map(); let best = 0;
+  r.step(0, `[1,2,3,2,2]: longest window with at most 2 types. Trick: the window never needs to get smaller than the best so far, so on a 3rd type just slide it by one.`, [W('fruits', a, 0, -1), M('baskets', m)], { best: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    inc(m, a[j]);
+    if (m.size <= 2) { best = Math.max(best, j - i + 1); r.step(ln(C_FRUIT, 'best = Math.max'), `≤ 2 types → length ${j - i + 1}.`, [W('fruits', a, i, j), M('baskets', m, a[j])], { best }); }
+    else { inc(m, a[i], -1); i++; r.step(ln(C_FRUIT, '3 types'), `3 types → slide: drop fruits[${i - 1}] = ${a[i - 1]}. Window keeps length ${j - i + 1}.`, [W('fruits', a, i, j, { bad: [i - 1] }), M('baskets', m)], { best }); }
+  }
+  r.step(0, `Answer <b>${best}</b> ([2,3,2,2]).`, [lane('fruits', a)], { best });
+  return r.steps;
+}
+
+const C_BUD = `
+for (int i = 0, j = 0; j < n; j++) {
+    cost += Math.abs(s.charAt(j) - t.charAt(j));
+    while (cost > maxCost) {
+        cost -= Math.abs(s.charAt(i) - t.charAt(i));
+        i++;
+    }
+    maxLen = Math.max(maxLen, j - i + 1);
+}`;
+function bud() {
+  const s = 'abcd', t = 'bcdf', mc = 3, cost = [...s].map((c, i) => Math.abs(c.charCodeAt(0) - t.charCodeAt(i))), r = recorder(); let cur = 0, best = 0;
+  r.step(0, `s = "abcd", t = "bcdf", maxCost 3. Turn it into numbers: cost[i] = |s[i] − t[i]| = [${cost}]. Now it is "longest subarray with sum ≤ 3".`, [lane('cost', cost, { showIdx: true })], { maxLen: 0 });
+  for (let i = 0, j = 0; j < cost.length; j++) {
+    cur += cost[j];
+    while (cur > mc) { r.step(ln(C_BUD, 'while (cost > maxCost)'), `cost ${cur} > 3 → drop position ${i}.`, [W('cost', cost, i, j, { bad: [i] })], { cost: cur, maxLen: best }); cur -= cost[i]; i++; }
+    best = Math.max(best, j - i + 1); r.step(ln(C_BUD, 'maxLen = Math.max'), `[${i}..${j}] costs ${cur} → length ${j - i + 1}.`, [W('cost', cost, i, j)], { cost: cur, maxLen: best });
+  }
+  r.step(0, `Answer <b>${best}</b>.`, [lane('cost', cost)], { maxLen: best });
+  return r.steps;
+}
+
+const C_GRUMPY = `
+for (int i = 0; i < minutes; i++) unsat += customers[i] * grumpy[i];
+for (int i = 0, j = minutes; j < n; i++, j++) {
+    unsat += customers[j] * grumpy[j] - customers[i] * grumpy[i];   // slide
+    maxUnsat = Math.max(maxUnsat, unsat);
+}
+total = maxUnsat + Σ customers[i] where grumpy[i] == 0;`;
+function grumpy() {
+  const c = [1, 0, 1, 2, 1, 1, 7, 5], g = [0, 1, 0, 1, 0, 1, 0, 1], m = 3, lost = c.map((x, i) => x * g[i]), r = recorder();
+  let un = 0; for (let i = 0; i < m; i++) un += lost[i]; let best = un, bi = 0;
+  r.step(0, `Customers lost to grumpiness per minute = customers·grumpy = [${lost}]. The technique (3 minutes) should cover the window that wins back the most.`, [lane('customers', c, { showIdx: true }), lane('lost', lost)], {});
+  r.step(ln(C_GRUMPY, 'for (int i = 0; i < minutes'), `First window [0..2] wins back ${un}.`, [W('lost', lost, 0, m - 1)], { unsat: un, max: best });
+  for (let i = 0, j = m; j < c.length; i++, j++) { un += lost[j] - lost[i]; if (un > best) { best = un; bi = i + 1; } r.step(ln(C_GRUMPY, '// slide'), `Window [${i + 1}..${j}] wins back ${un}.`, [W('lost', lost, i + 1, j)], { unsat: un, max: best }); }
+  const happy = c.reduce((s, x, i) => s + (g[i] ? 0 : x), 0);
+  r.step(ln(C_GRUMPY, 'total = maxUnsat'), `Always satisfied: ${happy}. Plus best window [${bi}..${bi + m - 1}]: ${best}. Answer <b>${happy + best}</b>.`, [W('lost', lost, bi, bi + m - 1, { done: range(bi, bi + m - 1) })], { answer: happy + best });
+  return r.steps;
+}
+
+const C_KR = `
+if (k == 0) return nums;  if (n < 2k + 1) return all -1;
+sum = nums[0] + ... + nums[2k];
+result[k] = (int) (sum / (2k + 1));
+for (left = 0, right = 2k + 1, i = k + 1; right < n; left++, right++, i++) {
+    sum += nums[right] - nums[left];
+    result[i] = (int) (sum / (2k + 1));       // average lands on the centre
+}`;
+function kr() {
+  const a = [7, 4, 3, 9, 1, 8, 5, 2, 6], k = 3, n = a.length, r = recorder(), res = Array(n).fill(-1);
+  let sum = 0; for (let t = 0; t <= 2 * k; t++) sum += a[t]; res[k] = Math.floor(sum / (2 * k + 1));
+  r.step(ln(C_KR, 'result[k] ='), `k = 3 → window of 7 centred at i. First window [0..6] sums ${sum} → result[3] = ${res[k]}.`, [W('nums', a, 0, 2 * k, { ptr: { 3: 'centre' } }), lane('result', res, { active: [k] })], { sum });
+  for (let left = 0, right = 2 * k + 1, i = k + 1; right < n; left++, right++, i++) { sum += a[right] - a[left]; res[i] = Math.floor(sum / (2 * k + 1)); r.step(ln(C_KR, 'average lands'), `Slide: +${a[right]} −${a[left]} → sum ${sum}, result[${i}] = ${res[i]}.`, [W('nums', a, left + 1, right, { ptr: { [i]: 'centre' } }), lane('result', res, { active: [i] })], { sum }); }
+  r.step(0, `Answer <b>[${res}]</b>. Positions without k neighbours on both sides stay −1. Use long: the sum can reach 1e10.`, [lane('result', res)]);
+  return r.steps;
+}
+
+const C_LSK = `
+for (int i = 0, j = 0; j < n; j++) {
+    sum += arr[j];
+    if (j - i + 1 == k) result = max(result, sum);
+    else if (j - i + 1 > k) {
+        trail += arr[i++];           // the part that slid out past the k-th last
+        if (trail < 0) {             // a negative prefix only hurts: cut it off
+            sum -= trail;
+            trail = 0;
+        }
+        result = max(result, sum);
+    }
+}`;
+function lsk() {
+  const a = [-1, 2, -5, 3, 4], k = 2, r = recorder(); let sum = 0, res = -Infinity, trail = 0, cut = 0;
+  r.step(0, `[-1,2,-5,3,4], length ≥ 2. Keep the last k elements always; elements before them stay only while their sum (trail) is non-negative.`, [W('arr', a, 0, -1)], { result: '−∞' });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    sum += a[j];
+    if (j - i + 1 === k) { res = Math.max(res, sum); r.step(ln(C_LSK, 'if (j - i + 1 == k)'), `First k-window [${i}..${j}] sums ${sum}.`, [W('arr', a, cut, j)], { sum, trail, result: res }); }
+    else if (j - i + 1 > k) {
+      trail += a[i]; i++; let say = `${a[i - 1]} slides out of the last-k part → trail ${trail}`;
+      if (trail < 0) { sum -= trail; say += ` < 0 → cut it (sum ${sum})`; trail = 0; cut = i; } res = Math.max(res, sum);
+      r.step(ln(C_LSK, trail === 0 && cut === i ? 'a negative prefix' : 'trail += arr[i++]'), say + '.', [W('arr', a, cut, j, { ptr: { [i]: 'last k' } })], { sum, trail, result: res });
+    } else r.step(ln(C_LSK, 'sum += arr[j]'), `Add ${a[j]}.`, [W('arr', a, 0, j)], { sum });
+  }
+  r.step(0, `Answer <b>${res}</b> ([3,4]).`, [lane('arr', a)], { result: res });
+  return r.steps;
+}
+
+const C_AMK = `
+for (int i = 0, j = 0; j < n; j++) {
+    win.merge(nums[j], 1, Integer::sum);
+    while (i < j && win.get(nums[j]) > k)    // only nums[j] can be over k
+        win.merge(nums[i++], -1, Integer::sum);
+    result = Math.max(result, j - i + 1);
+}`;
+function amk() {
+  const a = [1, 2, 3, 1, 2, 3, 1, 2], k = 2, r = recorder(), m = new Map(); let best = 0;
+  r.step(0, `[1,2,3,1,2,3,1,2], k = 2: every value may appear at most twice. Only the newly added value can break the rule.`, [W('nums', a, 0, -1), M('window', m)], { result: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    inc(m, a[j]);
+    while (i < j && m.get(a[j]) > k) { r.step(ln(C_AMK, 'only nums[j]'), `${a[j]} appears ${m.get(a[j])} times → drop nums[${i}] = ${a[i]}.`, [W('nums', a, i, j, { bad: [i] }), M('window', m, a[j])], { result: best }); inc(m, a[i], -1); i++; }
+    best = Math.max(best, j - i + 1); r.step(ln(C_AMK, 'result = Math.max'), `[${i}..${j}] ok → length ${j - i + 1}.`, [W('nums', a, i, j), M('window', m, a[j])], { result: best });
+  }
+  r.step(0, `Answer <b>${best}</b>.`, [lane('nums', a)], { result: best });
+  return r.steps;
+}
+
+const C_LIM = `
+for (int i = 0, j = 0; j < n; j++) {
+    while (!maxD.isEmpty() && maxD.peekLast() < nums[j]) maxD.pollLast();   // decreasing
+    while (!minD.isEmpty() && minD.peekLast() > nums[j]) minD.pollLast();   // increasing
+    maxD.addLast(nums[j]);  minD.addLast(nums[j]);
+    while (maxD.peekFirst() - minD.peekFirst() > limit) {
+        if (maxD.peekFirst() == nums[i]) maxD.pollFirst();
+        if (minD.peekFirst() == nums[i]) minD.pollFirst();
+        i++;
+    }
+    best = Math.max(best, j - i + 1);
+}`;
+function lim() {
+  const a = [10, 1, 2, 4, 7, 2], L = 5, r = recorder(), mx = [], mn = []; let best = 0;
+  const D = () => [lane('maxD (front = max)', mx), lane('minD (front = min)', mn)];
+  r.step(0, `[10,1,2,4,7,2], limit 5. The C++ uses two heaps or a multiset (O(n log n)). Two monotonic deques give max and min in O(1) → O(n).`, [W('nums', a, 0, -1), ...D()], { best: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    while (mx.length && mx[mx.length - 1] < a[j]) mx.pop(); while (mn.length && mn[mn.length - 1] > a[j]) mn.pop(); mx.push(a[j]); mn.push(a[j]);
+    r.step(ln(C_LIM, 'maxD.addLast'), `Add ${a[j]}: smaller values leave maxD's back, bigger ones leave minD's back.`, [W('nums', a, i, j), ...D()], { 'max−min': mx[0] - mn[0], best });
+    while (mx[0] - mn[0] > L) { if (mx[0] === a[i]) mx.shift(); if (mn[0] === a[i]) mn.shift(); i++; r.step(ln(C_LIM, 'maxD.peekFirst() - minD'), `max − min > 5 → drop nums[${i - 1}] = ${a[i - 1]}.`, [W('nums', a, i, j), ...D()], { 'max−min': mx[0] - mn[0], best }); }
+    best = Math.max(best, j - i + 1);
+  }
+  r.step(0, `Answer <b>${best}</b> ([2,4,7,2]).`, [lane('nums', a)], { best });
+  return r.steps;
+}
+
+const C_KU = `
+for (int i = 0, j = 0; j < n; j++) {
+    win.merge(s.charAt(j), 1, Integer::sum);
+    if (win.size() == k) maxLen = Math.max(maxLen, j - i + 1);
+    while (win.size() > k) drop s.charAt(i++);
+}
+return maxLen;                           // -1 if never exactly k`;
+function ku() {
+  const s = 'aabacbebebe', k = 3, r = recorder(), m = new Map(); let best = -1;
+  r.step(0, `"aabacbebebe", k = 3 distinct letters exactly.`, [W('s', [...s], 0, -1), M('window', m)], { maxLen: -1 });
+  for (let i = 0, j = 0; j < s.length; j++) {
+    inc(m, s[j]);
+    if (m.size === k) { best = Math.max(best, j - i + 1); r.step(ln(C_KU, 'maxLen = Math.max'), `${k} distinct → length ${j - i + 1}.`, [W('s', [...s], i, j), M('window', m, s[j])], { maxLen: best }); }
+    else if (m.size < k) r.step(ln(C_KU, 'win.merge'), `Only ${m.size} distinct so far.`, [W('s', [...s], i, j), M('window', m, s[j])], { maxLen: best });
+    while (m.size > k) { inc(m, s[i], -1); i++; r.step(ln(C_KU, 'while (win.size() > k)'), `${m.size >= k + 1 ? 'Still' : 'Now'} ${m.size} distinct after dropping s[${i - 1}].`, [W('s', [...s], i, j), M('window', m)], { maxLen: best }); }
+  }
+  r.step(0, `Answer <b>${best}</b> ("cbebebe").`, [lane('s', [...s])], { maxLen: best });
+  return r.steps;
+}
+
+const C_NICE = `
+for (int i = 0, j = 0; j < n; j++) {
+    while ((mask & nums[j]) != 0) mask ^= nums[i++];   // shared bit: shrink (XOR removes exactly)
+    result = Math.max(result, j - i + 1);
+    mask |= nums[j];
+}`;
+function nice() {
+  const a = [1, 3, 8, 48, 10], r = recorder(); let mask = 0, best = 1; const b = x => x.toString(2).padStart(6, '0');
+  r.step(0, `[1,3,8,48,10]. Nice = no two numbers share a bit, so the window's OR is a disjoint union of bits and XOR can remove one number.`, [W('nums', a, 0, -1)], { mask: b(0) });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    while ((mask & a[j]) !== 0) { r.step(ln(C_NICE, 'shared bit'), `${b(a[j])} & mask ${b(mask)} ≠ 0 → remove ${a[i]}.`, [W('nums', a, i, j, { bad: [i] })], { mask: b(mask), best }); mask ^= a[i]; i++; }
+    best = Math.max(best, j - i + 1); mask |= a[j];
+    r.step(ln(C_NICE, 'mask |= nums[j]'), `Add ${a[j]} (${b(a[j])}) → window length ${j - i + 1}.`, [W('nums', a, i, j)], { mask: b(mask), best });
+  }
+  r.step(0, `Answer <b>${best}</b> ([3,8,48]).`, [lane('nums', a)], { best });
+  return r.steps;
+}
+
+const C_SUMK = `
+first.put(0, -1);
+for (int i = 0; i < n; i++) {
+    sum += nums[i];
+    if (first has sum - k) len = Math.max(len, i - first.get(sum - k));
+    first.putIfAbsent(sum, i);           // keep the EARLIEST index: longest subarray
+}`;
+function sumk() {
+  const a = [10, 5, 2, 7, 1, 9], k = 15, r = recorder(), f = new Map([[0, -1]]); let sum = 0, len = 0;
+  r.step(ln(C_SUMK, 'first.put'), `[10,5,2,7,1,9], K = 15. Negatives are allowed on GfG, so a plain window fails. Prefix sums: sum[i] − sum[j] = K ⇒ subarray (j, i].`, [lane('nums', a, { showIdx: true }), M('first index of prefix', f)], { len: 0 });
+  a.forEach((x, i) => {
+    sum += x; const j = f.get(sum - k); if (j !== undefined) len = Math.max(len, i - j); if (!f.has(sum)) f.set(sum, i);
+    r.step(ln(C_SUMK, j !== undefined ? 'len = Math.max' : 'putIfAbsent'), `prefix ${sum}; need ${sum - k}: ${j !== undefined ? `seen at ${j} → length ${i - j}` : 'not seen'}.`, [lane('nums', a, { showIdx: true, active: [i], done: j !== undefined ? range(j + 1, i) : [] }), M('first index of prefix', f, sum)], { sum, len });
+  });
+  r.step(0, `Answer <b>${len}</b> ([5,2,7,1]).`, [lane('nums', a)], { len });
+  return r.steps;
+}
+
+const C_ONES = `
+for (int i = 0, j = 0; j < n; j++) {
+    if (nums[j] == 0) {
+        i = lastZero + 1;                // jump past the previous zero
+        lastZero = j;
+    }
+    best = Math.max(best, j - i);        // window minus the deleted element
+}`;
+function ones() {
+  const a = [0, 1, 1, 1, 0, 1, 1, 0, 1], r = recorder(); let lz = -1, best = 0;
+  r.step(0, `[0,1,1,1,0,1,1,0,1]. The window may hold at most one 0 (the one we delete). Its useful length is j − i (one element is deleted).`, [W('nums', a, 0, -1)], { best: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    if (a[j] === 0) { i = lz + 1; lz = j; }
+    best = Math.max(best, j - i);
+    r.step(ln(C_ONES, a[j] === 0 ? 'jump past' : 'best = Math.max'), a[j] === 0 ? `New zero at ${j}: jump i to ${i} (just after the previous zero).` : `1 at ${j}: window [${i}..${j}] → ${j - i}.`, [W('nums', a, i, j, { warn: lz >= i ? [lz] : [] })], { lastZero: lz, best });
+  }
+  r.step(0, `Answer <b>${best}</b>.`, [lane('nums', a)], { best });
+  return r.steps;
+}
+
+const C_CONF = `
+for (int i = 0, j = 0; j < n; j++) {
+    cnt[key[j]]++;
+    while (Math.min(cnt[T], cnt[F]) > k) cnt[key[i++]]--;   // flip the rarer letter
+    result = Math.max(result, j - i + 1);
+}`;
+function conf() {
+  const s = 'TTFTTFTT', k = 1, r = recorder(); let t = 0, f = 0, best = k;
+  r.step(0, `"TTFTTFTT", k = 1. A window can be made uniform if the rarer letter appears ≤ k times (flip those).`, [W('key', [...s], 0, -1)], { T: 0, F: 0, result: best });
+  for (let i = 0, j = 0; j < s.length; j++) {
+    if (s[j] === 'T') t++; else f++;
+    while (Math.min(t, f) > k) { r.step(ln(C_CONF, 'flip the rarer'), `T ${t}, F ${f}: rarer > 1 → drop key[${i}].`, [W('key', [...s], i, j, { bad: [i] })], { T: t, F: f, result: best }); if (s[i] === 'T') t--; else f--; i++; }
+    best = Math.max(best, j - i + 1); r.step(ln(C_CONF, 'result = Math.max'), `[${i}..${j}] fixable → ${j - i + 1}.`, [W('key', [...s], i, j)], { T: t, F: f, result: best });
+  }
+  r.step(0, `Answer <b>${best}</b>.`, [lane('key', [...s])], { result: best });
+  return r.steps;
+}
+
+const C_EO = `
+for each pair (a, b), a != b:                     // 20 pairs of digits
+    r grows; prefix counts ca, cb up to r
+    while (window ≥ k && b appears ≥ 2 and a ≥ 1 inside) {
+        record left prefix (pa, pb): minPrev[state(pa, pb)] = min(.., pa − pb);
+        advance l, update pa, pb;
+    }
+    need left with a-parity flipped, same b-parity:
+    result = max(result, (ca − cb) − minPrev[state(ca, cb) ^ 2]);`;
+function eo() {
+  const s = '1122211', k = 3, A = '2', B = '1', n = s.length, r = recorder(), st = (x, y) => (x & 1) << 1 | (y & 1), mp = Array(4).fill(Infinity); let ca = 0, cb = 0, pa = 0, pb = 0, res = -Infinity;
+  r.step(ln(C_EO, 'for each pair'), `"1122211", k = 3. For a fixed pair (a = '2' must be odd, b = '1' must be even and non-zero): substring (l, r] has odd a-count and even b-count iff the prefix parities differ in a and match in b. Keep, per parity state, the smallest prefix (a − b).`, [lane('s', [...s], { showIdx: true })]);
+  for (let l = -1, rr = 0; rr < n; rr++) {
+    if (s[rr] === A) ca++; if (s[rr] === B) cb++;
+    while (rr - l >= k && cb - pb >= 2 && ca - pa >= 1) { const q = st(pa, pb); mp[q] = Math.min(mp[q], pa - pb); l++; if (s[l] === A) pa++; if (s[l] === B) pb++; }
+    const best = mp[st(ca, cb) ^ 2]; if (best !== Infinity) res = Math.max(res, ca - cb - best);
+    r.step(ln(C_EO, best !== Infinity ? 'result = max' : 'r grows'), `r = ${rr}: (ca, cb) = (${ca}, ${cb}), state ${st(ca, cb).toString(2).padStart(2, '0')}; partner state ${(st(ca, cb) ^ 2).toString(2).padStart(2, '0')} min = ${best === Infinity ? '∞' : best}.`, [W('s', [...s], l + 1, rr)], { 'minPrev[00,01,10,11]': mp.map(x => x === Infinity ? '∞' : x).join(','), result: res === -Infinity ? '−∞' : res });
+  }
+  const cnt = (t, c) => [...t].filter(x => x === c).length; let ex = '', overall = -Infinity;
+  for (let x = 0; x < n; x++) for (let y = x + k - 1; y < n; y++) {
+    const t = s.slice(x, y + 1); if (!ex && cnt(t, A) % 2 && cnt(t, B) && cnt(t, B) % 2 === 0 && cnt(t, A) - cnt(t, B) === res) ex = t;
+    for (const a of '01234') for (const b of '01234') if (cnt(t, a) % 2 && cnt(t, b) && cnt(t, b) % 2 === 0) overall = Math.max(overall, cnt(t, a) - cnt(t, b));
+  }
+  r.step(0, `Pair ('${A}', '${B}') gives <b>${res}</b>, e.g. "${ex}". Repeat for all 20 ordered pairs of digits; the maximum over all pairs here is <b>${overall}</b>.`, [lane('s', [...s])], { result: res });
+  return r.steps;
+}
+
+const C_MV = `
+for (int i = 0, j = 0; j < n; j++) {
+    if (isVowel(s.charAt(j))) count++;          // enters
+    if (j - i + 1 == k) {
+        maxV = Math.max(maxV, count);
+        if (isVowel(s.charAt(i++))) count--;    // leaves
+    }
+}`;
+function mv() {
+  const s = 'abciiidef', k = 3, r = recorder(); let c = 0, best = 0;
+  r.step(0, `"abciiidef", k = 3. The template for a FIXED window: add s[j]; when the size hits k, record, then remove s[i].`, [W('s', [...s], 0, -1)], { count: 0, maxV: 0 });
+  for (let i = 0, j = 0; j < s.length; j++) {
+    if (isV(s[j])) c++;
+    if (j - i + 1 === k) { best = Math.max(best, c); r.step(ln(C_MV, 'maxV = Math.max'), `"${s.slice(i, j + 1)}" has ${c} vowels.`, [W('s', [...s], i, j)], { count: c, maxV: best }); if (isV(s[i])) c--; i++; }
+    else r.step(ln(C_MV, '// enters'), `Fill the first window: '${s[j]}'.`, [W('s', [...s], i, j)], { count: c, maxV: best });
+  }
+  r.step(0, `Answer <b>${best}</b>.`, [lane('s', [...s])], { maxV: best });
+  return r.steps;
+}
+
+const C_CARD = `
+int l = n - k;                           // cards you do NOT take form one middle block
+for (int i = 0, j = 0; j < n; j++) {
+    total += cardPoints[j];  cur += cardPoints[j];
+    if (j - i + 1 == l) {
+        minSum = Math.min(minSum, cur);  // cheapest block to leave behind
+        cur -= cardPoints[i++];
+    }
+}
+return minSum == MAX ? total : total - minSum;`;
+function card() {
+  const a = [1, 2, 3, 4, 5, 6, 1], k = 3, n = a.length, l = n - k, r = recorder(); let total = 0, cur = 0, mn = Infinity, mi = 0;
+  r.step(ln(C_CARD, 'int l = n - k'), `[1,2,3,4,5,6,1], take k = 3 from the ends. Flip it: the cards left behind are one contiguous block of n − k = ${l}. Minimise that block.`, [W('cardPoints', a, 0, -1)], {});
+  for (let i = 0, j = 0; j < n; j++) {
+    total += a[j]; cur += a[j];
+    if (j - i + 1 === l) { if (cur < mn) { mn = cur; mi = i; } r.step(ln(C_CARD, 'cheapest block'), `Leave [${i}..${j}] behind (sum ${cur}); the ${k} cards outside it are taken.`, [W('cardPoints', a, i, j)], { cur, minSum: mn }); cur -= a[i]; i++; }
+  }
+  r.step(ln(C_CARD, 'total - minSum'), `total ${total} − cheapest block ${mn} = <b>${total - mn}</b>: take the cards outside [${mi}..${mi + l - 1}] (green).`, [W('cardPoints', a, mi, mi + l - 1, { done: [...range(0, mi - 1), ...range(mi + l, n - 1)], noGhost: true })], { answer: total - mn });
+  return r.steps;
+}
+
+const C_DSUM = `
+for (int i = 0, j = 0; j < n; j++) {
+    while (win.contains(nums[j])) { sum -= nums[i]; win.remove(nums[i++]); }   // make room
+    sum += nums[j];  win.add(nums[j]);
+    if (j - i + 1 == k) {
+        result = Math.max(result, sum);
+        sum -= nums[i];  win.remove(nums[i++]);
+    }
+}`;
+function dsum() {
+  const a = [1, 5, 4, 2, 9, 9, 9], k = 3, r = recorder(), set = new Set(); let sum = 0, best = 0;
+  r.step(0, `[1,5,4,2,9,9,9], k = 3, all distinct. Before adding a duplicate, evict from the left until it is gone.`, [W('nums', a, 0, -1), lane('set', [])], { result: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    while (set.has(a[j])) { r.step(ln(C_DSUM, 'make room'), `${a[j]} already inside → evict ${a[i]}.`, [W('nums', a, i, j - 1, { bad: [i], ptr: { [j]: 'j' } }), lane('set', [...set])], { sum, result: best }); sum -= a[i]; set.delete(a[i]); i++; }
+    sum += a[j]; set.add(a[j]);
+    if (j - i + 1 === k) { best = Math.max(best, sum); r.step(ln(C_DSUM, 'result = Math.max'), `[${i}..${j}] distinct, sum ${sum}.`, [W('nums', a, i, j, { done: range(i, j) }), lane('set', [...set])], { sum, result: best }); sum -= a[i]; set.delete(a[i]); i++; }
+    else r.step(ln(C_DSUM, 'win.add'), `Add ${a[j]}.`, [W('nums', a, i, j), lane('set', [...set])], { sum, result: best });
+  }
+  r.step(0, `Answer <b>${best}</b>.`, [lane('nums', a)], { result: best });
+  return r.steps;
+}
+
+const C_FLIP = `
+for (int i = 0, j = 0; j < 2 * n; j++) {          // rotations = windows over s + s
+    char c = s.charAt(j % n);
+    if (c != (j % 2 == 0 ? '0' : '1')) f1++;       // vs 0101...
+    if (c != (j % 2 == 0 ? '1' : '0')) f2++;       // vs 1010...
+    if (j - i + 1 > n) { undo s.charAt(i % n) at position i; i++; }
+    if (j - i + 1 == n) result = Math.min(result, Math.min(f1, f2));
+}`;
+function flip() {
+  const s = '111000', n = s.length, d = [...s + s], r = recorder(); let f1 = 0, f2 = 0, res = Infinity;
+  const exp1 = t => t % 2 ? '1' : '0', exp2 = t => t % 2 ? '0' : '1';
+  r.step(0, `"111000". Type-1 (move the first char to the end) = a rotation. Every rotation is a window of length n over s + s; count mismatches against both alternating patterns.`, [W('s + s', d, 0, -1), lane('pattern 0101…', d.map((_, t) => exp1(t)))], {});
+  for (let i = 0, j = 0; j < 2 * n; j++) {
+    if (d[j] !== exp1(j)) f1++; if (d[j] !== exp2(j)) f2++;
+    if (j - i + 1 > n) { if (d[i] !== exp1(i)) f1--; if (d[i] !== exp2(i)) f2--; i++; }
+    if (j - i + 1 === n) { res = Math.min(res, f1, f2); r.step(ln(C_FLIP, 'result = Math.min'), `Rotation starting at ${i}: "${d.slice(i, j + 1).join('')}" needs ${f1} (vs 0101) or ${f2} (vs 1010) flips.`, [W('s + s', d, i, j), lane('pattern 0101…', d.map((_, t) => exp1(t)), { active: range(i, j) })], { f1, f2, result: res }); }
+  }
+  r.step(0, `Answer <b>${res}</b>.`, [lane('s', [...s])], { result: res });
+  return r.steps;
+}
+
+const C_MINS = `
+for (int i = 0, j = 0; j < n; j++) {
+    sum += nums[j];
+    while (sum >= target) {               // valid: try to make it shorter
+        minL = Math.min(minL, j - i + 1);
+        sum -= nums[i++];
+    }
+}`;
+function mins() {
+  const a = [2, 3, 1, 2, 4, 3], t = 7, r = recorder(); let sum = 0, best = Infinity;
+  r.step(0, `target 7, [2,3,1,2,4,3]. All positive: growing raises the sum, shrinking lowers it. Grow until valid, then shrink while still valid.`, [W('nums', a, 0, -1)], { sum: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    sum += a[j]; r.step(ln(C_MINS, 'sum += nums[j]'), `Add ${a[j]} → sum ${sum}.`, [W('nums', a, i, j)], { sum, minL: best === Infinity ? '∞' : best });
+    while (sum >= t) { best = Math.min(best, j - i + 1); r.step(ln(C_MINS, 'minL = Math.min'), `sum ${sum} ≥ 7 with length ${j - i + 1} → shrink.`, [W('nums', a, i, j, { done: range(i, j) })], { sum, minL: best }); sum -= a[i]; i++; }
+  }
+  r.step(0, `Answer <b>${best}</b> ([4,3]).`, [lane('nums', a)], { minL: best });
+  return r.steps;
+}
+
+const C_SW2 = `
+int ones = total number of 1s;                     // the final block size
+for (int i = 0, j = 0; j < 2 * n; j++) {           // circular: index j % n
+    cur += nums[j % n];
+    if (j - i + 1 > ones) cur -= nums[i++ % n];
+    best = Math.max(best, cur);                    // most 1s already in place
+}
+return ones - best;`;
+function sw2() {
+  const a = [0, 1, 0, 1, 1, 0, 0], n = a.length, ones = 3, d = [...a, ...a], r = recorder(); let cur = 0, best = 0;
+  r.step(ln(C_SW2, 'int ones'), `Circle [0,1,0,1,1,0,0] has 3 ones → the final block is any 3 consecutive (wrapping) cells. Swaps = 0s inside that block.`, [W('nums (circle twice)', d, 0, -1)], { ones });
+  for (let i = 0, j = 0; j < 2 * n; j++) {
+    cur += d[j]; if (j - i + 1 > ones) { cur -= d[i]; i++; } best = Math.max(best, cur);
+    if (j - i + 1 === ones) r.step(ln(C_SW2, 'most 1s already'), `Block [${i % n}..${j % n}] holds ${cur} ones.`, [W('nums (circle twice)', d, i, j)], { cur, best });
+  }
+  r.step(ln(C_SW2, 'return ones - best'), `Answer 3 − ${best} = <b>${ones - best}</b>.`, [lane('nums', a)], { answer: ones - best });
+  return r.steps;
+}
+
+const C_SW1 = `
+int w = total number of 1s;
+if (w == 0) return 0;                          // the C++ returns -1 here (wrong)
+zeros = 0s in data[0..w-1];
+for (int i = 1, j = w; j < n; i++, j++) {
+    if (data[i - 1] == 0) zeros--;             // leaves
+    if (data[j] == 0) zeros++;                 // enters
+    minZeros = Math.min(minZeros, zeros);
+}`;
+function sw1() {
+  const a = [1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1], w = 6, r = recorder(); let z = 0; for (let t = 0; t < w; t++) if (a[t] === 0) z++; let mn = z;
+  r.step(ln(C_SW1, 'int w'), `${w} ones → slide a window of ${w}; each 0 inside must be swapped out.`, [W('data', a, 0, w - 1)], { zeros: z, min: mn });
+  for (let i = 1, j = w; j < a.length; i++, j++) { if (a[i - 1] === 0) z--; if (a[j] === 0) z++; mn = Math.min(mn, z); r.step(ln(C_SW1, 'minZeros = Math.min'), `Window [${i}..${j}] has ${z} zeros.`, [W('data', a, i, j)], { zeros: z, min: mn }); }
+  r.step(0, `Answer <b>${mn}</b>. Edge case: no 1s at all needs 0 swaps; the C++ file returns −1 (and also does not compile: it uses undeclared n and arr).`, [lane('data', a)], { answer: mn });
+  return r.steps;
+}
+
+const C_MW = `
+int[] need = counts of t;  int required = t.length();
+for (int i = 0, j = 0; j < n; j++) {
+    if (need[s[j]]-- > 0) required--;          // a still-needed letter arrived
+    while (required == 0) {                    // window covers t
+        record [i..j] if shorter;
+        if (++need[s[i++]] > 0) required++;    // gave back a needed letter
+    }
+}`;
+function mw() {
+  const s = 'ADOBECODEBANC', t = 'ABC', r = recorder(), need = { A: 1, B: 1, C: 1 }; let req = 3, bs = 0, bl = Infinity;
+  const N = () => lane('need (≤ 0 = surplus)', Object.keys(need).map(c => `${c}:${need[c]}`));
+  r.step(ln(C_MW, 'int[] need'), `s = "ADOBECODEBANC", t = "ABC". need[] counts what is still missing; required = how many letters of t are still missing.`, [W('s', [...s], 0, -1), N()], { required: 3 });
+  for (let i = 0, j = 0; j < s.length; j++) {
+    if ((need[s[j]] = (need[s[j]] || 0) - 1) >= 0) { req--; r.step(ln(C_MW, 'a still-needed'), `'${s[j]}' was needed → required ${req}.`, [W('s', [...s], i, j), N()], { required: req, best: bl === Infinity ? '—' : s.substr(bs, bl) }); }
+    while (req === 0) {
+      if (j - i + 1 < bl) { bl = j - i + 1; bs = i; }
+      r.step(ln(C_MW, 'record [i..j]'), `Covered: "${s.slice(i, j + 1)}" (length ${j - i + 1}). Shrink.`, [W('s', [...s], i, j, { done: range(i, j) }), N()], { required: req, best: s.substr(bs, bl) });
+      if ((need[s[i]] = (need[s[i]] || 0) + 1) > 0) req++; i++;
+    }
+  }
+  r.step(0, `Answer <b>"${s.substr(bs, bl)}"</b>.`, [W('s', [...s], bs, bs + bl - 1, { done: range(bs, bs + bl - 1), noGhost: true })]);
+  return r.steps;
+}
+
+const C_BMAX = `
+for (int i = 0, j = 0; j < n; j++) {
+    if (left <= nums[j] && nums[j] <= right) { prev = j - i + 1; count += prev; }  // new max candidate
+    else if (nums[j] < left) count += prev;     // rides on the last in-range element
+    else { i = j + 1; prev = 0; }               // too big: nothing crosses it
+}`;
+function bmax() {
+  const a = [2, 9, 2, 5, 6], L = 2, R = 8, r = recorder(); let cnt = 0, prev = 0;
+  r.step(0, `[2,9,2,5,6], max must be in [2, 8]. prev = number of valid subarrays ending at the previous position.`, [W('nums', a, 0, -1)], { count: 0 });
+  for (let i = 0, j = 0; j < a.length; j++) {
+    let line, say;
+    if (a[j] >= L && a[j] <= R) { prev = j - i + 1; cnt += prev; line = 'new max candidate'; say = `${a[j]} in range → every start in [${i}..${j}] works: +${prev}.`; }
+    else if (a[j] < L) { cnt += prev; line = 'rides on'; say = `${a[j]} < left → same starts as before: +${prev}.`; }
+    else { i = j + 1; prev = 0; line = 'too big'; say = `${a[j]} > right → reset after it.`; }
+    r.step(ln(C_BMAX, line), say, [W('nums', a, i, j, a[j] > R ? { bad: [j] } : {})], { prev, count: cnt });
+  }
+  r.step(0, `Answer <b>${cnt}</b>.`, [lane('nums', a)], { count: cnt });
+  return r.steps;
+}
+
+const C_ABC = `
+for (int i = 0, j = 0; j < n; j++) {
+    cnt[s.charAt(j) - 'a']++;
+    while (cnt[0] > 0 && cnt[1] > 0 && cnt[2] > 0) {
+        result += n - j;                 // [i..j], [i..j+1], ..., [i..n-1]
+        cnt[s.charAt(i++) - 'a']--;
+    }
+}`;
+function abc() {
+  const s = 'abcabc', n = s.length, r = recorder(), c = [0, 0, 0]; let res = 0;
+  r.step(0, `"abcabc". Once [i..j] has a, b and c, every longer end works too: count n − j at once.`, [W('s', [...s], 0, -1)], { result: 0 });
+  for (let i = 0, j = 0; j < n; j++) {
+    c[s.charCodeAt(j) - 97]++;
+    if (!(c[0] && c[1] && c[2])) r.step(ln(C_ABC, 'cnt[s.charAt(j)'), `Add '${s[j]}' → counts a${c[0]} b${c[1]} c${c[2]}.`, [W('s', [...s], i, j)], { result: res });
+    while (c[0] && c[1] && c[2]) { res += n - j; r.step(ln(C_ABC, 'result += n - j'), `[${i}..${j}] has all three → +${n - j}.`, [W('s', [...s], i, j, { done: range(j, n - 1) })], { result: res }); c[s.charCodeAt(i) - 97]--; i++; }
+  }
+  r.step(0, `Answer <b>${res}</b>.`, [lane('s', [...s])], { result: res });
+  return r.steps;
+}
+
+const C_PERM = `
+for (int i = 0, j = 0; j < m; j++) {
+    have[s2.charAt(j) - 'a']++;
+    if (j - i + 1 > n) have[s2.charAt(i++) - 'a']--;   // keep the window at |s1|
+    if (Arrays.equals(need, have)) return true;
+}
+return false;`;
+function perm() {
+  const s1 = 'ab', s2 = 'eidbaooo', r = recorder(), have = {};
+  const H = () => lane('window counts', Object.keys(have).filter(c => have[c]).map(c => `${c}:${have[c]}`), { tag: 'need a:1, b:1' });
+  r.step(0, `s1 = "ab", s2 = "eidbaooo". A permutation of s1 = a window of length 2 with the same letter counts.`, [W('s2', [...s2], 0, -1), H()]);
+  for (let i = 0, j = 0; j < s2.length; j++) {
+    have[s2[j]] = (have[s2[j]] || 0) + 1; if (j - i + 1 > s1.length) { have[s2[i]]--; i++; }
+    const eq = have.a === 1 && have.b === 1 && j - i + 1 === 2;
+    r.step(ln(C_PERM, eq ? 'return true' : 'keep the window'), `Window "${s2.slice(i, j + 1)}": ${eq ? 'counts match → <b>true</b>' : 'no match'}.`, [W('s2', [...s2], i, j, eq ? { done: range(i, j) } : {}), H()]);
+    if (eq) break;
+  }
+  return r.steps;
+}
+
+const C_RES = `
+gaps = [start[0], start[1] − end[0], ..., eventTime − end[m−1]];   // m + 1 gaps
+for (int i = 0, j = 0; j <= m; j++) {
+    sum += gaps[j];
+    if (j - i + 1 > k + 1) sum -= gaps[i++];   // moving k meetings merges k + 1 gaps
+    best = Math.max(best, sum);
+}`;
+function res() {
+  const T = 10, k = 1, st = [0, 2, 9], en = [1, 4, 10], g = [st[0], st[1] - en[0], st[2] - en[1], T - en[2]], r = recorder(); let sum = 0, best = 0;
+  r.step(ln(C_RES, 'gaps ='), `eventTime 10, meetings [0,1], [2,4], [9,10], k = 1. Free gaps between them: [${g}]. Sliding k meetings to one side glues k + 1 neighbouring gaps together.`, [lane('gaps', g, { showIdx: true })], {});
+  for (let i = 0, j = 0; j < g.length; j++) { sum += g[j]; if (j - i + 1 > k + 1) { sum -= g[i]; i++; } best = Math.max(best, sum); r.step(ln(C_RES, 'merges k + 1 gaps'), `Gaps [${i}..${j}] merge into ${sum} free minutes.`, [W('gaps', g, i, j)], { sum, best }); }
+  r.step(0, `Answer <b>${best}</b>: move [2,4] to [1,3] → free [3,9].`, [lane('gaps', g)], { best });
+  return r.steps;
+}
+
+const C_SHK = `
+for (int j = 0; j < n; j++) {
+    pre[j] = pre[j − 1] + nums[j];
+    if (pre[j] >= K) result = min(result, j + 1);
+    while (deq not empty && pre[j] − pre[deq.first] >= K)
+        result = min(result, j − deq.pollFirst());      // best start for j; never needed again
+    while (deq not empty && pre[j] <= pre[deq.last]) deq.pollLast();  // keep prefixes increasing
+    deq.addLast(j);
+}`;
+function shk() {
+  const a = [84, -37, 32, 40, 95], K = 167, r = recorder(), pre = [], dq = []; let res = Infinity;
+  r.step(0, `[84,−37,32,40,95], K = 167. Negatives break the plain window. Use prefix sums: subarray (i, j] = pre[j] − pre[i]. A deque keeps candidate starts with increasing prefix.`, [lane('nums', a, { showIdx: true })]);
+  a.forEach((x, j) => {
+    pre.push((j ? pre[j - 1] : 0) + x); if (pre[j] >= K) res = Math.min(res, j + 1);
+    while (dq.length && pre[j] - pre[dq[0]] >= K) { res = Math.min(res, j - dq[0]); r.step(ln(C_SHK, 'best start for j'), `pre[${j}] − pre[${dq[0]}] = ${pre[j] - pre[dq[0]]} ≥ ${K} → length ${j - dq[0]}; pop it.`, [lane('prefix', pre, { showIdx: true, active: [j], done: [dq[0]] }), lane('deque (indices)', dq)], { result: res }); dq.shift(); }
+    while (dq.length && pre[j] <= pre[dq[dq.length - 1]]) { r.step(ln(C_SHK, 'keep prefixes increasing'), `pre[${j}] = ${pre[j]} ≤ pre[${dq[dq.length - 1]}]: the later, lower start is always better → pop back.`, [lane('prefix', pre, { showIdx: true, active: [j], bad: [dq[dq.length - 1]] }), lane('deque (indices)', dq)], { result: res === Infinity ? '∞' : res }); dq.pop(); }
+    dq.push(j); r.step(ln(C_SHK, 'deq.addLast'), `Push ${j} (prefix ${pre[j]}).`, [lane('prefix', pre, { showIdx: true, active: [j] }), lane('deque (indices)', dq)], { result: res === Infinity ? '∞' : res });
+  });
+  r.step(0, `Answer <b>${res}</b> ([32,40,95]).`, [lane('nums', a)], { result: res });
+  return r.steps;
+}
+
+const C_BEAU = `
+for (int i = 0, j = 0; j < n; j++) {
+    if (s.charAt(j) == '1') ones++;
+    while (i <= j && (ones > k || s.charAt(i) == '0'))   // too many 1s, or a useless leading 0
+        if (s.charAt(i++) == '1') ones--;
+    if (ones == k) keep s[i..j] if shorter, or same length and smaller;
+}`;
+function beau() {
+  const s = '100011001', k = 3, r = recorder(); let ones = 0, best = '';
+  r.step(0, `"100011001", k = 3 ones. The shortest such substring starts and ends with 1: drop leading zeros and extra ones.`, [W('s', [...s], 0, -1)], { best: '—' });
+  for (let i = 0, j = 0; j < s.length; j++) {
+    if (s[j] === '1') ones++;
+    while (i <= j && (ones > k || s[i] === '0')) { if (s[i] === '1') ones--; i++; }
+    if (ones === k) { const t = s.slice(i, j + 1); if (!best || t.length < best.length || (t.length === best.length && t < best)) best = t; r.step(ln(C_BEAU, 'keep s[i..j]'), `"${t}" has 3 ones (length ${t.length}).`, [W('s', [...s], i, j, { done: range(i, j) })], { ones, best }); }
+    else r.step(ln(C_BEAU, 'too many 1s'), `j = ${j}: ${ones} ones in a trimmed window.`, [W('s', [...s], i, j)], { ones, best: best || '—' });
+  }
+  r.step(0, `Answer <b>"${best}"</b>.`, [lane('s', [...s])], { best });
+  return r.steps;
+}
+
+const C_SWM = `
+for (int i = 0; i < n; i++) {
+    while (!deq.isEmpty() && deq.peekFirst() <= i - k) deq.pollFirst();       // expired
+    while (!deq.isEmpty() && nums[i] > nums[deq.peekLast()]) deq.pollLast();  // can never be max again
+    deq.addLast(i);
+    if (i >= k - 1) result[i - k + 1] = nums[deq.peekFirst()];                // front = max
+}`;
+function swm() {
+  const a = [1, 3, -1, -3, 5, 3, 6, 7], k = 3, r = recorder(), dq = [], out = [];
+  const D = () => lane('deque (values, front = max)', dq.map(x => a[x]), { tag: 'indices ' + dq.join(',') });
+  r.step(0, `[1,3,−1,−3,5,3,6,7], k = 3. A deque of indices with DECREASING values: a smaller element behind a bigger, newer one can never become the max.`, [W('nums', a, 0, -1), D()]);
+  for (let i = 0; i < a.length; i++) {
+    while (dq.length && dq[0] <= i - k) { dq.shift(); r.step(ln(C_SWM, '// expired'), `Front left the window → pop front.`, [W('nums', a, Math.max(0, i - k + 1), i), D()], { result: `[${out}]` }); }
+    while (dq.length && a[i] > a[dq[dq.length - 1]]) { r.step(ln(C_SWM, 'can never be max again'), `${a[i]} > ${a[dq[dq.length - 1]]} → pop back.`, [W('nums', a, Math.max(0, i - k + 1), i, { bad: [dq[dq.length - 1]] }), D()], { result: `[${out}]` }); dq.pop(); }
+    dq.push(i);
+    if (i >= k - 1) { out.push(a[dq[0]]); r.step(ln(C_SWM, 'front = max'), `Window [${i - k + 1}..${i}] max = ${a[dq[0]]}.`, [W('nums', a, i - k + 1, i, { done: [dq[0]] }), D()], { result: `[${out}]` }); }
+    else r.step(ln(C_SWM, 'deq.addLast'), `Push ${a[i]}.`, [W('nums', a, 0, i), D()], { result: `[${out}]` });
+  }
+  return r.steps;
+}
+const C_SWH = `
+for (int i = 0; i < n; i++) {
+    while (!pq.isEmpty() && pq.peek()[1] <= i - k) pq.poll();   // lazy delete expired tops
+    pq.add(new int[]{nums[i], i});
+    if (i >= k - 1) result[i - k + 1] = pq.peek()[0];
+}`;
+function swh() {
+  return story([[0, `Heap version: push (value, index); before reading the top, throw away tops whose index left the window. Stale entries deeper in the heap are harmless until they surface.`, [lane('nums', [1, 3, -1, -3, 5, 3, 6, 7], { showIdx: true })]],
+    [ln(C_SWH, 'lazy delete'), `Worst case (increasing input) nothing is ever popped early → O(n log n). The deque is O(n): every index enters and leaves once.`, [lane('result', [3, 3, 5, 5, 6, 7], { done: range(0, 5) })]]]);
+}
+
+const C_012 = `
+for (int i = 0, j = 0; j < n; j++) {
+    cnt[s.charAt(j) - '0']++;
+    while (cnt[0] > 0 && cnt[1] > 0 && cnt[2] > 0) {   // has all three: shrink
+        result = Math.min(result, j - i + 1);
+        cnt[s.charAt(i++) - '0']--;
+    }
+}`;
+function z12() {
+  const s = '10212', r = recorder(), c = [0, 0, 0]; let best = Infinity;
+  r.step(0, `"10212": shortest window with a 0, a 1 and a 2. Same template as Minimum Window Substring with a tiny alphabet.`, [W('s', [...s], 0, -1)], {});
+  for (let i = 0, j = 0; j < s.length; j++) {
+    c[+s[j]]++; r.step(ln(C_012, "cnt[s.charAt(j) - '0']++"), `Add '${s[j]}'.`, [W('s', [...s], i, j)], { cnt: c.join(','), result: best === Infinity ? '∞' : best });
+    while (c[0] && c[1] && c[2]) { best = Math.min(best, j - i + 1); r.step(ln(C_012, 'has all three'), `All three present, length ${j - i + 1} → shrink.`, [W('s', [...s], i, j, { done: range(i, j) })], { cnt: c.join(','), result: best }); c[+s[i]]--; i++; }
+  }
+  r.step(0, `Answer <b>${best}</b>.`, [lane('s', [...s])], { result: best });
+  return r.steps;
+}
+
+const C_PROD = `
+if (k <= 1) return 0;
+for (int left = 0, right = 0; right < n; right++) {
+    prod *= nums[right];
+    while (prod >= k) prod /= nums[left++];       // positive numbers: dividing shrinks
+    count += right - left + 1;                    // subarrays ending at right
+}`;
+function prod() {
+  const a = [10, 5, 2, 6], k = 100, r = recorder(); let p = 1, c = 0;
+  r.step(ln(C_PROD, 'if (k <= 1)'), `[10,5,2,6], k = 100. Positive numbers: the product only grows when the window grows.`, [W('nums', a, 0, -1)], { prod: 1, count: 0 });
+  for (let l = 0, rr = 0; rr < a.length; rr++) {
+    p *= a[rr];
+    while (p >= k) { r.step(ln(C_PROD, 'dividing shrinks'), `prod ${p} ≥ 100 → divide out ${a[l]}.`, [W('nums', a, l, rr, { bad: [l] })], { prod: p, count: c }); p /= a[l]; l++; }
+    c += rr - l + 1; r.step(ln(C_PROD, 'subarrays ending at right'), `[${l}..${rr}] product ${p} → +${rr - l + 1}.`, [W('nums', a, l, rr)], { prod: p, count: c });
+  }
+  r.step(0, `Answer <b>${c}</b>.`, [lane('nums', a)], { count: c });
+  return r.steps;
+}
+
+const C_KD = `
+for (int iSmall = 0, iBig = 0, j = 0; j < n; j++) {
+    add nums[j];
+    while (win.size() > k) { drop nums[iSmall++]; iBig = iSmall; }   // too many: both move
+    while (win.get(nums[iSmall]) > 1) drop nums[iSmall++];          // spare copy: iSmall moves
+    if (win.size() == k) result += iSmall - iBig + 1;               // starts iBig..iSmall
+}`;
+function kd() {
+  const a = [1, 2, 1, 2, 3], k = 2, r = recorder(), m = new Map(); let res = 0;
+  r.step(0, `[1,2,1,2,3], k = 2 exactly. iBig = earliest valid start, iSmall = latest (no spare copies to its left can be dropped without losing a value). All starts between them work.`, [lane('nums', a, { showIdx: true }), M('window', m)], { result: 0 });
+  for (let s = 0, b = 0, j = 0; j < a.length; j++) {
+    inc(m, a[j]);
+    while (m.size > k) { inc(m, a[s], -1); s++; b = s; }
+    while (m.get(a[s]) > 1) { inc(m, a[s], -1); s++; }
+    if (m.size === k) res += s - b + 1;
+    r.step(ln(C_KD, m.size === k ? 'starts iBig..iSmall' : 'add nums[j]'), `j = ${j}: iBig = ${b}, iSmall = ${s}${m.size === k ? ` → +${s - b + 1}` : ''}.`, [lane('nums', a, { showIdx: true, active: range(s, j), warn: range(b, s - 1), ghost: range(0, b - 1), ptr: { [b]: 'big', [s]: s === b ? 'big,small' : 'small' } }), M('window', m, a[j])], { result: res });
+  }
+  r.step(0, `Answer <b>${res}</b>.`, [lane('nums', a)], { result: res });
+  return r.steps;
+}
+const C_KD2 = `
+exactly(k) = atMost(k) − atMost(k − 1);
+atMost(k): shrink while > k distinct; count += j − i + 1;`;
+function kd2() {
+  const a = [1, 2, 1, 2, 3], at = k => { const m = new Map(); let c = 0; for (let i = 0, j = 0; j < a.length; j++) { inc(m, a[j]); while (m.size > k) { inc(m, a[i], -1); i++; } c += j - i + 1; } return c; };
+  return story([[ln(C_KD2, 'atMost(k):'), `"Exactly k" is not monotone, but "at most k" is: shrinking never breaks it. atMost(2) = ${at(2)}.`, [lane('nums', a, { showIdx: true })], { 'atMost(2)': at(2) }],
+    [ln(C_KD2, 'exactly(k)'), `atMost(1) = ${at(1)}. Exactly 2 = ${at(2)} − ${at(1)} = <b>${at(2) - at(1)}</b>.`, [lane('nums', a)], { 'atMost(1)': at(1), answer: at(2) - at(1) }]]);
+}
+
+const C_CAT = `
+for (int off = 0; off < w; off++) {                 // w separate word grids
+    for (int i = off, j = off; j + w <= n; j += w) {
+        String word = s.substring(j, j + w);
+        if (!need.containsKey(word)) { reset; i = j + w; continue; }
+        have[word]++;  used++;
+        while (have[word] > need[word]) { drop the word at i; i += w; used--; }
+        if (used == words.length) result.add(i);
+    }
+}`;
+function cat() {
+  const s = 'barfoothefoobarman', w = 3, need = { foo: 1, bar: 1 }, r = recorder(), out = [];
+  r.step(0, `words = ["foo","bar"], w = 3. Cut s into word-sized cells starting at offset 0, 1, 2; on each grid it is a normal window over words.`, [lane('s', [...s], { showIdx: true })]);
+  for (let off = 0; off < w; off++) {
+    const cells = []; for (let j = off; j + w <= s.length; j += w) cells.push(s.slice(j, j + w));
+    const have = {}; let used = 0, i = 0;
+    for (let j = 0; j < cells.length; j++) {
+      const word = cells[j];
+      if (!need[word]) { for (const x in have) delete have[x]; used = 0; i = j + 1; r.step(ln(C_CAT, 'reset'), `Offset ${off}: "${word}" is not a word → reset after it.`, [W(`offset ${off} grid`, cells, i, j, { bad: [j] })], { result: `[${out}]` }); continue; }
+      have[word] = (have[word] || 0) + 1; used++;
+      while (have[word] > need[word]) { have[cells[i]]--; used--; i++; }
+      if (used === 2) { out.push(off + i * w); r.step(ln(C_CAT, 'result.add'), `Offset ${off}: [${cells.slice(i, j + 1).join(' ')}] uses every word once → index ${off + i * w}.`, [W(`offset ${off} grid`, cells, i, j, { done: range(i, j) })], { result: `[${out}]` }); }
+      else r.step(ln(C_CAT, 'have[word]++'), `Offset ${off}: take "${word}".`, [W(`offset ${off} grid`, cells, i, j)], { result: `[${out}]` });
+    }
+  }
+  r.step(0, `Answer <b>[${out.sort((x, y) => x - y)}]</b>. The C++ file only has the brute force ("sliding window: coming soon"); this is that window.`, [lane('s', [...s])]);
+  return r.steps;
+}
+
+const C_TAKE = `
+count all letters; if any < k return -1;
+for (int i = 0, j = 0; j < n; j++) {
+    cnt[s[j]]--;                         // s[j] joins the KEPT middle
+    while (i <= j && some cnt < k) cnt[s[i++]]++;   // took too few outside: give back
+    keep = Math.max(keep, j - i + 1);
+}
+return n - keep;`;
+function take() {
+  const s = 'aabaaaacaabc', k = 2, n = s.length, r = recorder(), c = { a: 0, b: 0, c: 0 }; for (const ch of s) c[ch]++; let keep = 0;
+  r.step(ln(C_TAKE, 'count all letters'), `"aabaaaacaabc", k = 2. Taking from both ends = keeping one middle block. Keep the longest block whose OUTSIDE still has ≥ 2 of each letter.`, [W('s', [...s], 0, -1)], { outside: `a${c.a} b${c.b} c${c.c}` });
+  for (let i = 0, j = 0; j < n; j++) {
+    c[s[j]]--;
+    while (i <= j && (c.a < k || c.b < k || c.c < k)) { c[s[i]]++; i++; }
+    keep = Math.max(keep, j - i + 1);
+    r.step(ln(C_TAKE, 'keep = Math.max'), `Kept block [${i}..${j}], outside a${c.a} b${c.b} c${c.c}.`, [W('s', [...s], i, j)], { keep });
+  }
+  r.step(ln(C_TAKE, 'return n - keep'), `Answer ${n} − ${keep} = <b>${n - keep}</b> minutes.`, [lane('s', [...s])], { answer: n - keep });
+  return r.steps;
+}
+
+const C_BOMB = `
+int i = k > 0 ? 1 : n + k,  j = k > 0 ? k : n - 1;   // window after (k>0) or before (k<0) index 0
+sum = code[i] + ... + code[j];
+for (int t = 0; t < n; t++) {
+    result[t] = sum;
+    sum -= code[i++ % n];  sum += code[++j % n];       // both ends step forward around the circle
+}`;
+function bomb() {
+  const a = [5, 7, 1, 4], k = 3, n = a.length, r = recorder(), out = Array(n).fill('?'); let i = 1, j = k, sum = 0; for (let p = i; p <= j; p++) sum += a[p];
+  const cw = (i, j) => { const s = []; for (let t = i; t <= j; t++) s.push(t % n); return s; };
+  r.step(ln(C_BOMB, 'int i = k > 0'), `Circle [5,7,1,4], k = 3: each value becomes the sum of the next 3. Start with the window after index 0: indices 1..3.`, [lane('code', a, { showIdx: true, active: cw(i, j) }), lane('result', out)], { sum });
+  for (let t = 0; t < n; t++) { out[t] = sum; r.step(ln(C_BOMB, 'result[t] = sum'), `result[${t}] = ${sum}. Slide: −code[${i % n}], +code[${(j + 1) % n}].`, [lane('code', a, { showIdx: true, active: cw(i, j), ptr: { [t]: 'here' } }), lane('result', out, { active: [t] })], { sum }); sum -= a[i % n]; i++; j++; sum += a[j % n]; }
+  r.step(0, `Answer <b>[${out}]</b>. For k < 0 the same window starts at n + k (the |k| elements before index 0).`, [lane('result', out)]);
+  return r.steps;
+}
+
+const C_REC = `
+for (int i = 0, j = 0; j < n; j++) {
+    if (blocks.charAt(j) == 'W') w++;
+    if (j - i + 1 == k) {
+        ops = Math.min(ops, w);                   // whites to repaint here
+        if (blocks.charAt(i++) == 'W') w--;
+    }
+}`;
+function rec() {
+  const s = 'WBBWWBBWBW', k = 7, r = recorder(); let w = 0, ops = k;
+  r.step(0, `"WBBWWBBWBW", k = 7. Each window of 7 needs one repaint per white inside.`, [W('blocks', [...s], 0, -1)], { ops });
+  for (let i = 0, j = 0; j < s.length; j++) {
+    if (s[j] === 'W') w++;
+    if (j - i + 1 === k) { ops = Math.min(ops, w); r.step(ln(C_REC, 'whites to repaint'), `[${i}..${j}] has ${w} whites.`, [W('blocks', [...s], i, j)], { w, ops }); if (s[i] === 'W') w--; i++; }
+  }
+  r.step(0, `Answer <b>${ops}</b>.`, [lane('blocks', [...s])], { ops });
+  return r.steps;
+}
+
+const T = (name, hook, mantra, statement, anims, recall, links = []) => ({ name, hook, mantra, statement, anims, recall, links });
+const A1 = (code, steps) => [{ name: 'Walkthrough', code, steps }];
+mount({
+  title: 'Sliding Window Animations',
+  sub: 'Two pointers walk right and never step back. <b>Khandani template</b>: add nums[j] → while the window is invalid, remove nums[i++] → record. Fixed size k: add, and once j − i + 1 == k record and slide. Counting tricks: <b>add j − i + 1</b> (all ends at j), <b>add n − j</b> (all extensions), <b>exactly(k) = atMost(k) − atMost(k − 1)</b>.',
+  problems: [
+    T('Alternating Groups II (3208)', 'A <b>zebra crossing</b> on a roundabout: a repeated colour breaks the stripes, so start counting again there.', 'REPEAT ⇒ i = j; LENGTH k ⇒ COUNT, i++', 'Count length-k groups of alternating colours on a circle.', A1(C_ALT, alt()), [['How do you handle the circle?', 'Read the first k − 1 tiles again (j % n).'], ['Why i++ after counting?', 'Keeps the window at k so the next group can start one later.']], [['Minimum Swaps to Group All 1\'s Together II', 41]]),
+    T('Stock using Strategy (3652)', 'A <b>half-price coupon</b> window: first half you hold, second half you sell. Slide the coupon and measure its gain.', 'GAIN = MODIFIED − ORIGINAL IN A k WINDOW', 'Change at most one k-day block (first half 0, second half 1); maximise profit.', A1(C_STOCK, stock()), [['Which price leaves "modified" when the window slides?', 'prices[i + k/2]: it moves into the first half.'], ['Gain can be negative?', 'Start maxGain at 0: no modification.']]),
+    T('Binary Subarrays With Sum (930)', 'Zeros are <b>free passengers</b>: each one at the front is another valid start.', 'DROP LEADING 0s, COUNT 1 + prefixZeros', 'Count subarrays of a binary array with sum = goal.', A1(C_BIN, bin()), [['Prefix-sum alternative?', 'map[sum − goal] counts earlier prefixes; O(n) space.'], ['Another window trick?', 'atMost(goal) − atMost(goal − 1).']], [['Subarrays with K Different Integers', 53]]),
+    T('Contains Duplicate II (219)', 'A <b>short-term memory</b> of the last k numbers.', 'SET OF LAST k; add() FAILS ⇒ TRUE', 'Is there i ≠ j with nums[i] == nums[j] and |i − j| ≤ k?', A1(C_DUP, dup()), [['When to evict?', 'When j − i > k, remove nums[i].'], ['Value distance too?', 'Contains Duplicate III: TreeSet ceiling.']]),
+    T('Continuous Subarrays (2762)', 'A <b>thermometer</b> that only reads max and min: a TreeMap.', 'TREEMAP; SHRINK WHILE max − min > 2; ADD j − i + 1', 'Count subarrays where every pair differs by ≤ 2.', A1(C_CONT, cont()), [['Why is it ~O(n)?', 'At most 3 distinct values can be in a valid window.'], ['Deque alternative?', 'Two monotonic deques, as in Longest Subarray with limit.']], [['Longest Subarray Diff ≤ Limit', 29]]),
+    T('Count Complete Subarrays (2799)', 'Once the <b>stamp album is full</b>, every bigger album is full too.', 'ALL DISTINCT INSIDE ⇒ ADD n − j, SHRINK', 'Count subarrays containing every distinct value of nums.', A1(C_CCS, ccs()), [['Why n − j?', 'Extending a complete window to the right keeps it complete.']], [['Substrings With All Three Characters', 45]]),
+    T('Count Complete Substrings (2953)', '<b>Cut</b> the string where neighbours jump by > 2, then try every number of distinct letters.', 'SPLIT; FOR c: FIXED WINDOW c·k, good == c', 'Count substrings where every letter appears exactly k times and adjacent letters differ by ≤ 2.', A1(C_CCSUB, ccsub()), [['Why a fixed window?', 'c distinct letters, each exactly k times ⇒ length c·k.'], ['Complexity?', 'O(26 · n).']]),
+    T('Count Occurrences of Anagrams (GfG)', 'Start with a <b>shopping list</b> (pat\'s counts); the window buys letters.', 'FIXED WINDOW, COUNTS ALL ZERO', 'Count windows of txt that are anagrams of pat.', A1(C_OCC, occ()), [['Speed up the zero check?', 'Track how many letters are at 0.']], [['Find All Anagrams', 15], ['Permutation in String', 46]]),
+    T('Max Element ≥ k Times (2962)', 'Count the <b>crowns</b> (copies of the max) in the window.', 'countMax ≥ k ⇒ ADD n − j, SHRINK', 'Count subarrays where the global max appears at least k times.', A1(C_MAXK, maxk()), [['No-window version?', 'Store max positions; add pos[size − k] + 1 per end.']], [['Count the Number of Good Subarrays', 13]]),
+    T('Fixed Bounds (2444)', 'Three <b>bookmarks</b>: last bad index, last minK, last maxK.', 'ADD max(0, min(minPos, maxPos) − bad)', 'Count subarrays whose min is minK and max is maxK.', A1(C_FIX, fix()), [['Why min(minPos, maxPos)?', 'The start must include both the latest minK and maxK.']]),
+    T('Score Less Than K (2302)', 'Score = sum × length: a <b>balloon</b> that only inflates as you grow.', 'SHRINK WHILE sum·len ≥ k; ADD j − i + 1', 'Count subarrays with sum × length < k.', A1(C_SCORE, score()), [['Overflow?', 'Use long for sum × length.']], [['Subarray Product Less Than K', 52]]),
+    T('K-Constraint I & II (3258, 3261)', 'Valid while <b>either</b> digit stays within k; break only when both overflow.', 'SHRINK WHILE c0 > k AND c1 > k; ADD j − i + 1', 'Count substrings with ≤ k zeros or ≤ k ones; Part II answers range queries.', [{ name: 'Part I window', code: C_KC, steps: kc() }, { name: 'Part II queries', code: C_KC2, steps: kc2() }], [['Part II idea?', 'leftMost / rightMost arrays + prefix sums of valid counts.']]),
+    T('Every Vowel and K Consonants II (3306)', 'Past a valid window you can <b>coast over vowels</b> until the next consonant.', 'nextCons[j] − j EXTRA ENDS PER VALID WINDOW', 'Count substrings with all five vowels and exactly k consonants.', A1(C_VOW, vow()), [['Alternative?', 'atLeast(k) − atLeast(k + 1).']]),
+    T('Count Good Subarrays (2537)', 'Each newcomer <b>shakes hands</b> with every twin already inside.', 'pairs += copies; pairs ≥ k ⇒ ADD n − j', 'Count subarrays with at least k pairs of equal values.', A1(C_GOOD, good()), [['Removing x?', 'pairs −= copies of x left after removal.']]),
+    T('Divide Array Min Cost II (3013)', 'A <b>sliding talent show</b>: keep the k−1 cheapest contestants in view.', 'TWO TREESETS: CHOSEN (k−1 SMALLEST) + REST', 'Split into k subarrays (starts within dist); minimise the sum of first elements.', A1(C_DIV, div()), [['Why nums[0] always?', 'The first subarray starts at 0.'], ['Same trick?', 'Find X-Sum II, sliding median.']], [['Find X-Sum of All K-Long Subarrays II', 18]]),
+    T('Find All Anagrams (438)', 'A <b>stencil</b> of p\'s letter counts sliding along s.', 'FIXED WINDOW |p|, COUNTS ZERO ⇒ ADD i', 'All start indices of anagrams of p in s.', A1(C_ANA, ana()), [['Return type?', 'List of start indices.']], [['Count Occurrences of Anagrams', 7], ['Permutation in String', 46]]),
+    T('Subarray AND Closest to K (3171)', 'AND is a <b>dimmer</b> that only goes down; bit counts let you turn it back up.', 'AND > k: GROW; AND < k: SHRINK (BIT COUNTS)', 'Minimise |k − AND of a subarray|.', A1(C_AND, and()), [['Why bit counts?', 'AND cannot be undone directly.'], ['Simpler?', 'Set of ANDs ending at j (≤ 32 values).']], [['Longest Nice Subarray', 31]]),
+    T('Two Non-overlapping Target Sum (1477)', 'Remember the <b>best ticket so far</b> on your left; pair it with each new match.', 'best[j] = SHORTEST MATCH ENDING ≤ j; PAIR WITH best[i − 1]', 'Two disjoint subarrays with sum target; minimise total length.', A1(C_TWO, two()), [['Why positive numbers matter?', 'The sum-window only works for positives.']]),
+    T('Find X-Sum II (3321)', 'A <b>leaderboard</b> with a VIP lounge of x seats and a waiting room.', 'TOP / REST TREESETS OF (freq, value), RUNNING SUM', 'x-sum of every k-window, n up to 1e5.', A1(C_XS, xs()), [['Part I?', 'Small n: rebuild per window (Heap folder).']], [['Divide an Array Min Cost II', 14]]),
+    T('Vowels in Even Counts (1371)', 'A <b>5-switch light panel</b>: same panel twice ⇒ every switch toggled an even number of times in between.', 'PARITY MASK, FIRST INDEX PER MASK', 'Longest substring where each vowel appears an even number of times.', A1(C_EVEN, even()), [['Why not a window?', 'No clear direction to shrink.'], ['C++ approaches 1 and 2?', 'They use an undeclared stateMap and do not compile.']], [['Longest Sub-Array with Sum K', 32]]),
+    T('Power of K-Size Subarrays I (3254)', 'Count the length of the <b>staircase</b> (+1 steps) ending here.', 'RUN ≥ k ⇒ nums[j], ELSE −1', 'For each k-window: its max if consecutive ascending, else −1.', A1(C_POW, pow()), [['Deque version?', 'Keep the current run (≤ k), clear on a break.']]),
+    T('First Negative in Window (GfG)', 'A <b>queue of suspects</b>: the oldest negative in view is first in line.', 'QUEUE OF NEGATIVES; FRONT LEAVES WITH A[i]', 'First negative integer of every window of size k (0 if none).', A1(C_NEG, neg()), [['Why pop only if A[i] < 0?', 'Then A[i] is exactly the queue front.']], [['Sliding Window Maximum', 50]]),
+    T('Most Frequent Element (1838)', '<b>Raise the floor</b> to the tallest item in the window; budget = k.', 'SORT; SHRINK WHILE len·nums[j] − sum > k', 'Max frequency after at most k increments.', A1(C_FREQ, freq()), [['Never-shrinking trick?', 'Use if instead of while; answer n − i.'], ['C++ bug?', 'Binary search stores the cost in an int and overflows.']]),
+    T('Fruit Into Baskets (904)', 'Two <b>baskets</b>, one fruit type each.', 'AT MOST 2 TYPES; LONGEST WINDOW', 'Longest subarray with at most 2 distinct values.', A1(C_FRUIT, fruit()), [['Why can the window slide instead of shrink?', 'We only care about lengths bigger than the best.']], [['Longest K Unique Characters', 30]]),
+    T('Equal Substrings Within Budget (1208)', 'Turn letters into a <b>price tag</b> per position.', 'cost[i] = |s[i] − t[i]|; LONGEST SUM ≤ maxCost', 'Longest substring of s convertible to t within maxCost.', A1(C_BUD, bud()), [['Same as?', 'Longest subarray with sum ≤ budget.']], [['Minimum Size Subarray Sum', 40]]),
+    T('Grumpy Bookstore Owner (1052)', 'Point a <b>happiness spotlight</b> of `minutes` where grumpiness costs most.', 'BASE HAPPY + MAX WINDOW OF customers·grumpy', 'Max satisfied customers using the technique once.', A1(C_GRUMPY, grumpy()), [['Which part slides?', 'Only the lost (grumpy) customers.']]),
+    T('K Radius Subarray Averages (2090)', 'A <b>magnifier</b> of width 2k+1 centred on each index.', 'FIXED WINDOW 2k+1, WRITE AT CENTRE', 'Average of each radius-k window (−1 where it does not fit).', A1(C_KR, kr()), [['Edge cases?', 'k = 0 returns nums; n < 2k+1 all −1.']]),
+    T('Largest Sum ≥ K Length (GfG)', 'Always keep the <b>last k</b>; older stuff stays only while it pays.', 'TRAIL < 0 ⇒ CUT IT OFF', 'Largest sum of a subarray with length at least k.', [{ name: 'Trail window', code: C_LSK, steps: lsk() }], [['Prefix alternative?', 'pre[j] − min(pre[0..j−k]).']]),
+    T('At Most K Frequency (2958)', 'A <b>bouncer</b> who only checks the newest guest.', 'SHRINK WHILE count(nums[j]) > k', 'Longest subarray where every value appears ≤ k times.', A1(C_AMK, amk()), [['No-inner-loop version?', 'Track culprits (values at k + 1).']]),
+    T('Longest Subarray Diff ≤ Limit (1438)', 'Two <b>monotonic queues</b>: one remembers the tallest, one the shortest.', 'MAX DEQUE − MIN DEQUE > limit ⇒ SHRINK', 'Longest subarray with max − min ≤ limit.', A1(C_LIM, lim()), [['C++ approaches?', 'Two heaps / multiset, O(n log n).'], ['Deque pop rule?', 'Pop the front only if it equals nums[i].']], [['Continuous Subarrays', 4], ['Sliding Window Maximum', 50]]),
+    T('Longest K Unique Characters (GfG)', 'John\'s mall: <b>at most k toy types</b> in a row.', 'EXACTLY k ⇒ RECORD; > k ⇒ SHRINK', 'Longest substring with exactly k distinct characters (−1 if none).', A1(C_KU, ku()), [['k = 2 version?', 'Fruit Into Baskets.']], [['Fruit Into Baskets', 23]]),
+    T('Longest Nice Subarray (2401)', 'Each number is a set of <b>lit lamps</b>; nice = no lamp lit twice.', 'mask & x ≠ 0 ⇒ mask ^= nums[i++]', 'Longest subarray where every pair has AND 0.', A1(C_NICE, nice()), [['Why XOR removes exactly?', 'Bits in the window never overlap.']]),
+    T('Longest Sub-Array Sum K (GfG)', 'With negatives, <b>remember first sightings</b> of each prefix sum.', 'FIRST INDEX OF EACH PREFIX; i − first[sum − K]', 'Longest subarray with sum K (negatives allowed).', A1(C_SUMK, sumk()), [['All positive?', 'A plain window works.']], [['Vowels in Even Counts', 19]]),
+    T('Ones After Deleting One (1493)', 'The window may hold <b>one pothole</b> (a zero) that we pave over.', 'NEW ZERO ⇒ i = lastZero + 1; ANSWER j − i', 'Longest run of 1s after deleting exactly one element.', [{ name: 'Jump past the last zero', code: C_ONES, steps: ones() }], [['All ones?', 'Must still delete one: n − 1.']], [['Maximize the Confusion of an Exam', 34]]),
+    T('Maximize the Confusion (2024)', 'Paint over the <b>minority</b>: up to k flips.', 'SHRINK WHILE min(T, F) > k', 'Longest run of equal answers after ≤ k flips.', A1(C_CONF, conf()), [['Two-pass version?', 'At most k Fs, then at most k Ts.']], [['Ones After Deleting One', 33]]),
+    T('Even/Odd Frequency Diff II (3445)', 'Per digit pair, store the <b>cheapest left door</b> for each parity state.', 'FOR (a, b): minPrev[state ^ 2]', 'Max freq(a) − freq(b) with a odd, b even > 0, length ≥ k.', A1(C_EO, eo()), [['Why state ^ 2?', 'Flip a\'s parity, keep b\'s.'], ['Pairs?', '5 × 4 = 20 ordered pairs.']]),
+    T('Max Vowels in Window (1456)', 'The plain <b>fixed-window</b> template.', 'ADD, RECORD AT k, REMOVE', 'Max number of vowels in any length-k substring.', A1(C_MV, mv()), [['Template steps?', 'Add j; if size == k: record, remove i, i++.']], [['Minimum Recolors', 57]]),
+    T('Max Points from Cards (1423)', 'What you <b>leave behind</b> is one block in the middle.', 'TOTAL − MIN WINDOW OF n − k', 'Take k cards from either end; maximise points.', [{ name: 'Leave the cheapest middle', code: C_CARD, steps: card() }], [['C++ approach 1?', 'Uses an undeclared `nums`; does not compile.'], ['Other way?', 'Prefix from front + suffix from back.']], [['Take K of Each Character', 55]]),
+    T('Max Sum Distinct Subarrays (2461)', 'A <b>no-duplicates club</b>: a returning member pushes out everyone until their old copy leaves.', 'EVICT UNTIL nums[j] NOT IN SET', 'Max sum of a length-k subarray with all distinct values.', A1(C_DSUM, dsum()), [['Faster eviction?', 'Jump i past the last index of nums[j].']]),
+    T('Min Flips Alternating (1888)', 'Rotations are <b>windows over s + s</b>.', 'WINDOW n OVER 2n, COMPARE 0101 AND 1010', 'Min type-2 flips after any number of rotations.', A1(C_FLIP, flip()), [['Avoid s + s?', 'Read s.charAt(j % n).']]),
+    T('Min Size Subarray Sum (209)', '<b>Grow until it is enough</b>, then trim while still enough.', 'WHILE sum ≥ target: RECORD, SHRINK', 'Shortest subarray with sum ≥ target (positive numbers).', A1(C_MINS, mins()), [['Negatives?', 'Shortest Subarray with Sum at Least K (deque).']], [['Shortest Subarray Sum ≥ K', 48]]),
+    T('Min Swaps Group 1s II (2134)', 'The final <b>block of ones</b> can wrap around the circle.', 'WINDOW OF total-ones OVER 2n; ANSWER ones − best', 'Min swaps to group all 1s in a circular array.', A1(C_SW2, sw2()), [['Linear version?', 'LeetCode 1151, no wrap.']], [['Min Swaps Group 1s', 42]]),
+    T('Min Swaps Group 1s (1151)', 'Choose the <b>parking spot</b> (window of size ones) with the fewest intruders (zeros).', 'MIN ZEROS IN A WINDOW OF SIZE ones', 'Min swaps to group all 1s together.', A1(C_SW1, sw1()), [['No ones?', 'Return 0 (the C++ returns −1).']], [['Min Swaps Group 1s II', 41]]),
+    T('Minimum Window Substring (76)', 'A <b>shopping list</b>: when nothing is missing, try to put items back.', 'required == 0 ⇒ RECORD, SHRINK', 'Smallest substring of s containing all of t (with counts).', A1(C_MW, mw()), [['Why required?', 'O(1) check instead of comparing arrays.']], [['Smallest Window 0, 1 and 2', 51]]),
+    T('Bounded Maximum (795)', 'Small numbers <b>ride along</b> with the last in-range element.', 'IN RANGE: prev = j − i + 1; SMALL: + prev; BIG: RESET', 'Count subarrays whose max is in [left, right].', A1(C_BMAX, bmax()), [['Other way?', 'count(max ≤ right) − count(max ≤ left − 1).']]),
+    T('All Three Characters (1358)', 'Full set collected ⇒ every <b>longer tail</b> counts too.', 'HAS a, b, c ⇒ ADD n − j, SHRINK', 'Count substrings containing a, b and c.', A1(C_ABC, abc()), [['Last-seen alternative?', 'Add 1 + min(last[a], last[b], last[c]).']], [['Count Complete Subarrays', 5]]),
+    T('Permutation in String (567)', 'Slide a <b>letter-count stencil</b> of |s1|.', 'FIXED WINDOW |s1|, EQUAL COUNTS ⇒ TRUE', 'Does s2 contain a permutation of s1?', A1(C_PERM, perm()), [['Sorting version?', 'O((m − n) · n log n).']], [['Find All Anagrams', 15]]),
+    T('Reschedule Meetings I (3439)', 'Pushing k meetings aside <b>glues k + 1 gaps</b>.', 'MAX SUM OF k + 1 CONSECUTIVE GAPS', 'Max continuous free time after moving ≤ k meetings (order kept).', A1(C_RES, res()), [['How many gaps?', 'm + 1 (before, between, after).']]),
+    T('Shortest Subarray Sum ≥ K (862)', 'With negatives, keep a <b>staircase of prefix sums</b> in a deque.', 'POP FRONT WHILE pre[j] − pre[front] ≥ K; KEEP DEQUE INCREASING', 'Shortest subarray with sum ≥ K (negatives allowed).', A1(C_SHK, shk()), [['Why pop the back?', 'A later lower prefix is a better start.']], [['Min Size Subarray Sum', 40], ['Sliding Window Maximum', 50]]),
+    T('Shortest Beautiful String (2904)', '<b>Trim the fat</b>: no extra 1s and no leading 0s.', 'WINDOW ≤ k ONES, NO LEADING 0; COMPARE LENGTH THEN LEX', 'Shortest, then lexicographically smallest, substring with exactly k ones.', A1(C_BEAU, beau()), [['Compare cost?', 'O(n) per candidate → O(n²) overall.']]),
+    T('Sliding Window Maximum (239)', 'A <b>queue of champions</b>: a newcomer knocks out every weaker one behind them.', 'DEQUE DECREASING; FRONT = MAX; EVICT EXPIRED', 'Max of every window of size k.', [{ name: 'Monotonic deque', code: C_SWM, steps: swm() }, { name: 'Max-heap', code: C_SWH, steps: swh() }], [['Why O(n)?', 'Each index is pushed and popped once.'], ['Why not a plain queue?', 'You need to pop from both ends.']], [['First Negative in Window', 21], ['Longest Subarray Diff ≤ Limit', 29]]),
+    T('Smallest Window 0, 1, 2 (GfG)', 'Minimum Window Substring on a <b>3-letter alphabet</b>.', 'HAS 0, 1, 2 ⇒ RECORD, SHRINK', 'Length of the smallest substring containing 0, 1 and 2.', A1(C_012, z12()), [['None?', 'Return −1.']], [['Minimum Window Substring', 43]]),
+    T('Subarray Product < K (713)', 'A <b>balloon</b> again, but multiplying.', 'DIVIDE OUT WHILE prod ≥ k; ADD right − left + 1', 'Count subarrays with product < k.', A1(C_PROD, prod()), [['k ≤ 1?', 'Return 0: products are ≥ 1.']], [['Score Less Than K', 10]]),
+    T('Subarrays with K Different (992)', '"Exactly" is two <b>"at most"</b>s subtracted.', 'atMost(k) − atMost(k − 1)', 'Count subarrays with exactly k distinct values.', [{ name: 'One pass (iBig, iSmall)', code: C_KD, steps: kd() }, { name: 'atMost twice', code: C_KD2, steps: kd2() }], [['Why not one window?', 'Exactly-k is not monotone in i.']], [['Binary Subarrays With Sum', 2]]),
+    T('Concatenation of All Words (30)', 'Cut s into <b>word tiles</b>; on each of the w tile grids it is a normal window.', 'w OFFSETS × WINDOW OVER WORDS', 'All starts where s holds a concatenation of all words (any order).', A1(C_CAT, cat()), [['Complexity?', 'O(w · n) substring work.']]),
+    T('Take K of Each Character (2516)', 'Taking from both ends = <b>keeping one middle block</b>.', 'LONGEST KEPT WINDOW WITH OUTSIDE ≥ k EACH', 'Min minutes to take ≥ k of a, b, c from the ends.', A1(C_TAKE, take()), [['Impossible?', 'Some letter appears < k times in total.']], [['Max Points from Cards', 37]]),
+    T('Defuse the Bomb (1652)', 'A <b>window riding around the circle</b>, one step ahead (k > 0) or behind (k < 0).', 'START [1..k] OR [n+k..n−1], SLIDE BOTH ENDS', 'Replace each value with the sum of the next k (or previous |k|).', A1(C_BOMB, bomb()), [['k = 0?', 'All zeros.']]),
+    T('Minimum Recolors (2379)', 'Count the <b>whites</b> in each window of k.', 'FIXED WINDOW, MIN WHITE COUNT', 'Min recolours to get k consecutive blacks.', A1(C_REC, rec()), [['Template?', 'Fixed window of k.']], [['Max Vowels in Window', 36]])
+  ]
+});
+</script>
+</body>
+</html>

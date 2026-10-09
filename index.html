@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Java Brain Hub</title>
+<link rel="stylesheet" href="assets/brain-anim.css">
+<style>
+.hub { padding: 24px 32px 64px; }
+.top { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; }
+.top h1 { margin: 0; }
+.overall { min-width: 280px; flex: 1; max-width: 520px; }
+.bar { height: 10px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--good); width: 0; transition: width .3s; }
+.overall .num { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); margin-top: 6px; }
+.overall .num b { color: var(--ink); }
+.profiles { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
+.profiles a { color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 4px 12px; text-decoration: none; font-weight: 600; }
+.controls-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
+.search { flex: 1; min-width: 220px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; }
+.chip { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tool { border: 1px solid var(--line); background: var(--panel); color: var(--muted); padding: 8px 12px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; }
+details.how { font-size: 14px; color: var(--muted); margin: 6px 0 4px; }
+details.how code { background: var(--code-bg); padding: 1px 6px; border-radius: 5px; }
+.group h2 { font-size: 18px; margin: 26px 0 10px; display: flex; gap: 12px; align-items: baseline; }
+.group h2 small { font-size: 13px; color: var(--muted); font-weight: 500; }
+.topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+.topic { margin: 0; display: flex; flex-direction: column; }
+.topic h3 { margin: 0 0 6px; font-size: 16px; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.topic h3 a { color: var(--ink); text-decoration: none; }
+.topic h3 a:hover { color: var(--accent); }
+.topic .count { color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; }
+.topic .bar { height: 6px; margin-bottom: 10px; }
+.topic ol { margin: 0; padding-left: 0; list-style: none; max-height: 320px; overflow-y: auto; }
+.topic li { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; font-size: 14px; }
+.topic li input { margin-top: 3px; accent-color: var(--good); cursor: pointer; flex: none; }
+.topic li .n { color: var(--muted); min-width: 24px; text-align: right; font-variant-numeric: tabular-nums; }
+.topic li a.p { color: var(--ink); text-decoration: none; }
+.topic li a.p:hover { color: var(--accent); text-decoration: underline; }
+.topic li.solved a.p { color: var(--good); }
+.topic li a.plat { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 6px; margin-left: 4px; text-decoration: none; white-space: nowrap; }
+.connect { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; align-items: end; margin-top: 10px; }
+.connect label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.connect label.wide { grid-column: span 2; }
+.connect input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; }
+.connect button { height: 38px; }
+#syncmsg { white-space: pre-line; color: var(--ink); font-weight: 600; }
+.bm ol { margin: 6px 0; padding-left: 20px; }
+a.bmk { display: inline-block; margin: 4px 4px 0 0; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: #fff !important; font-weight: 600; text-decoration: none; cursor: grab; }
+.bm textarea { width: 100%; margin-top: 6px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; font: 12px monospace; }
+.fine { font-size: 12px; }
+.hidden { display: none !important; }
+@media (max-width: 640px) { .hub { padding: 16px; } .topics { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="hub">
+  <div class="top">
+    <div><h1>Java Brain</h1><p class="sub" id="sub" style="margin:4px 0 0"></p></div>
+    <div class="overall"><div class="bar"><i id="allbar"></i></div><div class="num"><span id="allnum"></span><span id="synced"></span></div></div>
+  </div>
+  <div class="profiles" id="profiles"></div>
+  <details class="how" id="conn"><summary>Connect your profiles and sync the problems you already solved</summary>
+    <div class="connect">
+      <label>LeetCode username <input id="u-leetcode" placeholder="e.g. john_doe"></label>
+      <label>GfG handle <input id="u-gfg" placeholder="e.g. johndoe123"></label>
+      <label>CodeChef handle <input id="u-codechef" placeholder="e.g. john_d"></label>
+      <button class="chip on" id="savebtn">Save</button>
+    </div>
+    <div class="bm">
+      <p><b>One-click sync.</b> Drag these two buttons onto your bookmarks bar once (show it with Ctrl+Shift+B):
+        <a class="bmk" id="bm-lc">⟳ Java Brain · LeetCode</a> <a class="bmk" id="bm-gfg">⟳ Java Brain · GfG</a></p>
+      <ol>
+        <li>Open <a href="https://leetcode.com" target="_blank" rel="noopener">leetcode.com</a> while logged in and click <b>⟳ Java Brain · LeetCode</b>. You come straight back here with every problem you have solved ticked (your full history).</li>
+        <li>Do the same on <a href="https://www.geeksforgeeks.org" target="_blank" rel="noopener">geeksforgeeks.org</a> with <b>⟳ Java Brain · GfG</b>.</li>
+      </ol>
+      <p class="fine">The bookmarks only read your own solved list on those sites and pass it back in the link. Nothing is uploaded anywhere: usernames, ticks and synced lists stay in this browser. CodeChef does not publish solved problems, so tick those by hand. Re-run a bookmark whenever you solve more.</p>
+      <details><summary>The bookmark copied data instead of bringing me back?</summary>
+        <textarea id="pastebox" rows="3" placeholder="Paste here"></textarea> <button class="tool" id="pastebtn">Import pasted data</button>
+      </details>
+    </div>
+    <p id="syncmsg"></p>
+    <p><button class="tool" id="resetbtn">Forget everything stored in this browser</button></p>
+  </details>
+  <div class="controls-row" style="margin-top:12px">
+    <input class="search" id="q" type="search" placeholder="Filter problems, e.g. 'stack', '42', 'parentheses'">
+    <button class="chip on" data-f="all">All</button><button class="chip" data-f="todo">Unsolved</button><button class="chip" data-f="done">Solved</button>
+    <button class="tool" id="exp">Export progress</button><button class="tool" id="imp">Import progress</button><input type="file" id="impfile" accept=".json" class="hidden">
+  </div>
+  <div id="groups"></div>
+</div>
+<script src="assets/problem-links.js"></script>
+<script src="assets/solved.js"></script>
+<script src="assets/progress.js"></script>
+<script>
+const P = BrainProgress, esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const url = h => h.split('/').map(encodeURIComponent).join('/');
+const pages = Object.keys(BrainLinks), groups = {};
+for (const h of pages) (groups[h.includes('/', h.indexOf('/') + 1) ? h.split('/')[0] : 'Core'] ||= []).push(h);
+const total = pages.reduce((n, h) => n + BrainLinks[h].length, 0);
+let filter = 'all';
+document.getElementById('sub').textContent = `${pages.length} animated topics · ${total} problems. Click a problem to open its animation, a badge to solve it, the box to mark it solved.`;
+const prof = P.synced.profiles || {}, base = { leetcode: 'https://leetcode.com/u/', gfg: 'https://www.geeksforgeeks.org/profile/', codechef: 'https://www.codechef.com/users/' }, names = { leetcode: 'LeetCode', gfg: 'GfG', codechef: 'CodeChef' };
+const linked = Object.keys(base).filter(k => prof[k]);
+document.getElementById('profiles').innerHTML = linked.length ? 'My profiles: ' + linked.map(k => `<a href="${base[k]}${encodeURIComponent(prof[k])}/" target="_blank" rel="noopener">${names[k]}: ${esc(prof[k])}</a>`).join('') : 'No profiles connected yet. Open the panel below to add yours.';
+document.getElementById('synced').textContent = P.synced.updated ? 'synced ' + P.synced.updated : '';
+
+// Renders every group, topic card and problem row
+function render() {
+  document.getElementById('groups').innerHTML = Object.entries(groups).map(([g, hs]) => `<section class="group" data-g="${esc(g)}"><h2>${esc(g)} <small></small></h2><div class="topics">${hs.map(h => `
+    <div class="card topic" data-h="${esc(h)}"><h3><a href="${url(h)}">${esc(h.split('/').pop().replace(/ Animations\.html$/, ''))}</a><span class="count"></span></h3><div class="bar"><i></i></div><ol>
+    ${BrainLinks[h].map(([t, us], i) => `<li data-s="${esc((t + ' ' + us.map(u => u[0]).join(' ') + ' ' + h).toLowerCase())}" data-i="${i}"><input type="checkbox" title="Mark solved"><span class="n">${i + 1}.</span><span><a class="p" href="${url(h)}#p=${i}">${esc(t)}</a>${us.map(([n, u]) => `<a class="plat" href="${esc(u)}" target="_blank" rel="noopener">${esc(n)}</a>`).join('')}</span></li>`).join('')}</ol></div>`).join('')}</div></section>`).join('');
+  document.querySelectorAll('.topic li input').forEach(box => box.onchange = () => {
+    const li = box.closest('li'), [t, us] = BrainLinks[box.closest('.topic').dataset.h][+li.dataset.i];
+    box.checked = P.toggle(t, us);
+    refresh();
+  });
+  refresh();
+}
+
+// Applies solved state, counts and the search / status filters
+function refresh() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  let all = 0;
+  document.querySelectorAll('.group').forEach(gEl => {
+    let gs = 0, gt = 0;
+    gEl.querySelectorAll('.topic').forEach(c => {
+      const list = BrainLinks[c.dataset.h]; let s = 0, any = false;
+      c.querySelectorAll('li').forEach(li => {
+        const [t, us] = list[+li.dataset.i], ok = P.isSolved(t, us);
+        li.classList.toggle('solved', ok); li.querySelector('input').checked = ok; s += ok;
+        const show = (!q || li.dataset.s.includes(q)) && (filter === 'all' || (filter === 'done') === ok);
+        li.classList.toggle('hidden', !show); any ||= show;
+      });
+      c.querySelector('.count').textContent = `${s} / ${list.length}`;
+      c.querySelector('.bar i').style.width = (100 * s / list.length) + '%';
+      c.classList.toggle('hidden', !any);
+      gs += s; gt += list.length;
+    });
+    gEl.querySelector('h2 small').textContent = `${gs} / ${gt} solved`;
+    gEl.classList.toggle('hidden', !gEl.querySelector('.topic:not(.hidden)'));
+    all += gs;
+  });
+  document.getElementById('allnum').innerHTML = `<b>${all}</b> / ${total} solved (${Math.round(100 * all / total)}%)`;
+  document.getElementById('allbar').style.width = (100 * all / total) + '%';
+}
+
+document.getElementById('q').oninput = refresh;
+document.querySelectorAll('.chip').forEach(b => b.onclick = () => { filter = b.dataset.f; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); refresh(); });
+document.getElementById('exp').onclick = () => P.exportTicks();
+document.getElementById('imp').onclick = () => document.getElementById('impfile').click();
+document.getElementById('impfile').onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { P.importTicks(t); refresh(); }); };
+window.addEventListener('focus', refresh);
+
+// Builds a bookmarklet that runs on the given site and sends the solved list back to this hub
+function bookmarklet(body) {
+  const hub = location.href.split('#')[0];
+  const send = `const go=d=>{const s=JSON.stringify(d);if(/^https?:/.test(H)){location.href=H+'#import='+encodeURIComponent(s)}else{navigator.clipboard.writeText(s).then(()=>alert('Copied. Paste it into the Java Brain hub (Connect panel).'),()=>prompt('Copy this and paste it into the Java Brain hub:',s))}};`;
+  return 'javascript:' + encodeURIComponent(`(async()=>{const H=${JSON.stringify(hub)};${send}try{${body}}catch(e){alert('Java Brain sync failed: '+e)}})();`);
+}
+
+// Fills the form, wires the bookmarklets and imports data that a bookmarklet brought back
+(function connect() {
+  const msg = document.getElementById('syncmsg'), keys = ['leetcode', 'gfg', 'codechef'];
+  const val = k => document.getElementById('u-' + k).value.trim();
+  keys.forEach(k => { document.getElementById('u-' + k).value = prof[k] || ''; });
+  const wire = () => {
+    document.getElementById('bm-lc').href = bookmarklet(`if(!/(^|\\.)leetcode\\.(com|cn)$/.test(location.hostname)){alert('Open leetcode.com (logged in) and click this bookmark there.');return}const d=await(await fetch('/api/problems/all/',{credentials:'include'})).json();if(!d.user_name){alert('Please log in to LeetCode first, then click again.');return}go({leetcode:d.stat_status_pairs.filter(p=>p.status==='ac').map(p=>p.stat.question__title_slug),lcUser:d.user_name});`);
+    document.getElementById('bm-gfg').href = bookmarklet(`if(!/(^|\\.)geeksforgeeks\\.org$/.test(location.hostname)){alert('Open geeksforgeeks.org and click this bookmark there.');return}const h=${JSON.stringify(val('gfg'))}||prompt('Your GfG handle (from geeksforgeeks.org/profile/<handle>)');if(!h)return;const d=await(await fetch('https://practiceapi.geeksforgeeks.org/api/v1/user/problems/submissions/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({handle:h,requestType:'',year:'',month:''})})).json();if(d.status!=='success'){alert('GfG says: '+(d.message||'no data'));return}const g=[];for(const lv of Object.values(d.result||{}))for(const p of Object.values(lv))g.push(p.slug);go({gfg:g,gfgUser:h});`);
+  };
+  wire();
+  if (!keys.some(k => prof[k])) document.getElementById('conn').open = true;
+  document.getElementById('savebtn').onclick = () => {
+    const p = {}; keys.forEach(k => { p[k] = val(k); });
+    P.saveProfiles(p); wire();
+    msg.textContent = 'Saved in this browser.'; setTimeout(() => location.reload(), 700);
+  };
+  const take = (text, how) => {
+    const d = JSON.parse(text), p = { ...prof };
+    if (d.lcUser) p.leetcode = p.leetcode || d.lcUser;
+    if (d.gfgUser) p.gfg = p.gfg || d.gfgUser;
+    P.saveProfiles(p);
+    const added = P.importSynced(d);
+    sessionStorage.setItem('jb-msg', `${how}: ${(d.leetcode || d.gfg || []).length} solved problems received, ${added} new.`);
+    location.reload();
+  };
+  if (location.hash.startsWith('#import=')) {
+    const raw = decodeURIComponent(location.hash.slice(8));
+    history.replaceState(null, '', location.pathname);
+    try { take(raw, raw.includes('"leetcode"') ? 'LeetCode' : 'GfG'); } catch (e) { msg.textContent = 'Could not read the synced data: ' + e; }
+  }
+  const note = sessionStorage.getItem('jb-msg');
+  if (note) { sessionStorage.removeItem('jb-msg'); msg.textContent = note; document.getElementById('conn').open = true; }
+  document.getElementById('pastebtn').onclick = () => { try { take(document.getElementById('pastebox').value, 'Pasted'); } catch (e) { msg.textContent = 'That does not look like Java Brain sync data.'; } };
+  document.getElementById('resetbtn').onclick = () => { if (confirm('Remove your usernames, ticks and synced lists from this browser?')) { P.resetAll(); location.reload(); } };
+})();
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stack Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, recorder, mount, ln } = BrainAnim;
+const S = (name, st, hl) => lane(name, st.map(x => (Array.isArray(x) ? `(${x})` : x)), { vertical: true, active: hl ? [st.length - 1] : [], tag: 'top on top' });
+// Scans items left→right (or right→left); step(item, i) mutates state and returns [line, say]
+function scan(intro, items, step, lanes, opt = {}) {
+  const r = recorder(); r.step(0, intro, lanes(-1));
+  const order = opt.reverse ? [...items.keys()].reverse() : [...items.keys()];
+  for (const i of order) { const out = step(items[i], i); if (!out) break; const [line, say, vars] = out; r.step(line, say, lanes(i), vars); }
+  if (opt.end) { const [line, say, vars] = opt.end(); r.step(line, say, lanes(-1), vars); }
+  return r.steps;
+}
+
+const C_VP = `
+for (char c : s.toCharArray()) {
+    if (c == '(') st.push(')');
+    else if (c == '[') st.push(']');
+    else if (c == '{') st.push('}');
+    else if (st.isEmpty() || st.pop() != c) return false;   // must match the expected closer
+}
+return st.isEmpty();`;
+function vp() { const s = '{[()]}', st = []; return scan(`Push the closer you <b>expect</b>; a closing bracket must equal the popped expectation.`, [...s], c => { if ('([{'.includes(c)) { st.push({ '(': ')', '[': ']', '{': '}' }[c]); return [ln(C_VP, `c == '${c}'`), `"${c}" → expect "${st.at(-1)}".`]; } st.pop(); return [ln(C_VP, 'must match'), `"${c}" matches the expectation → pop.`]; }, i => [lane('s', [...s], { active: i >= 0 ? [i] : [] }), S('stack of expected closers', st)], { end: () => [ln(C_VP, 'st.isEmpty()'), `Stack empty → <b>valid</b>.`] }); }
+
+const C_RPN = `
+switch (t) {
+    case "+" -> st.push(st.pop() + st.pop());
+    case "*" -> st.push(st.pop() * st.pop());
+    case "-" -> { int b = st.pop(), a = st.pop(); st.push(a - b); }   // order!
+    case "/" -> { int b = st.pop(), a = st.pop(); st.push(a / b); }
+    default -> st.push(Integer.parseInt(t));
+}`;
+function rpn() { const t = ['4', '13', '5', '/', '+'], st = []; return scan(`Postfix: operands wait on the stack; an operator eats the top two.`, t, x => { if (!isNaN(x)) { st.push(+x); return [ln(C_RPN, 'default'), `push ${x}.`]; } const b = st.pop(), a = st.pop(), v = x === '+' ? a + b : x === '-' ? a - b : x === '*' ? a * b : Math.trunc(a / b); st.push(v); return [ln(C_RPN, `case "${x}"`), `${a} ${x} ${b} = <b>${v}</b> (a is the deeper one).`]; }, i => [lane('tokens', t, { active: i >= 0 ? [i] : [] }), S('stack', st)]); }
+
+const C_QS = `
+public void push(int x) { in.push(x); }
+private void move() { if (out.isEmpty()) while (!in.isEmpty()) out.push(in.pop()); }   // reverse once
+public int pop() { move(); return out.pop(); }`;
+function qs() {
+  const inS = [], out = [], r = recorder(), V = () => [S('in (pushes)', [...inS]), S('out (pops)', [...out])];
+  r.step(0, `Two stacks: <b>in</b> takes pushes, <b>out</b> serves pops. Pouring in → out reverses the order once, so the oldest ends on top.`, V());
+  [1, 2, 3].forEach(x => inS.push(x)); r.step(ln(C_QS, 'in.push'), `push 1, 2, 3.`, V());
+  while (inS.length) out.push(inS.pop()); r.step(ln(C_QS, 'reverse once'), `pop(): out is empty → pour everything over. Now 1 is on top.`, V());
+  out.pop(); r.step(ln(C_QS, 'return out.pop()'), `pop() → <b>1</b>.`, V());
+  inS.push(4); r.step(ln(C_QS, 'in.push'), `push 4 goes to in. out still has 2, 3, so the next pops do not touch in → amortised O(1).`, V());
+  return r.steps;
+}
+
+
+const C_DT = `
+for (int i = 0; i < t.length; i++) {
+    while (!st.isEmpty() && t[st.peek()] < t[i]) { int j = st.pop(); res[j] = i - j; }   // warmer day answers them
+    st.push(i);
+}`;
+function dt() { const t = [73, 74, 75, 71, 69, 72, 76, 73], res = Array(8).fill(0), st = []; return scan(`Indices wait on a <b>decreasing</b> stack until a warmer day arrives.`, t, (x, i) => { const ans = []; while (st.length && t[st.at(-1)] < x) { const j = st.pop(); res[j] = i - j; ans.push(j); } st.push(i); return [ln(C_DT, 'warmer day'), ans.length ? `${x}° answers day${ans.length > 1 ? 's' : ''} ${ans.join(', ')}.` : `${x}° waits.`]; }, i => [lane('temps', t, { showIdx: true, active: i >= 0 ? [i] : [] }), S('waiting indices', st.map(j => `${j}:${t[j]}`)), lane('answer', [...res])], { end: () => [0, `Days still waiting never get warmer → 0. Answer <b>[${res}]</b>.`] }); }
+
+const C_LRH = `
+for (int i = 0; i <= n; i++) {
+    int cur = i == n ? 0 : h[i];                        // sentinel 0 flushes the stack
+    while (!st.isEmpty() && h[st.peek()] >= cur) {
+        int height = h[st.pop()], left = st.isEmpty() ? -1 : st.peek();
+        best = Math.max(best, height * (i - left - 1));  // i = NSR, left = NSL
+    }
+    st.push(i);
+}`;
+function lrh() { const h = [2, 1, 5, 6, 2, 3]; let best = 0; const st = []; return scan(`For each bar: how far can it stretch? Until the nearest <b>smaller</b> bar on each side. A popped bar learns both at once.`, [...h, 0], (x, i) => { const said = []; while (st.length && h[st.at(-1)] >= x) { const k = st.pop(), left = st.length ? st.at(-1) : -1, a = h[k] * (i - left - 1); best = Math.max(best, a); said.push(`${h[k]}×${i - left - 1}=${a}`); } st.push(i); return [ln(C_LRH, 'NSR'), said.length ? `bar ${i === 6 ? '(sentinel 0)' : x} pops: ${said.join(', ')}.` : `push bar ${x}.`, { best }]; }, i => [lane('heights', h, { showIdx: true, active: i >= 0 && i < 6 ? [i] : [] }), S('increasing stack (indices)', st.filter(k => k < 6).map(k => `${k}:${h[k]}`))]); }
+
+const C_MR = `
+for (char[] row : m) {
+    for (int j = 0; j < h.length; j++) h[j] = row[j] == '1' ? h[j] + 1 : 0;   // histogram of 1s above
+    best = Math.max(best, mah(h));                                            // Largest Rectangle in Histogram
+}`;
+function mr() {
+  const M = ['10100', '10111', '11111', '10010'], h = Array(5).fill(0), r = recorder(); let best = 0;
+  r.step(0, `Turn each row into the floor of a histogram: height = consecutive 1s above. Then reuse <b>Largest Rectangle in Histogram</b>.`, [grid('matrix', M.map(x => [...x]))]);
+  M.forEach((row, k) => { [...row].forEach((c, j) => h[j] = c === '1' ? h[j] + 1 : 0); const a = (() => { let b = 0; for (let i = 0; i < 5; i++) { let mn = 99; for (let j = i; j < 5; j++) { mn = Math.min(mn, h[j]); b = Math.max(b, mn * (j - i + 1)); } } return b; })(); best = Math.max(best, a); r.step(ln(C_MR, 'histogram of 1s'), `row ${k}: heights [${h}] → best rectangle here ${a}.`, [grid('matrix', M.map(x => [...x]), { cls: (i) => (i === k ? 'active' : '') }), lane('histogram', [...h])], { best }); });
+  return r.steps;
+}
+
+const C_LVP = `
+st.push(-1);                                     // base: index before the current valid run
+for (int i = 0; i < s.length(); i++) {
+    if (s.charAt(i) == '(') st.push(i);
+    else {
+        st.pop();
+        if (st.isEmpty()) st.push(i);            // unmatched ')' becomes the new base
+        else best = Math.max(best, i - st.peek());
+    }
+}`;
+function lvp() { const s = ')()())', st = [-1]; let best = 0; return scan(`Stack of indices with a <b>base</b> (the index just before the current valid run). Length = i − top after a match.`, [...s], (c, i) => { if (c === '(') { st.push(i); return [ln(C_LVP, "st.push(i);"), `"(" at ${i} → push.`]; } st.pop(); if (!st.length) { st.push(i); return [ln(C_LVP, 'new base'), `unmatched ")" at ${i} → new base ${i}.`]; } best = Math.max(best, i - st.at(-1)); return [ln(C_LVP, 'best = Math.max'), `match → length ${i} − ${st.at(-1)} = ${i - st.at(-1)}.`, { best }]; }, i => [lane('s', [...s], { showIdx: true, active: i >= 0 ? [i] : [] }), S('indices', [...st])]); }
+
+const C_132 = `
+for (int i = a.length - 1; i >= 0; i--) {
+    if (a[i] < two) return true;                            // found the "1"
+    while (!st.isEmpty() && st.peek() < a[i]) two = st.pop();   // a[i] is a "3"; popped = best "2"
+    st.push(a[i]);
+}`;
+function p132() { const a = [3, 1, 4, 2], st = []; let two = -Infinity, done = false; return scan(`Scan from the right. The stack holds "3" candidates; whatever a bigger value pops becomes the best "2" (largest value below some "3").`, a, (x, i) => { if (done) return null; if (x < two) { done = true; return [ln(C_132, 'found the "1"'), `${x} &lt; two (${two}) → <b>1-3-2 found</b>.`]; } const p = []; while (st.length && st.at(-1) < x) { two = st.pop(); p.push(two); } st.push(x); return [ln(C_132, 'best "2"'), p.length ? `${x} pops ${p} → two = ${two}.` : `push ${x}.`, { two }]; }, i => [lane('nums', a, { showIdx: true, active: i >= 0 ? [i] : [] }), S('stack ("3" candidates)', [...st])], { reverse: true, end: () => [0, done ? `Pattern <b>1, 4, 2</b> exists → true.` : 'No pattern → false.'] }); }
+
+const C_AST = `
+for (int a : asteroids) {
+    boolean alive = true;
+    while (alive && a < 0 && !st.isEmpty() && st.peek() > 0) {   // only → ← can collide
+        if (st.peek() < -a) st.pop();
+        else { if (st.peek() == -a) st.pop(); alive = false; }
+    }
+    if (alive) st.push(a);
+}`;
+function ast() { const a = [10, 2, -5, 5, -10], st = []; return scan(`Only a right-mover on the stack and a new left-mover can collide.`, a, x => { let alive = true; const log = []; while (alive && x < 0 && st.length && st.at(-1) > 0) { if (st.at(-1) < -x) log.push(`${st.pop()} explodes`); else { if (st.at(-1) === -x) { st.pop(); log.push('both explode'); } else log.push(`${x} explodes`); alive = false; } } if (alive) st.push(x); return [ln(C_AST, 'only → ←'), log.length ? `${x}: ${log.join(', ')}.` : `${x} joins.`]; }, i => [lane('asteroids', a, { active: i >= 0 ? [i] : [] }), S('survivors', [...st])], { end: () => [0, `Survivors <b>[${st}]</b>.`] }); }
+
+const C_CALC = `
+else if (c == '(') { st.push(result); st.push(sign); result = 0; sign = 1; }   // save outer state
+else if (c == ')') {
+    result += sign * num; num = 0;
+    result = st.pop() * result + st.pop();                                    // outer + sign * inner
+}`;
+function calc() { const s = '1-(4+5)+2', st = []; let res = 0, num = 0, sign = 1; return scan(`Keep a running <b>result</b> and the <b>sign</b> of the next number. "(" saves (result, sign) and starts fresh.`, [...s], c => { if (/\d/.test(c)) { num = num * 10 + +c; return [0, `digit → num ${num}.`, { result: res, sign, num }]; } if (c === '+' || c === '-') { res += sign * num; num = 0; sign = c === '+' ? 1 : -1; return [0, `"${c}": result ${res}, next sign ${sign}.`, { result: res, sign, num }]; } if (c === '(') { st.push(res, sign); res = 0; sign = 1; return [ln(C_CALC, 'save outer state'), `"(": save (${st.at(-2)}, ${st.at(-1)}), restart.`, { result: res, sign, num }]; } res += sign * num; num = 0; const sg = st.pop(), prev = st.pop(); res = prev + sg * res; return [ln(C_CALC, 'outer + sign'), `")": ${prev} + (${sg})·inner → ${res}.`, { result: res, sign, num }]; }, i => [lane('s', [...s], { active: i >= 0 ? [i] : [] }), S('saved (result, sign)', [...st])], { end: () => [0, `Final: ${res} + ${sign}·${num} = <b>${res + sign * num}</b>.`] }); }
+
+const C_BUILD = `
+for (int t : target) {
+    while (cur < t) { ops.add("Push"); ops.add("Pop"); cur++; }   // unwanted number
+    ops.add("Push");
+    cur++;
+}`;
+function build() { const ops = []; let cur = 1; return scan(`target [1,3], stream 1, 2, 3, … Every number is pushed; unwanted ones are popped immediately.`, [1, 3], t => { while (cur < t) { ops.push('Push', 'Pop'); cur++; } ops.push('Push'); cur++; return [ln(C_BUILD, 'unwanted'), `reach ${t}: numbers before it were pushed and popped.`]; }, () => [lane('operations', [...ops])]); }
+
+const C_CBV = `
+int bal = 0;
+for (int i = 0; i < n; i++) { bal += (locked[i] == '0' || s[i] == '(') ? 1 : -1; if (bal < 0) return false; }   // too many ')'
+bal = 0;
+for (int i = n - 1; i >= 0; i--) { bal += (locked[i] == '0' || s[i] == ')') ? 1 : -1; if (bal < 0) return false; }   // too many '('
+return true;`;
+function cbv() {
+  const r = recorder();
+  r.step(0, `s = "))()))", locked = "010100". Unlocked chars are <b>wildcards</b>. Odd length is impossible.`, [lane('s', [...'))()))']), lane('locked', [...'010100'])]);
+  r.step(ln(C_CBV, "too many ')'"), `Left → right, count wildcards as "(": the balance never goes negative ✓.`, [lane('balance (wild = +1)', [1, 0, 1, 0, 1, 0])]);
+  r.step(ln(C_CBV, "too many '('"), `Right → left, count wildcards as ")": never negative ✓ → <b>true</b>.`, [lane('balance from the right', [0, 1, 0, 1, 0, 1])]);
+  return r.steps;
+}
+
+const C_CD = `
+for (char c : s.toCharArray()) {
+    if (Character.isDigit(c)) { if (st.length() > 0) st.deleteCharAt(st.length() - 1); }   // digit eats the closest letter
+    else st.append(c);
+}`;
+function cd() { const s = 'ab3c4d', st = []; return scan(`A digit deletes itself and the closest non-digit to its left = the <b>top</b> of a letter stack.`, [...s], c => { if (/\d/.test(c)) { const x = st.pop(); return [ln(C_CD, 'digit eats'), `"${c}" removes "${x}".`]; } st.push(c); return [0, `keep "${c}".`]; }, i => [lane('s', [...s], { active: i >= 0 ? [i] : [] }), S('kept', [...st])], { end: () => [0, `Result <b>"${st.join('')}"</b>.`] }); }
+
+const C_CRAWL = `
+for (String l : logs) {
+    if (l.equals("../")) depth = Math.max(0, depth - 1);
+    else if (!l.equals("./")) depth++;
+}`;
+function crawl() { const logs = ['d1/', 'd2/', '../', 'd21/', './']; let d = 0; return scan(`Only the stack <b>size</b> matters, so a depth counter is enough.`, logs, l => { if (l === '../') d = Math.max(0, d - 1); else if (l !== './') d++; return [ln(C_CRAWL, l === '../' ? 'depth - 1' : 'depth++'), `"${l}" → depth ${d}.`, { depth: d }]; }, i => [lane('logs', logs, { active: i >= 0 ? [i] : [] })], { end: () => [0, `Steps back to main = depth = <b>${d}</b>.`] }); }
+
+const C_DEPTH = `
+for (char c : s.toCharArray()) {
+    if (c == '(') best = Math.max(best, ++depth);
+    else if (c == ')') depth--;
+}`;
+function depth() { const s = '(1+(2*3)+((8)/4))+1'; let d = 0, b = 0; return scan(`Stack size = current depth; we only need its maximum.`, [...s].filter(c => '()'.includes(c)), c => { if (c === '(') b = Math.max(b, ++d); else d--; return [ln(C_DEPTH, c === '(' ? '++depth' : 'depth--'), `"${c}" → depth ${d}.`, { depth: d, max: b }]; }, () => [lane('brackets only', [...s].filter(c => '()'.includes(c)))], { end: () => [0, `Maximum depth <b>${b}</b>.`] }); }
+
+const C_MSRS = `
+static Object[] removePairs(String s, char a, char b, int pts) {
+    StringBuilder st = new StringBuilder();
+    for (char c : s.toCharArray()) {
+        if (c == b && st.length() > 0 && st.charAt(st.length() - 1) == a) { st.deleteCharAt(st.length() - 1); score += pts; }
+        else st.append(c);
+    }
+}
+// first remove the MORE valuable pair everywhere, then the other pair from what is left`;
+function msrs() {
+  const r = recorder();
+  r.step(0, `"cdbcbbaaabab", x("ab") = 4, y("ba") = 5. Greedy: remove the <b>more valuable</b> pair first, everywhere.`, [lane('s', [...'cdbcbbaaabab'])]);
+  r.step(ln(C_MSRS, 'score += pts'), `Remove every "ba" with a stack → 3 × 5 = 15, leaving "cdbcbab"… → "cdbcab".`, [lane('after "ba" removal', [...'cdbcab'])], { score: 15 });
+  r.step(ln(C_MSRS, 'then the other pair'), `Then "ab" once → +4. Total <b>19</b>.`, [lane('left', [...'cdbc'])], { score: 19 });
+  return r.steps;
+}
+
+const C_MAP = `
+for (char c : s.toCharArray()) {
+    if (c == '(') open++;
+    else if (open > 0) open--;
+    else add++;                      // ')' with nothing to match
+}
+return add + open;                   // + unmatched '('`;
+function mapv() { const s = '()))(('; let o = 0, a = 0; return scan(`Count unmatched "(" (open) and unmatched ")" (add).`, [...s], c => { if (c === '(') o++; else if (o) o--; else a++; return [ln(C_MAP, c === '(' ? 'open++' : o >= 0 && a ? 'add++' : 'open--'), `"${c}"`, { open: o, add: a }]; }, i => [lane('s', [...s], { active: i >= 0 ? [i] : [] })], { end: () => [ln(C_MAP, 'return add + open'), `Answer ${a} + ${o} = <b>${a + o}</b>.`] }); }
+
+const C_MDB = `
+for (char c : s.toCharArray()) {
+    if (c == 'a') aRight--; else bLeft++;
+    best = Math.min(best, aRight + bLeft);   // split after this char: delete b's left, a's right
+}`;
+function mdb() { const s = 'aababbab'; let aR = [...s].filter(c => c === 'a').length, bL = 0, best = aR; return scan(`Balanced = all a's then all b's. Choose a <b>split</b>: delete the b's before it and the a's after it.`, [...s], c => { if (c === 'a') aR--; else bL++; best = Math.min(best, aR + bL); return [ln(C_MDB, 'split after'), `split after "${c}": b's left ${bL} + a's right ${aR} = ${aR + bL}.`, { best }]; }, i => [lane('s', [...s], { active: i >= 0 ? [i] : [] })]); }
+
+const C_MSW = `
+for (char c : s.toCharArray()) {
+    if (c == '[') open++;
+    else if (open > 0) open--;            // matched pair disappears
+}
+return (open + 1) / 2;                    // each swap fixes two unmatched pairs`;
+function msw() {
+  const r = recorder();
+  r.step(0, `"]]][[[": cancel matched pairs like a stack. What is left always looks like "]]]…[[[".`, [lane('s', [...']]][[['])]);
+  r.step(ln(C_MSW, 'matched pair'), `Unmatched: 3 "]" and 3 "[".`, [lane('unmatched', [...']]][[['], { bad: [0, 1, 2, 3, 4, 5] })]);
+  r.step(ln(C_MSW, 'each swap fixes two'), `Swap the first "]" with the last "[" → fixes 2 pairs at once → ceil(3/2) = <b>2</b>.`, [lane('after one swap', [...'[]][[]'], { done: [0, 5] })]);
+  return r.steps;
+}
+
+const C_FP = `
+for (int i = 0; i < p.length; i++) {
+    while (!st.isEmpty() && p[st.peek()] >= p[i]) res[st.pop()] -= p[i];   // first cheaper-or-equal to the right
+    st.push(i);
+}`;
+function fp() { const p = [8, 4, 6, 2, 3], res = [...p], st = []; return scan(`Each item waits for the first later price ≤ its own (a <b>next smaller-or-equal</b> element).`, p, (x, i) => { const g = []; while (st.length && p[st.at(-1)] >= x) { const j = st.pop(); res[j] -= x; g.push(j); } st.push(i); return [ln(C_FP, 'first cheaper'), g.length ? `${x} discounts item${g.length > 1 ? 's' : ''} ${g}.` : `${x} waits.`]; }, i => [lane('prices', p, { showIdx: true, active: i >= 0 ? [i] : [] }), S('waiting', st.map(j => `${j}:${p[j]}`)), lane('final', [...res])], { end: () => [0, `Items left on the stack get no discount. Answer <b>[${res}]</b>.`] }); }
+
+const C_RAMP = `
+for (int i = 0; i < a.length; i++) if (st.isEmpty() || a[i] < a[st.peek()]) st.push(i);   // new prefix minimum
+for (int j = a.length - 1; j >= 0; j--)
+    while (!st.isEmpty() && a[st.peek()] <= a[j]) best = Math.max(best, j - st.pop());`;
+function ramp() {
+  const a = [6, 0, 8, 2, 1, 5], r = recorder();
+  r.step(ln(C_RAMP, 'new prefix minimum'), `Only <b>prefix minima</b> can be the best left end: stack = indices 0 (6), 1 (0).`, [lane('nums', a, { showIdx: true, warn: [0, 1] })]);
+  r.step(ln(C_RAMP, 'best = Math.max'), `Scan right ends from the back: j = 5 (5) pops index 1 (0 ≤ 5) → width 4.`, [lane('nums', a, { showIdx: true, done: [1, 5] })], { best: 4 });
+  r.step(ln(C_RAMP, 'best = Math.max'), `j = 2 (8) pops index 0 (6 ≤ 8) → width 2. Answer <b>4</b>.`, [lane('nums', a, { showIdx: true })], { best: 4 });
+  return r.steps;
+}
+
+const C_ZERO = `
+for (int x : nums) {
+    while (!st.isEmpty() && st.peek() > x) st.pop();      // a smaller value splits the bigger levels
+    if (x == 0) continue;
+    if (st.isEmpty() || st.peek() < x) { st.push(x); ops++; }   // new level → one more operation
+}`;
+function zero() { const a = [1, 2, 1, 2, 1, 2], st = []; let ops = 0; return scan(`An operation zeroes the min of a zero-free subarray. Equal values can share one operation <b>unless a smaller value sits between them</b>. Keep an increasing stack of "open levels".`, a, x => { while (st.length && st.at(-1) > x) st.pop(); let neu = false; if (x && (!st.length || st.at(-1) < x)) { st.push(x); ops++; neu = true; } return [ln(C_ZERO, neu ? 'new level' : 'splits'), neu ? `${x} opens a new level → ops ${ops}.` : `${x} is already open → free.`, { ops }]; }, i => [lane('nums', a, { active: i >= 0 ? [i] : [] }), S('open levels', [...st])]); }
+
+const C_ATOM = `
+if (c == '(') { st.push(new HashMap<>()); i++; }
+else if (c == ')') {
+    int mult = digits after ')' (default 1);
+    Map<String, Integer> top = st.pop();
+    for (Map.Entry<String, Integer> e : top.entrySet()) st.peek().merge(e.getKey(), e.getValue() * mult, Integer::sum);
+}
+else { parse Atom (Upper + lowers) and its count; st.peek().merge(atom, cnt, Integer::sum); }`;
+function atoms() {
+  const r = recorder();
+  r.step(0, `"Mg(OH)2": a stack of <b>count maps</b>, one per open bracket.`, [S('maps', ['{Mg:1}'])]);
+  r.step(ln(C_ATOM, "c == '('"), `"(" opens a new map; O and H go into it.`, [S('maps', ['{Mg:1}', '{O:1, H:1}'])]);
+  r.step(ln(C_ATOM, '* mult'), `")2": pop and multiply by 2, merge down → {Mg:1, O:2, H:2}.`, [S('maps', ['{Mg:1, O:2, H:2}'])]);
+  r.step(0, `Sorted output → <b>H2MgO2</b>.`, [lane('result', ['H2', 'Mg', 'O2'], { done: [0, 1, 2] })]);
+  return r.steps;
+}
+
+const C_SPAN = `
+public int next(int price) {
+    int span = 1;
+    while (!st.isEmpty() && st.peek()[0] <= price) span += st.pop()[1];   // swallow smaller blocks
+    st.push(new int[]{price, span});
+    return span;
+}`;
+function span() { const p = [100, 80, 60, 70, 60, 75, 85], st = []; return scan(`Stack of (price, span) blocks. A higher price swallows every block ≤ it.`, p, x => { let s = 1; while (st.length && st.at(-1)[0] <= x) s += st.pop()[1]; st.push([x, s]); return [ln(C_SPAN, 'swallow'), `next(${x}) → <b>${s}</b>.`]; }, i => [lane('prices', p, { active: i >= 0 ? [i] : [] }), S('(price, span)', st.map(x => [...x]))], { end: () => [0, `Spans <b>[1,1,1,2,1,4,6]</b>; each price is pushed and popped once → amortised O(1).`] }); }
+
+const C_BOOL = `
+for (char c : e.toCharArray()) {
+    if (c == ',') continue;
+    if (c != ')') { st.push(c); continue; }
+    while (st.peek() != '(') { if (st.pop() == 't') anyT = true; else anyF = true; }   // collect operands
+    st.pop();                                       // '('
+    char op = st.pop();
+    st.push(op == '!' ? anyF : op == '&' ? !anyF : anyT ? 't' : 'f');
+}`;
+function boolp() { const e = '!(&(f,t))', st = []; return scan(`Push everything but commas. On ")" pop the operands down to "(", then apply the operator just below.`, [...e], c => { if (c === ',') return [0, 'skip ","']; if (c !== ')') { st.push(c); return [ln(C_BOOL, 'st.push(c)'), `push "${c}".`]; } const ops = []; while (st.at(-1) !== '(') ops.push(st.pop()); st.pop(); const op = st.pop(), v = op === '!' ? ops.includes('f') : op === '&' ? !ops.includes('f') : ops.includes('t'); st.push(v ? 't' : 'f'); return [ln(C_BOOL, 'collect operands'), `${op}(${ops.reverse()}) = ${v ? 't' : 'f'}.`]; }, i => [lane('expr', [...e], { active: i >= 0 ? [i] : [] }), S('stack', [...st])], { end: () => [0, `Result <b>${st[0] === 't'}</b>.`] }); }
+
+const C_RAD = `
+for (char c : s.toCharArray()) {
+    if (st.length() > 0 && st.charAt(st.length() - 1) == c) st.deleteCharAt(st.length() - 1);   // pair vanishes
+    else st.append(c);
+}`;
+function rad() { const s = 'abbaca', st = []; return scan(`Equal to the top → the pair disappears, which may expose a new pair.`, [...s], c => { if (st.at(-1) === c) { st.pop(); return [ln(C_RAD, 'pair vanishes'), `"${c}" cancels the top.`]; } st.push(c); return [0, `push "${c}".`]; }, i => [lane('s', [...s], { active: i >= 0 ? [i] : [] }), S('stack', [...st])], { end: () => [0, `Result <b>"${st.join('')}"</b>.`] }); }
+
+const C_RAO = `
+for (char c : s.toCharArray()) {
+    st.append(c);
+    if (st.length() >= m && st.substring(st.length() - m).equals(part)) st.setLength(st.length() - m);   // tail == part
+}`;
+function rao() { const s = 'daabcbaabcbc', st = []; return scan(`part = "abc". After each push, if the stack <b>ends with</b> part, cut it off (this also handles parts that form after a cut).`, [...s], c => { st.push(c); if (st.slice(-3).join('') === 'abc') { st.splice(-3); return [ln(C_RAO, 'tail == part'), `"abc" on top → cut.`]; } return [0, `push "${c}".`]; }, i => [lane('s', [...s], { active: i >= 0 ? [i] : [] }), lane('stack (left = bottom)', [...st])], { end: () => [0, `Result <b>"${st.join('')}"</b>.`] }); }
+
+const C_RKD = `
+for (char c : num.toCharArray()) {
+    while (k > 0 && st.length() > 0 && st.charAt(st.length() - 1) > c) { st.deleteCharAt(st.length() - 1); k--; }   // bigger earlier digit goes
+    st.append(c);
+}
+st.setLength(st.length() - k);           // still k left → drop from the tail`;
+function rkd() { const s = '1432219'; let k = 3; const st = []; return scan(`k = 3. An earlier digit should be as small as possible: if the previous digit is <b>bigger</b> than the new one, remove it (while k allows).`, [...s], c => { const rm = []; while (k && st.length && st.at(-1) > c) { rm.push(st.pop()); k--; } st.push(c); return [ln(C_RKD, 'bigger earlier digit'), rm.length ? `"${c}" removes ${rm.join(', ')}.` : `push "${c}".`, { k }]; }, i => [lane('num', [...s], { active: i >= 0 ? [i] : [] }), lane('stack (left = bottom)', [...st])], { end: () => [0, `Result <b>${st.join('')}</b>.`] }); }
+
+const C_STARS = `
+for (char c : s.toCharArray()) {
+    if (c == '*') st.deleteCharAt(st.length() - 1);   // star removes the closest letter
+    else st.append(c);
+}`;
+function stars() { const s = 'leet**cod*e', st = []; return scan(`A star removes the closest letter on its left = the stack top.`, [...s], c => { if (c === '*') { const x = st.pop(); return [ln(C_STARS, 'star removes'), `* removes "${x}".`]; } st.push(c); return [0, `push "${c}".`]; }, i => [lane('s', [...s], { active: i >= 0 ? [i] : [] }), lane('stack', [...st])], { end: () => [0, `Result <b>"${st.join('')}"</b>.`] }); }
+
+const C_COP = `
+for (int x : nums) {
+    long cur = x;
+    while (!st.isEmpty()) {
+        long top = st.get(st.size() - 1), g = gcd(top, cur);
+        if (g == 1) break;
+        st.remove(st.size() - 1);
+        cur = top / g * cur;                  // lcm, and keep merging leftwards
+    }
+    st.add(cur);
+}`;
+function cop() { const a = [6, 4, 3, 2, 7, 6, 2], st = [], g = (x, y) => (y ? g(y, x % y) : x); return scan(`Merge adjacent non-coprime numbers into their LCM. A merge can make the new value non-coprime with the one before → keep merging <b>leftwards</b> (stack).`, a, x => { let cur = x; const m = []; while (st.length && g(st.at(-1), cur) > 1) { const t = st.pop(); m.push(t); cur = t / g(t, cur) * cur; } st.push(cur); return [ln(C_COP, 'lcm'), m.length ? `${x} merges with ${m.join(', ')} → ${cur}.` : `push ${x}.`]; }, i => [lane('nums', a, { active: i >= 0 ? [i] : [] }), lane('stack', [...st])], { end: () => [0, `Result <b>[${st}]</b>.`] }); }
+
+const C_RSP = `
+for (int i = 0; i < n; i++) { if '(' push i; if ')' pair it with the popped '(' }   // wormholes
+for (int i = 0, dir = 1; i < n; i += dir) {
+    char c = s.charAt(i);
+    if (c == '(' || c == ')') { i = pair[i]; dir = -dir; }    // jump through, turn around
+    else sb.append(c);
+}`;
+function rsp() {
+  const r = recorder(), s = '(u(love)i)';
+  r.step(0, `Brute force reverses on every ")" (O(n²)). <b>Wormholes</b>: pair each bracket with its partner, then walk once.`, [lane('s', [...s], { showIdx: true })]);
+  r.step(ln(C_RSP, 'wormholes'), `Pairs: 0↔9, 2↔7.`, [lane('s', [...s], { showIdx: true, warn: [0, 9, 2, 7] })]);
+  r.step(ln(C_RSP, 'turn around'), `Walk: at 0 "(" jump to 9 and walk LEFT → read "i"; at 7 ")" jump to 2 and walk RIGHT → read "love"; at 7 again jump to 2 and walk LEFT → read "u"; at 0 jump to 9 and walk RIGHT → end. Output <b>iloveu</b> in O(n).`, [lane('output', [...'iloveu'], { done: [0, 1, 2, 3, 4, 5] })]);
+  return r.steps;
+}
+
+const C_ROB = `
+for (int i : idx) {                                     // sorted by position
+    if (directions.charAt(i) == 'R') { st.push(i); continue; }
+    while (h[i] > 0 && !st.isEmpty()) {                 // L robot fights R robots on the stack
+        int j = st.peek();
+        if (h[j] < h[i]) { h[j] = 0; st.pop(); h[i]--; }
+        else if (h[j] > h[i]) { h[j]--; h[i] = 0; }
+        else { h[j] = 0; h[i] = 0; st.pop(); }
+    }
+}`;
+function rob() {
+  const r = recorder();
+  r.step(0, `Positions [3,5,2,6], health [10,10,15,12], "RLRL". Sort by position: 2:R(15), 3:R(10), 5:L(10), 6:L(12).`, [lane('by position', ['2 R 15', '3 R 10', '5 L 10', '6 L 12'])]);
+  r.step(ln(C_ROB, 'fights'), `5:L(10) meets 3:R(10) → equal → both die.`, [S('R robots', ['15'])]);
+  r.step(ln(C_ROB, 'fights'), `6:L(12) meets 2:R(15) → L dies, R drops to 14. Survivors in input order → <b>[14]</b>.`, [S('R robots', ['14'])]);
+  return r.steps;
+}
+
+const C_SCORE = `
+for (int i = 0; i < s.length(); i++) {
+    if (s.charAt(i) == '(') depth++;
+    else { depth--; if (s.charAt(i - 1) == '(') score += 1 << depth; }   // each "()" core is worth 2^depth
+}`;
+function score() { const s = '(()(()))'; let d = 0, sc = 0; return scan(`Only the innermost "()" cores score. A core at depth d contributes 2^d (it is doubled by each enclosing pair).`, [...s], (c, i) => { if (c === '(') { d++; return [0, `depth ${d}.`, { depth: d, score: sc }]; } d--; if (s[i - 1] === '(') { sc += 1 << d; return [ln(C_SCORE, '2^depth'), `core at depth ${d} → +${1 << d}.`, { depth: d, score: sc }]; } return [0, `close, depth ${d}.`, { depth: d, score: sc }]; }, i => [lane('s', [...s], { active: i >= 0 ? [i] : [] })], { end: () => [0, `Score <b>${sc}</b>.`] }); }
+
+const C_PATH = `
+for (String part : path.split("/")) {
+    if (part.isEmpty() || part.equals(".")) continue;
+    if (part.equals("..")) { if (!st.isEmpty()) st.pollLast(); }   // go up
+    else st.offerLast(part);
+}
+return "/" + String.join("/", st);`;
+function path() { const parts = '/home/user/Documents/../Pictures'.split('/').filter(Boolean), st = []; return scan(`Split on "/". Names push, ".." pops, "." and empty parts are ignored.`, parts, p => { if (p === '..') { st.pop(); return [ln(C_PATH, 'go up'), `".." → go up.`]; } st.push(p); return [ln(C_PATH, 'offerLast'), `enter "${p}".`]; }, i => [lane('parts', parts, { active: i >= 0 ? [i] : [] }), lane('directories', [...st])], { end: () => [ln(C_PATH, 'String.join'), `Result <b>/${st.join('/')}</b>.`] }); }
+
+const C_SSM = `
+left[i]  = distance to the previous STRICTLY smaller element (stack pops >)
+right[i] = distance to the next smaller-OR-EQUAL element    (stack pops >=)
+sum += arr[i] * left[i] * right[i]          // arr[i] is the min of left·right subarrays`;
+function ssm() {
+  const r = recorder(), a = [3, 1, 2, 4];
+  r.step(0, `Flip the question: for each element, in <b>how many subarrays</b> is it the minimum?`, [lane('arr', a, { showIdx: true })]);
+  r.step(ln(C_SSM, 'left[i]'), `left = [1, 2, 1, 1] (how far left it stays the min), right = [1, 3, 2, 1].`, [lane('left', [1, 2, 1, 1]), lane('right', [1, 3, 2, 1])]);
+  r.step(ln(C_SSM, 'sum +='), `3·1·1 + 1·2·3 + 2·1·2 + 4·1·1 = 3 + 6 + 4 + 4 = <b>17</b>. Strict on one side, non-strict on the other → duplicates counted once.`, [lane('contribution', [3, 6, 4, 4], { done: [0, 1, 2, 3] })]);
+  return r.steps;
+}
+
+const C_TRAP = `
+for (int i = 0; i < h.length; i++) {
+    while (!st.isEmpty() && h[st.peek()] < h[i]) {
+        int bottom = h[st.pop()];
+        if (st.isEmpty()) break;                        // no left wall
+        int left = st.peek();
+        water += (Math.min(h[left], h[i]) - bottom) * (i - left - 1);   // fill one horizontal layer
+    }
+    st.push(i);
+}`;
+function trap() { const h = [0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1], st = []; let w = 0; return scan(`Decreasing stack of walls. A taller bar closes a basin and fills it <b>layer by layer</b> (horizontal slabs).`, h, (x, i) => { const add = []; while (st.length && h[st.at(-1)] < x) { const b = h[st.pop()]; if (!st.length) break; const l = st.at(-1), v = (Math.min(h[l], x) - b) * (i - l - 1); w += v; if (v) add.push(v); } st.push(i); return [ln(C_TRAP, 'fill one horizontal layer'), add.length ? `bar ${x} fills ${add.join(' + ')}.` : `push bar ${x}.`, { water: w }]; }, i => [lane('heights', h, { showIdx: true, active: i >= 0 ? [i] : [] }), S('walls', st.map(j => `${j}:${h[j]}`))], { end: () => [0, `Total water <b>${w}</b>.`] }); }
+
+const C_VSS = `
+for (int x : pushed) {
+    st.push(x);
+    while (!st.isEmpty() && j < popped.length && st.peek() == popped[j]) { st.pop(); j++; }   // pop greedily
+}
+return st.isEmpty();`;
+function vss() { const pu = [1, 2, 3, 4, 5], po = [4, 5, 3, 2, 1], st = []; let j = 0; return scan(`Replay: push in order and pop whenever the top equals the next expected pop.`, pu, x => { st.push(x); const p = []; while (st.length && st.at(-1) === po[j]) { p.push(st.pop()); j++; } return [ln(C_VSS, 'pop greedily'), p.length ? `push ${x}, pop ${p}.` : `push ${x}.`]; }, i => [lane('pushed', pu, { active: i >= 0 ? [i] : [] }), lane('popped', po, { done: [...Array(j).keys()] }), S('stack', [...st])], { end: () => [ln(C_VSS, 'st.isEmpty()'), `Stack empty → <b>true</b>.`] }); }
+
+const T = (name, hook, mantra, statement, code, steps, recall, links = []) => ({ name, hook, mantra, statement, anims: [{ name: 'Walkthrough', code, steps }], recall, links });
+mount({
+  title: 'Stack Animations',
+  sub: 'A stack remembers <b>unfinished business</b>: open brackets, values waiting for a bigger/smaller one, saved state before "(". Monotonic stack = everyone waiting for their next greater/smaller element.',
+  problems: [
+    T('132 Pattern (456)', 'Scan from the right with a <b>trophy shelf</b> of "3"s; anything a bigger value knocks off becomes the best "2".', 'RIGHT→LEFT, POPPED = BEST "2", a[i] < two → FOUND', 'Is there i < j < k with nums[i] < nums[k] < nums[j]?', C_132, p132(), [['What does the stack hold?', 'Candidates for "3", decreasing.'], ['Why is "two" the largest possible "2"?', 'It is the largest value popped so far, and each popped value has a larger "3" to its left.']]),
+    T('Asteroid Collision (735)', 'Cars driving right line up; a car driving left smashes into the queue from the top.', 'ONLY → ← COLLIDE, BIGGER SURVIVES', 'State after all collisions.', C_AST, ast(), [['When do two asteroids never collide?', 'A left-mover before a right-mover (← →).']]),
+    T('Basic Calculator (224)', 'A <b>bookmark</b> per bracket: save the outer result and sign, compute inside, fold back.', 'result + sign; "(" SAVES, ")" FOLDS', 'Evaluate + − ( ) with unary minus.', C_CALC, calc(), [['What is pushed at "("?', 'The running result and the sign before the bracket.'], ['Unary minus?', 'Just sets sign = −1 before the next term.']]),
+    T('Build Array Stack Ops (1441)', 'A <b>conveyor belt</b>: grab every number, throw away the unwanted ones at once.', 'PUSH ALL, POP UNWANTED', 'Operations that build target from the stream 1..n.', C_BUILD, build(), [['When to stop?', 'After the last target value.']]),
+    T('Parentheses Can Be Valid (2116)', 'Unlocked characters are <b>jokers</b>. Check from the left that ")" never outnumbers, from the right that "(" never does.', 'TWO SWEEPS WITH JOKERS', 'Can unlocked positions be changed to make s valid?', C_CBV, cbv(), [['Odd length?', 'Always false.'], ['Stack version?', 'Stacks of indices for locked "(" and jokers; match ")" with "(" first.']]),
+    T('Daily Temperatures (739)', 'Days <b>stand in line</b> waiting for a warmer day; a warm day answers everyone colder in front.', 'DECREASING STACK OF INDICES', 'Days until a warmer temperature.', C_DT, dt(), [['Stack stores?', 'Indices (to compute distances).']], [['Online Stock Span', 22]]),
+    T('Clear Digits (3174)', 'Each digit eats the <b>last letter</b> written.', 'LETTER PUSH, DIGIT POP', 'Repeatedly delete a digit with the closest letter to its left.', C_CD, cd(), [['Why a stack?', 'The closest letter on the left = the most recent kept letter.']]),
+    T('Crawler Log Folder (1598)', 'Only the <b>height of the stack</b> matters.', 'DEPTH COUNTER', 'Steps back to the main folder.', C_CRAWL, crawl(), [['"../" at the root?', 'Stay at 0.']]),
+    T('Max Nesting Depth (1614)', 'Stack size = depth; track its maximum.', 'COUNTER, MAX', 'Maximum nesting depth of parentheses.', C_DEPTH, depth(), [['Need a real stack?', 'No, a counter is enough.']]),
+    T('Evaluate RPN (150)', 'A <b>calculator with memory slots</b>: numbers wait; operators eat the top two.', 'NUMBERS PUSH, OP POPS b THEN a', 'Evaluate a postfix expression.', C_RPN, rpn(), [['Operand order for − and /?', 'b = pop(), a = pop(), result a op b.']], [['Basic Calculator', 2]]),
+    T('Queue using Stacks (232)', 'Two buckets: pour from "in" to "out" only when "out" runs dry; the pour reverses the order.', 'IN FOR PUSH, OUT FOR POP, POUR WHEN EMPTY', 'FIFO queue from two LIFO stacks.', C_QS, qs(), [['Why amortised O(1)?', 'Each element is moved at most once.']]),
+    T('Largest Rectangle (84)', 'Each bar stretches until it hits a <b>shorter</b> neighbour on each side.', 'INCREASING STACK, POP → AREA WITH NSL/NSR', 'Largest rectangle in a histogram.', C_LRH, lrh(), [['Popped bar\'s width?', 'i − (new top) − 1.'], ['Sentinel?', 'A height-0 bar at the end flushes the stack.']], [['Maximal Rectangle', 13]]),
+    T('Longest Valid Parentheses (32)', 'A <b>base marker</b> remembers where the current valid run started.', 'STACK OF INDICES, BASE −1, LENGTH = i − TOP', 'Length of the longest valid substring.', C_LVP, lvp(), [['When does the base change?', 'On an unmatched ")".'], ['O(1) space?', 'Two passes counting open/close.']]),
+    T('Maximal Rectangle (85)', 'Each row is the <b>floor of a skyline</b>; reuse the histogram trick per row.', 'ROW HISTOGRAMS + LARGEST RECTANGLE', 'Largest all-1 rectangle in a binary matrix.', C_MR, mr(), [['Height update?', 'h[j] = row[j] == 1 ? h[j] + 1 : 0.']], [['Largest Rectangle', 11]]),
+    T('Max Score Removing Substrings (1717)', 'Cash in the <b>more valuable</b> pair everywhere first, then the cheaper one.', 'GREEDY: HIGH PAIR FIRST, STACK REMOVAL', 'Max points from removing "ab" (x) and "ba" (y).', C_MSRS, msrs(), [['Why greedy works?', 'Removing a high pair never blocks more high pairs; each letter is in at most one pair.']]),
+    T('Min Add to Make Valid (921)', 'Count the <b>orphans</b> on both sides.', 'UNMATCHED ( + UNMATCHED )', 'Minimum insertions to make parentheses valid.', C_MAP, mapv(), [['Answer?', 'add (unmatched ")") + open (unmatched "(").']]),
+    T('Min Deletions Balanced (1653)', 'Draw a <b>line</b>: b\'s left of it and a\'s right of it must go.', 'TRY EVERY SPLIT', 'Minimum deletions so no "b" comes before an "a".', C_MDB, mdb(), [['Stack version?', 'Each "ba" pair cancelled costs 1.']]),
+    T('Min Swaps Balanced (1963)', 'After cancelling pairs, "]]][[[" is left; one swap fixes <b>two</b> pairs.', 'CANCEL PAIRS, ceil(u / 2)', 'Minimum swaps to balance a bracket string.', C_MSW, msw(), [['Formula?', '(unmatched + 1) / 2.']]),
+    T('Final Prices Discount (1475)', 'Each item waits for the first <b>cheaper-or-equal</b> item after it.', 'NEXT SMALLER-OR-EQUAL STACK', 'Price after the special discount.', C_FP, fp(), [['Pop condition?', 'p[top] >= p[i].']], [['Daily Temperatures', 5]]),
+    T('Max Width Ramp (962)', 'Only <b>record lows</b> can be good starting points; then sweep end points from the far right.', 'PREFIX-MIN STACK, SWEEP j BACKWARDS', 'Max j − i with nums[i] ≤ nums[j].', C_RAMP, ramp(), [['Why only prefix minima?', 'A larger value further right is never a better left end.']]),
+    T('Ops to Zero (3542)', 'Equal values on one <b>level</b> share an operation until a smaller value cuts the level.', 'INCREASING STACK, NEW LEVEL = +1 OP', 'Minimum operations to turn all elements into 0.', C_ZERO, zero(), [['Why pop bigger values?', 'A smaller value between them separates the two groups.']]),
+    T('Number of Atoms (726)', 'Nested <b>boxes of counts</b>: closing a box multiplies its contents.', 'STACK OF MAPS, ")k" MULTIPLIES AND MERGES', 'Count atoms in a chemical formula.', C_ATOM, atoms(), [['Output order?', 'Sorted atom names (TreeMap).']]),
+    T('Online Stock Span (901)', 'Each day <b>absorbs</b> the spans of all cheaper days just before it.', '(price, span) STACK, SWALLOW ≤', 'Span of the stock price for each day.', C_SPAN, span(), [['Why store span?', 'Popped blocks keep their combined length.']], [['Daily Temperatures', 5]]),
+    T('Parsing Boolean Expr (1106)', 'Read until a ")" and <b>evaluate the innermost group</b>.', 'PUSH, ON ")" COLLECT AND APPLY', 'Evaluate a boolean expression with !, &, |.', C_BOOL, boolp(), [['What is needed from operands?', 'Only whether any t / any f exists.']]),
+    T('Remove Adjacent Duplicates (1047)', '<b>Bubble wrap</b>: two equal neighbours pop together.', 'EQUAL TO TOP → POP', 'Remove adjacent duplicate pairs repeatedly.', C_RAD, rad(), [['Why one pass?', 'The stack exposes the new neighbour immediately.']]),
+    T('Remove All Occurrences (1910)', 'After each new letter, check whether the <b>tail spells part</b>.', 'PUSH, TAIL == part → CUT', 'Remove all occurrences of part (leftmost repeatedly).', C_RAO, rao(), [['Faster check?', 'KMP state per stack position.']]),
+    T('Remove K Digits (402)', 'Smaller digits want to be <b>early</b>: a bigger earlier digit steps aside.', 'INCREASING STACK, POP BIGGER WHILE k', 'Smallest number after removing k digits.', C_RKD, rkd(), [['Leftover k?', 'Drop from the end.'], ['Leading zeros?', 'Strip them; empty → "0".']]),
+    T('Removing Stars (2390)', 'A star is a <b>backspace</b>.', 'LETTER PUSH, STAR POP', 'Result after applying all stars.', C_STARS, stars(), [['O(1) extra?', 'Two pointers writing in place.']]),
+    T('Replace Non-Coprime (2197)', 'Neighbours that share a factor <b>fuse</b>; a fused value may fuse again leftwards.', 'STACK, MERGE WITH LCM WHILE gcd > 1', 'Final array after merging adjacent non-coprime numbers.', C_COP, cop(), [['lcm without overflow?', 'top / gcd * cur, with long.']]),
+    T('Reverse in Parentheses (1190)', '<b>Wormholes</b>: entering a bracket teleports you to its partner and reverses your walk.', 'PAIR BRACKETS, WALK + JUMP + FLIP', 'Reverse every bracketed substring, innermost first.', C_RSP, rsp(), [['Brute force cost?', 'O(n²).']]),
+    T('Robot Collisions (2751)', 'Sort by position; right-movers queue up; a left-mover fights them from the nearest.', 'SORT, STACK OF R, FIGHT WITH HEALTH', 'Health of surviving robots after all collisions.', C_ROB, rob(), [['Output order?', 'Original input order.']], [['Asteroid Collision', 1]]),
+    T('Score of Parentheses (856)', 'Only the innermost <b>"()" cores</b> score; each enclosing pair doubles them.', 'CORE AT DEPTH d → 2^d', 'Score of a balanced string.', C_SCORE, score(), [['Stack version?', 'Push 0 at "("; at ")" add max(2·inner, 1) to the outer.']]),
+    T('Simplify Path (71)', 'A <b>file explorer</b>: names go in, ".." goes up.', 'SPLIT "/", NAME PUSH, ".." POP', 'Canonical Unix path.', C_PATH, path(), [['"..." ?', 'A valid directory name.']]),
+    T('Sum of Subarray Minimums (907)', 'Ask each element: <b>in how many subarrays am I the boss (minimum)</b>?', 'PREV SMALLER × NEXT SMALLER-OR-EQUAL', 'Sum of min over all subarrays (mod 1e9+7).', C_SSM, ssm(), [['Why strict on one side only?', 'So equal minimums are counted once.']]),
+    T('Trapping Rain Water (42)', 'Fill <b>basins layer by layer</b> when a taller wall arrives.', 'DECREASING STACK, FILL HORIZONTAL LAYERS', 'Total trapped water.', C_TRAP, trap(), [['Two-pointer version?', 'Move the lower side inward, tracking leftMax/rightMax.']], [['Largest Rectangle', 11]]),
+    T('Validate Stack Sequences (946)', '<b>Replay</b> the pushes and pop greedily when possible.', 'PUSH, POP WHILE TOP == NEXT', 'Could popped be produced from pushed?', C_VSS, vss(), [['Why is greedy popping safe?', 'Values are distinct; delaying a matching pop can only bury it.']]),
+    T('Valid Parentheses (20)', 'Push the closer you <b>expect</b>.', 'PUSH EXPECTED CLOSER, MATCH ON CLOSE', 'Are the brackets valid?', C_VP, vp(), [['End condition?', 'Stack must be empty.']])
+  ]
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid and BFS Animations</title>
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/graph-kit.js"></script>
+<script>
+const { lane, graph, grid, tree, recorder, mount, ln } = BrainAnim;
+const { range, C, EC, Q, S, A, story, adjOf } = GK;
+const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const bits = a => a.map(b => (b ? 1 : 0));
+// Grid lane where sets of [r,c] cells get a class
+const GR = (name, m, o = {}) => { const mark = {}; for (const k of ['ghost', 'done', 'warn', 'bad', 'active']) (o[k] || []).forEach(([a, b]) => { mark[a + ',' + b] = k; }); return grid(name, m, { cls: (r, c) => mark[r + ',' + c], tag: o.tag }); };
+const inb = (m, x, y) => x >= 0 && x < m.length && y >= 0 && y < m[0].length;
+// Cells of the 4-connected component of (i,j) whose value passes ok, in BFS order
+const flood = (m, i, j, ok) => { const seen = new Set([i + ',' + j]), out = [], q = [[i, j]]; while (q.length) { const c = q.shift(); out.push(c); for (const d of D4) { const x = c[0] + d[0], y = c[1] + d[1]; if (inb(m, x, y) && ok(m[x][y]) && !seen.has(x + ',' + y)) { seen.add(x + ',' + y); q.push([x, y]); } } } return out; };
+
+const C_ISL = `
+for (int i = 0; i < grid.length; i++) {
+    for (int j = 0; j < grid[0].length; j++) {
+        if (grid[i][j] == '1') {
+            sink(grid, i, j);          // flood the whole island
+            count++;
+        }
+    }
+}
+private void sink(char[][] grid, int i, int j) {
+    if (i < 0 || i >= grid.length || j < 0 || j >= grid[0].length || grid[i][j] != '1') return;
+    grid[i][j] = '$';
+    for (int[] d : DIRS) sink(grid, i + d[0], j + d[1]);
+}`;
+function islands() {
+  const m = ['11000', '11000', '00100', '00011'].map(r => r.split('').map(Number)), r = recorder(), sunk = []; let count = 0;
+  const L = (act, label) => [GR('grid (1 = land, blue = flooding, green = already counted)', m, { done: sunk, active: act || [] }), A('islands', [count])];
+  r.step(0, 'Scan row by row. Every time we meet land we have not yet sunk, that is a <b>new island</b>.', L(), { count });
+  const seen = new Set();
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 5; j++) {
+    if (m[i][j] !== 1 || seen.has(i + ',' + j)) continue;
+    count++; const cells = flood(m, i, j, v => v === 1); cells.forEach(c => seen.add(c[0] + ',' + c[1]));
+    r.step(ln(C_ISL, 'count++'), `Land at (${i},${j}) is untouched: island #${count}. The flood fill reaches ${cells.length} cell${cells.length > 1 ? 's' : ''} and sinks them so they are never counted again.`, [GR('grid', m, { done: sunk, active: cells }), A('islands', [count])], { count });
+    cells.forEach(c => sunk.push(c));
+    r.step(ln(C_ISL, 'grid[i][j] = \'$\''), `Island #${count} is sunk (green). The scan continues.`, L(), { count });
+  }
+  r.step(0, `<b>${count}</b> islands. Time O(m·n): every cell is sunk or skipped once.`, L(), { count });
+  return r.steps;
+}
+const C_ISLB = `
+Queue<int[]> que = new ArrayDeque<>();
+grid[i][j] = '$';
+que.add(new int[]{i, j});
+while (!que.isEmpty()) {
+    int[] c = que.poll();
+    for (int[] d : DIRS) {
+        int x = c[0] + d[0], y = c[1] + d[1];
+        if (x >= 0 && x < m && y >= 0 && y < n && grid[x][y] == '1') {
+            grid[x][y] = '$';
+            que.add(new int[]{x, y});
+        }
+    }
+}`;
+function islandsBfs() {
+  const m = ['11000', '11000', '00100'].map(r => r.split('').map(Number)), r = recorder(), sunk = [], q = [[0, 0]], seen = new Set(['0,0']);
+  const L = (act) => [GR('grid', m, { done: sunk, warn: q, active: act ? [act] : [] }), Q('queue', q.map(c => `(${c})`))];
+  r.step(ln(C_ISLB, 'que.add(new int[]{i, j})'), 'First land cell (0,0): sink it on the spot and queue it. Marking when queued prevents double queuing.', L(), {});
+  while (q.length) {
+    const c = q.shift(); sunk.push(c);
+    for (const d of D4) { const x = c[0] + d[0], y = c[1] + d[1]; if (inb(m, x, y) && m[x][y] === 1 && !seen.has(x + ',' + y)) { seen.add(x + ',' + y); q.push([x, y]); } }
+    r.step(ln(C_ISLB, 'int[] c = que.poll()'), `Poll (${c}), queue its unseen land neighbours.`, L(c), {});
+  }
+  r.step(0, 'Queue empty: the island {(0,0),(0,1),(1,0),(1,1)} is fully sunk. BFS and DFS find the same island, just in a different order.', L(), {});
+  return r.steps;
+}
+
+const C_AREA = `
+private int area(int[][] g, int i, int j) {
+    if (i < 0 || i >= g.length || j < 0 || j >= g[0].length || g[i][j] != 1) return 0;
+    g[i][j] = 2;
+    int size = 1;
+    for (int[] d : DIRS) size += area(g, i + d[0], j + d[1]);
+    return size;
+}
+best = Math.max(best, area(grid, i, j));`;
+function area() {
+  const m = ['0110', '0100', '0001', '1011'].map(r => r.split('').map(Number)), r = recorder(), seen = new Set(), done = []; let best = 0;
+  r.step(0, 'Like Number of Islands, but the DFS <b>returns the size</b> of the island it floods: 1 for itself plus the sizes of its four neighbours.', [GR('grid', m, {}), A('best', [0])], { best });
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    if (m[i][j] !== 1 || seen.has(i + ',' + j)) continue;
+    const cells = flood(m, i, j, v => v === 1); cells.forEach(c => seen.add(c[0] + ',' + c[1]));
+    best = Math.max(best, cells.length);
+    r.step(ln(C_AREA, 'best = Math.max'), `Island at (${i},${j}) has area ${cells.length}. Best so far ${best}.`, [GR('grid', m, { done, active: cells }), A('best', [best])], { size: cells.length, best });
+    cells.forEach(c => done.push(c));
+  }
+  r.step(0, `Largest island: <b>${best}</b>. Empty grid or all water gives 0.`, [GR('grid', m, { done }), A('best', [best])], { best });
+  return r.steps;
+}
+
+const C_PERI = `
+public int perimeterCount(int[][] g) {
+    int land = 0, shared = 0;
+    for (int i = 0; i < g.length; i++) {
+        for (int j = 0; j < g[0].length; j++) {
+            if (g[i][j] == 0) continue;
+            land++;
+            if (i > 0 && g[i - 1][j] == 1) shared++;
+            if (j > 0 && g[i][j - 1] == 1) shared++;
+        }
+    }
+    return 4 * land - 2 * shared;
+}`;
+function peri() {
+  const m = [[0, 1, 0, 0], [1, 1, 1, 0], [0, 1, 0, 0], [1, 1, 0, 0]], r = recorder(); let land = 0, shared = 0; const done = [];
+  r.step(0, 'Perimeter = sides of land cells that touch water or the border. No search is needed: every land cell brings 4 sides, and every touching pair hides 2.', [GR('grid', m, {}), A('land, shared', [0, 0])], {});
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    if (!m[i][j]) continue; land++; let add = 0; if (i > 0 && m[i - 1][j]) { shared++; add++; } if (j > 0 && m[i][j - 1] && true) { shared++; add++; }
+    r.step(ln(C_PERI, 'land++'), `Land (${i},${j}): +1 land${add ? `, +${add} shared edge${add > 1 ? 's' : ''} with the cell above/left` : ''}. land = ${land}, shared = ${shared}.`, [GR('grid', m, { done, active: [[i, j]] }), A('land, shared', [land, shared])], { land, shared });
+    done.push([i, j]);
+  }
+  r.step(ln(C_PERI, 'return 4 * land'), `4 × ${land} − 2 × ${shared} = <b>${4 * land - 2 * shared}</b>.`, [GR('grid', m, { done }), A('land, shared', [land, shared])], { answer: 4 * land - 2 * shared });
+  return r.steps;
+}
+const C_PERID = `
+private int dfs(int[][] g, int i, int j) {
+    if (i < 0 || i >= g.length || j < 0 || j >= g[0].length || g[i][j] == 0) return 1;
+    if (g[i][j] == -1) return 0;
+    g[i][j] = -1;
+    int edges = 0;
+    for (int[] d : DIRS) edges += dfs(g, i + d[0], j + d[1]);
+    return edges;
+}`;
+function periDfs() {
+  const m = [[0, 1], [1, 1]], r = recorder(), done = []; let total = 0;
+  r.step(0, 'DFS version: stepping from land into water (or off the map) is a border edge: return 1. Stepping into an already visited land cell returns 0.', [GR('grid', m, {}), A('perimeter', [0])], {});
+  const order = [[0, 1, 3, 'above is off-map, left (0,0) water, right is off-map → 3 borders... then below is land'], [1, 1, 2, ''], [1, 0, 3, '']];
+  const cell = (i, j) => { let e = 0; for (const d of D4) { const x = i + d[0], y = j + d[1]; if (!inb(m, x, y) || m[x][y] === 0) e++; } return e; };
+  [[0, 1], [1, 1], [1, 0]].forEach(([i, j]) => { const e = cell(i, j); total += e; r.step(ln(C_PERID, 'edges += dfs'), `Cell (${i},${j}) touches water/border on ${e} side${e === 1 ? '' : 's'}.`, [GR('grid', m, { done, active: [[i, j]] }), A('perimeter', [total])], { total }); done.push([i, j]); });
+  r.step(0, `Perimeter <b>${total}</b>.`, [GR('grid', m, { done }), A('perimeter', [total])], { total });
+  return r.steps;
+}
+
+const C_SHAPE = `
+public int countDistinctIslands(int[][] grid) {
+    Set<String> shapes = new HashSet<>();
+    ...
+            StringBuilder sb = new StringBuilder("X");
+            walk(grid, i, j, 'S', sb);
+            shapes.add(sb.toString());
+}
+private void walk(int[][] g, int i, int j, char move, StringBuilder sb) {
+    if (i < 0 || i >= g.length || j < 0 || j >= g[0].length || g[i][j] != 1) return;
+    g[i][j] = 0;
+    sb.append(move);
+    walk(g, i + 1, j, 'D', sb);
+    walk(g, i - 1, j, 'U', sb);
+    walk(g, i, j - 1, 'L', sb);
+    walk(g, i, j + 1, 'R', sb);
+    sb.append('O');
+}`;
+function shapes() {
+  const m = ['11001', '10000', '11001', '01011'].map(r => r.split('').map(Number)), r = recorder(), done = [], set = [];
+  const g = m.map(x => x.slice());
+  const walk = (i, j, mv) => { if (!inb(g, i, j) || g[i][j] !== 1) return ''; g[i][j] = 0; return mv + walk(i + 1, j, 'D') + walk(i - 1, j, 'U') + walk(i, j - 1, 'L') + walk(i, j + 1, 'R') + 'O'; };
+  r.step(0, 'Two islands are the same shape if they match after sliding. Record the DFS walk as a string: each move letter on the way down and <b>O</b> on every way back. Same string ⇔ same shape.', [GR('grid', m, {}), A('distinct shapes', [0])], {});
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 5; j++) {
+    if (g[i][j] !== 1) continue;
+    const cells = flood(m, i, j, v => v === 1), sig = 'X' + walk(i, j, 'S'), isNew = !set.includes(sig); if (isNew) set.push(sig);
+    r.step(ln(C_SHAPE, 'shapes.add(sb.toString())'), `Island from (${i},${j}): walk = <b>${sig}</b>. ${isNew ? 'A new shape.' : 'Already in the set: same shape as an earlier island.'}`, [GR('grid', m, { done, active: cells }), A('distinct shapes', set, { showIdx: false })], { shapes: set.length });
+    cells.forEach(c => done.push(c));
+  }
+  r.step(0, `<b>${set.length}</b> distinct shapes. The O markers matter: without them "DR" could be two different shapes.`, [GR('grid', m, { done }), A('distinct shapes', [set.length])], {});
+  return r.steps;
+}
+
+const C_GCYC = `
+private boolean dfs(char[][] g, int i, int j, int pi, int pj, boolean[][] visited) {
+    visited[i][j] = true;
+    for (int[] d : DIRS) {
+        int x = i + d[0], y = j + d[1];
+        if (x < 0 || x >= g.length || y < 0 || y >= g[0].length || g[x][y] != g[i][j] || (x == pi && y == pj)) continue;
+        if (visited[x][y] || dfs(g, x, y, i, j, visited)) return true;
+    }
+    return false;
+}`;
+function gridCycle() {
+  const m = ['aaaa', 'abba', 'abba', 'aaaa'].map(r => r.split('')), r = recorder(), vis = new Set(), path = [];
+  const L = (act, bad) => [GR('grid (same letters connect)', m, { done: [...vis].map(s => s.split(',').map(Number)).filter(c => !path.some(p => p[0] === c[0] && p[1] === c[1])), warn: path.slice(0, -1), active: act ? [act] : [], bad: bad || [] }), S('call stack', path.map(c => `(${c})`))];
+  r.step(0, 'A cycle is a closed loop of equal letters of length ≥ 4. In the grid graph that is exactly "an undirected cycle": a visited neighbour that is not where we came from.', L(), {});
+  let hit = false;
+  (function go(i, j, pi, pj) {
+    vis.add(i + ',' + j); path.push([i, j]);
+    r.step(ln(C_GCYC, 'visited[i][j] = true'), `Enter (${i},${j}) '${m[i][j]}'.`, L([i, j]), {});
+    for (const d of D4) {
+      const x = i + d[0], y = j + d[1];
+      if (!inb(m, x, y) || m[x][y] !== m[i][j] || (x === pi && y === pj)) continue;
+      if (vis.has(x + ',' + y)) { r.step(ln(C_GCYC, 'visited[x][y] ||'), `(${x},${y}) is the same letter, already visited, and not my parent: the ring closes. <b>Cycle!</b>`, L(null, [[i, j], [x, y]]), {}); hit = true; return true; }
+      if (go(x, y, i, j)) return true;
+    }
+    path.pop(); return false;
+  })(0, 0, -1, -1);
+  r.step(0, `Result: <b>${hit}</b>. The outer ring of a's loops around the b block.`, L(), {});
+  return r.steps;
+}
+
+const C_VP = `
+for (int[] d : STREET[g[i][j]]) {
+    int x = i + d[0], y = j + d[1];
+    if (x < 0 || x >= g.length || y < 0 || y >= g[0].length || visited[x][y] || !pointsBack(g, x, y, i, j)) continue;
+    if (dfs(g, x, y, visited)) return true;
+}`;
+function validPath() {
+  const g = [[2, 4, 3], [6, 5, 2]], S6 = [[], [[0, -1], [0, 1]], [[-1, 0], [1, 0]], [[0, -1], [1, 0]], [[0, 1], [1, 0]], [[0, -1], [-1, 0]], [[-1, 0], [0, 1]]], r = recorder();
+  const sym = ['', '─', '│', '┐', '┌', '┘', '└'], show = g.map(row => row.map(v => sym[v]));
+  const back = (x, y, i, j) => S6[g[x][y]].some(b => x + b[0] === i && y + b[1] === j);
+  const vis = new Set(), path = [];
+  const L = (act, bad) => [GR('streets (1 ─, 2 │, 3 ┐, 4 ┌, 5 ┘, 6 └)', show, { done: [...vis].map(s => s.split(',').map(Number)), active: act ? [act] : [], bad: bad || [] }), S('call stack', path.map(c => `(${c})`))];
+  r.step(0, 'Each cell is a street piece. You may step to a neighbour only if <b>both</b> pieces connect to each other. Reach the bottom-right cell.', L(), {});
+  (function go(i, j) {
+    path.push([i, j]);
+    if (i === 1 && j === 2) { r.step(ln(C_VP, 'if (dfs(g, x, y, visited)) return true'), `Reached (1,2): <b>true</b>.`, L([i, j]), {}); return true; }
+    vis.add(i + ',' + j);
+    r.step(ln(C_VP, 'for (int[] d : STREET'), `At (${i},${j}) piece ${sym[g[i][j]]}: exits ${S6[g[i][j]].map(d => `(${i + d[0]},${j + d[1]})`).join(' and ')}.`, L([i, j]), {});
+    for (const d of S6[g[i][j]]) {
+      const x = i + d[0], y = j + d[1];
+      if (x < 0 || x >= 2 || y < 0 || y >= 3 || vis.has(x + ',' + y)) continue;
+      if (!back(x, y, i, j)) { r.step(ln(C_VP, 'pointsBack'), `(${x},${y}) ${sym[g[x][y]]} has no exit back to (${i},${j}): the street does not connect. Skip.`, L([i, j], [[x, y]]), {}); continue; }
+      if (go(x, y)) return true;
+    }
+    path.pop(); return false;
+  })(0, 0);
+  return r.steps;
+}
+
+const C_ROT = `
+while (!que.isEmpty() && fresh > 0) {
+    minutes++;
+    for (int size = que.size(); size > 0; size--) {
+        int[] c = que.poll();
+        for (int[] d : DIRS) {
+            int x = c[0] + d[0], y = c[1] + d[1];
+            if (x >= 0 && x < m && y >= 0 && y < n && grid[x][y] == 1) {
+                grid[x][y] = 2;
+                fresh--;
+                que.add(new int[]{x, y});
+            }
+        }
+    }
+}
+return fresh == 0 ? minutes : -1;`;
+function rotting() {
+  const m = [[2, 1, 1], [1, 1, 0], [0, 1, 1]].map(r => r.slice()), r = recorder(); let fresh = 6, minutes = 0, q = [[0, 0]];
+  const L = (newly) => [GR('grid (0 empty, 1 fresh, 2 rotten)', m, { active: newly || [], bad: [] }), Q('queue (current layer first)', q.map(c => `(${c})`))];
+  r.step(ln(C_ROT, 'while (!que.isEmpty()'), 'Every rotten orange starts in the queue at minute 0 (multi-source BFS). 6 fresh oranges remain.', L(), { minutes, fresh });
+  while (q.length && fresh > 0) {
+    minutes++; const next = [];
+    for (const c of q) for (const d of D4) { const x = c[0] + d[0], y = c[1] + d[1]; if (inb(m, x, y) && m[x][y] === 1) { m[x][y] = 2; fresh--; next.push([x, y]); } }
+    q = next;
+    r.step(ln(C_ROT, 'minutes++'), `Minute ${minutes}: the whole previous layer spreads at once. ${next.length} orange${next.length === 1 ? '' : 's'} rot. Fresh left: ${fresh}.`, L(next), { minutes, fresh });
+  }
+  r.step(ln(C_ROT, 'return fresh == 0'), fresh === 0 ? `No fresh orange left after <b>${minutes}</b> minutes. One BFS layer = one minute.` : 'Fresh oranges are sealed off: −1.', L(), { answer: minutes });
+  return r.steps;
+}
+
+const C_PEAK = `
+for (int i = 0; i < m; i++) {
+    for (int j = 0; j < n; j++) {
+        if (isWater[i][j] == 1) que.add(new int[]{i, j});
+        else height[i][j] = -1;
+    }
+}
+while (!que.isEmpty()) {
+    int[] c = que.poll();
+    for (int[] d : DIRS) {
+        int x = c[0] + d[0], y = c[1] + d[1];
+        if (x >= 0 && x < m && y >= 0 && y < n && height[x][y] == -1) {
+            height[x][y] = height[c[0]][c[1]] + 1;
+            que.add(new int[]{x, y});
+        }
+    }
+}`;
+function peak() {
+  const w = [[0, 0, 1], [1, 0, 0], [0, 0, 0]], h = w.map(r => r.map(v => v ? 0 : null)), r = recorder(); let q = [];
+  w.forEach((row, i) => row.forEach((v, j) => { if (v) q.push([i, j]); }));
+  r.step(ln(C_PEAK, 'if (isWater[i][j] == 1)'), 'Water cells must be height 0 and neighbours differ by at most 1, so the tallest map is: <b>height = distance to the nearest water</b>. Start a BFS from <i>all</i> water cells at once.', [GR('height (· = not yet set)', h, { done: q }), Q('queue', q.map(c => `(${c})`))], {});
+  let level = 0;
+  while (q.length) {
+    level++; const next = [];
+    for (const c of q) for (const d of D4) { const x = c[0] + d[0], y = c[1] + d[1]; if (inb(h, x, y) && h[x][y] === null) { h[x][y] = level; next.push([x, y]); } }
+    if (next.length) r.step(ln(C_PEAK, 'height[x][y] = height'), `Layer ${level}: ${next.length} cell${next.length > 1 ? 's' : ''} at distance ${level} get height ${level}.`, [GR('height', h, { active: next }), Q('queue', next.map(c => `(${c})`))], { level });
+    q = next;
+  }
+  r.step(0, 'Every cell has its distance to the nearest water: the highest peak is 2.', [GR('height', h, {})], {});
+  return r.steps;
+}
+
+const C_FISH = `
+private int fish(int[][] g, int i, int j) {
+    if (i < 0 || i >= g.length || j < 0 || j >= g[0].length || g[i][j] == 0) return 0;
+    int here = g[i][j];
+    g[i][j] = 0;
+    for (int[] d : DIRS) here += fish(g, i + d[0], j + d[1]);
+    return here;
+}
+best = Math.max(best, fish(grid, i, j));`;
+function fish() {
+  const m = [[0, 2, 1, 0], [4, 0, 0, 3], [1, 0, 0, 4], [0, 3, 2, 0]], r = recorder(), done = []; let best = 0; const seen = new Set();
+  r.step(0, 'A pond is a connected group of cells with fish (> 0). The DFS returns the fish it collects while sinking the pond.', [GR('grid', m, {}), A('best', [0])], {});
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    if (!m[i][j] || seen.has(i + ',' + j)) continue;
+    const cells = flood(m, i, j, v => v > 0), sum = cells.reduce((a, c) => a + m[c[0]][c[1]], 0); cells.forEach(c => seen.add(c[0] + ',' + c[1])); best = Math.max(best, sum);
+    r.step(ln(C_FISH, 'best = Math.max'), `Pond from (${i},${j}): ${cells.map(c => m[c[0]][c[1]]).join(' + ')} = ${sum}. Best ${best}.`, [GR('grid', m, { done, active: cells }), A('best', [best])], { sum, best });
+    cells.forEach(c => done.push(c));
+  }
+  r.step(0, `Richest pond: <b>${best}</b>. Same skeleton as Max Area of Island, but each cell contributes its fish instead of 1.`, [GR('grid', m, { done }), A('best', [best])], { best });
+  return r.steps;
+}
+
+const C_LARGE = `
+for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) if (grid[i][j] == 1) size.put(id, label(grid, i, j, id++));
+...
+for each 0 cell:
+    Set<Integer> seen = new HashSet<>();
+    int total = 1;
+    for (int[] d : DIRS) {
+        ... if (grid[x][y] > 1 && seen.add(grid[x][y])) total += size.get(grid[x][y]);
+    }
+    best = Math.max(best, total);`;
+function large() {
+  const m = [[1, 1, 0, 0], [0, 0, 0, 1], [1, 0, 0, 1], [1, 0, 1, 1]], r = recorder(), lab = m.map(x => x.slice()), size = {}; let id = 2;
+  const g2 = m.map(x => x.slice());
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) if (g2[i][j] === 1) { const cells = flood(g2, i, j, v => v === 1); cells.forEach(c => { g2[c[0]][c[1]] = id; lab[c[0]][c[1]] = id; }); size[id] = cells.length; id++; }
+  r.step(ln(C_LARGE, 'size.put'), `Pass 1: label every island once. Ids and sizes: ${Object.entries(size).map(([k, v]) => `#${k} = ${v}`).join(', ')}. Each island is measured only once, which is why this beats flipping every 0 and re-running a DFS.`, [GR('labelled grid (0 = water)', lab, { done: [] })], {});
+  let best = 0;
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    if (lab[i][j] !== 0) continue; const seen = new Set(); let total = 1;
+    for (const d of D4) { const x = i + d[0], y = j + d[1]; if (inb(lab, x, y) && lab[x][y] > 1 && !seen.has(lab[x][y])) { seen.add(lab[x][y]); total += size[lab[x][y]]; } }
+    if (total > best || (i + j) % 5 === 0) r.step(ln(C_LARGE, 'best = Math.max'), `Flip (${i},${j}): 1 + ${[...seen].map(k => size[k]).join(' + ') || '0'} = ${total} (distinct neighbouring islands: ${[...seen].map(k => '#' + k).join(', ') || 'none'}). ${total > best ? 'New best.' : ''}`, [GR('labelled grid', lab, { active: [[i, j]] }), A('best', [Math.max(best, total)])], { total });
+    best = Math.max(best, total);
+  }
+  r.step(0, `Largest island after one flip: <b>${best}</b>. Use a <b>set</b> of ids so one island touching the cell twice is not counted twice.`, [GR('labelled grid', lab, {}), A('best', [best])], { best });
+  return r.steps;
+}
+
+const C_EXIT = `
+while (!que.isEmpty()) {
+    steps++;
+    for (int size = que.size(); size > 0; size--) {
+        int[] c = que.poll();
+        for (int[] d : DIRS) {
+            int x = c[0] + d[0], y = c[1] + d[1];
+            if (x < 0 || x >= m || y < 0 || y >= n || maze[x][y] == '+' || visited[x][y]) continue;
+            if (x == 0 || x == m - 1 || y == 0 || y == n - 1) return steps;
+            visited[x][y] = true;
+            que.add(new int[]{x, y});
+        }
+    }
+}`;
+function exit() {
+  const m = ['++.+', '...+', '+++.'].map(r => r.split('')), r = recorder(), vis = new Set(['1,2']); let q = [[1, 2]], steps = 0;
+  const L = (act) => [GR('maze (+ wall, . empty). Entrance (1,2)', m, { done: [...vis].map(s => s.split(',').map(Number)), active: act || [] }), Q('queue', q.map(c => `(${c})`))];
+  r.step(0, 'BFS from the entrance. The first <b>border</b> empty cell reached (not the entrance itself) is the nearest exit.', L(), { steps });
+  let found = false;
+  while (q.length && !found) {
+    steps++; const next = [];
+    for (const c of q) { for (const d of D4) { const x = c[0] + d[0], y = c[1] + d[1]; if (!inb(m, x, y) || m[x][y] === '+' || vis.has(x + ',' + y)) continue; if (x === 0 || x === 2 || y === 0 || y === 3) { r.step(ln(C_EXIT, 'return steps'), `(${x},${y}) is on the border: exit found after <b>${steps}</b> step${steps > 1 ? 's' : ''}.`, L([[x, y]]), { steps }); found = true; break; } vis.add(x + ',' + y); next.push([x, y]); } if (found) break; }
+    if (!found) { q = next; r.step(ln(C_EXIT, 'steps++'), `Layer ${steps} explored.`, L(next), { steps }); }
+  }
+  return r.steps;
+}
+
+const C_BIN = `
+while (!que.isEmpty()) {
+    length++;
+    for (int size = que.size(); size > 0; size--) {
+        int[] c = que.poll();
+        if (c[0] == n - 1 && c[1] == n - 1) return length;
+        for (int[] d : DIRS) {            // 8 directions
+            int x = c[0] + d[0], y = c[1] + d[1];
+            if (x >= 0 && x < n && y >= 0 && y < n && grid[x][y] == 0 && !visited[x][y]) {
+                visited[x][y] = true;
+                que.add(new int[]{x, y});
+            }
+        }
+    }
+}`;
+function binMat() {
+  const m = [[0, 0, 0], [1, 1, 0], [1, 1, 0]], D8 = D4.concat([[1, 1], [1, -1], [-1, 1], [-1, -1]]), r = recorder(), vis = new Set(['0,0']); let q = [[0, 0]], length = 0;
+  const L = (act) => [GR('grid (0 = open); 8 directions allowed', m, { done: [...vis].map(s => s.split(',').map(Number)), active: act || [] }), Q('queue', q.map(c => `(${c})`))];
+  r.step(0, 'Every step costs 1, so plain BFS is already optimal (Dijkstra gives the same answer but is not needed).', L(), { length });
+  while (q.length) {
+    length++; const next = []; let done = false;
+    for (const c of q) { if (c[0] === 2 && c[1] === 2) { done = true; break; } for (const d of D8) { const x = c[0] + d[0], y = c[1] + d[1]; if (inb(m, x, y) && m[x][y] === 0 && !vis.has(x + ',' + y)) { vis.add(x + ',' + y); next.push([x, y]); } } }
+    if (done) { r.step(ln(C_BIN, 'return length'), `The corner (2,2) is in this layer: shortest path has <b>${length}</b> cells.`, L([[2, 2]]), { length }); break; }
+    q = next;
+    r.step(ln(C_BIN, 'length++'), `Layer of path length ${length + 1}: ${next.map(c => `(${c})`).join(', ')}.`, L(next), { length });
+  }
+  return r.steps;
+}
+
+const C_OBS = `
+boolean[][][] visited = new boolean[m][n][k + 1];
+que.add(new int[]{0, 0, 0});               // row, col, obstacles removed so far
+...
+int used = c[2] + grid[x][y];
+if (used > k || visited[x][y][used]) continue;
+if (x == m - 1 && y == n - 1) return steps;
+visited[x][y][used] = true;
+que.add(new int[]{x, y, used});`;
+function obstacles() {
+  const g = [[0, 1, 0], [0, 1, 0], [0, 0, 0]], k = 1, r = recorder(), best = Array.from({ length: 3 }, () => Array(3).fill(null)), vis = new Set(['0,0,0']); let q = [[0, 0, 0]], steps = 0; best[0][0] = 0;
+  const L = (act) => [GR(`state grid: cell shows removals used (k = ${k}); ■ = obstacle`, g.map((row, i) => row.map((v, j) => (best[i][j] === null ? (v ? '■' : '·') : best[i][j] + (v ? '■' : '')))), { active: act || [], done: [] }), Q('queue (row, col, used)', q.map(c => `(${c.join(',')})`))];
+  r.step(ln(C_OBS, 'new boolean[m][n][k + 1]'), 'The same cell can be worth visiting twice: once having removed 0 obstacles and once having removed 1. So the BFS state is <b>(row, col, removals used)</b>.', L(), { steps });
+  let found = false;
+  while (q.length && !found) {
+    steps++; const next = [];
+    for (const c of q) for (const d of D4) {
+      const x = c[0] + d[0], y = c[1] + d[1]; if (!inb(g, x, y)) continue;
+      const used = c[2] + g[x][y]; if (used > k || vis.has(`${x},${y},${used}`)) continue;
+      if (x === 2 && y === 2) { r.step(ln(C_OBS, 'return steps'), `Reached the corner with ${used} removal after <b>${steps}</b> steps.`, L([[x, y]]), { steps }); found = true; break; }
+      vis.add(`${x},${y},${used}`); next.push([x, y, used]); if (best[x][y] === null || used < best[x][y]) best[x][y] = used;
+    }
+    if (!found) { q = next; r.step(ln(C_OBS, 'que.add(new int[]{x, y, used})'), `Step ${steps}: ${next.length} new states. Walking through an obstacle costs one removal.`, L(next.map(c => [c[0], c[1]])), { steps }); }
+  }
+  return r.steps;
+}
+
+const C_MAZE = `
+private int[] roll(int[][] maze, int x, int y, int[] d) {
+    while (x + d[0] >= 0 && x + d[0] < maze.length && y + d[1] >= 0 && y + d[1] < maze[0].length && maze[x + d[0]][y + d[1]] == 0) {
+        x += d[0];
+        y += d[1];
+    }
+    return new int[]{x, y};
+}
+...
+for (int[] d : DIRS) {
+    int[] stop = roll(maze, c[0], c[1], d);
+    if (!visited[stop[0]][stop[1]]) {
+        visited[stop[0]][stop[1]] = true;
+        que.add(stop);
+    }
+}`;
+function maze() {
+  const m = [[0, 0, 1, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 1, 0], [1, 1, 0, 1, 1], [0, 0, 0, 0, 0]], r = recorder(), vis = new Set(['0,4']); let q = [[0, 4]];
+  const L = (act, path) => [GR('maze (1 = wall). Start (0,4), destination (4,4)', m.map((row, i) => row.map((v, j) => (v ? '█' : (i === 4 && j === 4 ? 'D' : '·')))), { done: [...vis].map(s => s.split(',').map(Number)), active: act || [] }), Q('queue of stopping points', q.map(c => `(${c})`))];
+  const roll = (x, y, d) => { while (inb(m, x + d[0], y + d[1]) && m[x + d[0]][y + d[1]] === 0) { x += d[0]; y += d[1]; } return [x, y]; };
+  r.step(0, 'The ball does not stop until it hits a wall, so a <b>node is a stopping point</b> and an <b>edge is a whole roll</b>. BFS over stopping points.', L(), {});
+  let found = false;
+  while (q.length && !found) {
+    const c = q.shift();
+    if (c[0] === 4 && c[1] === 4) { r.step(ln(C_MAZE, 'que.add(stop)'), 'The ball <b>stops</b> at (4,4): destination reached, answer true.', L([c]), {}); found = true; break; }
+    const stops = [];
+    for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const s = roll(c[0], c[1], d); if (!vis.has(s + '')) { vis.add(s + ''); q.push(s); stops.push(s); } }
+    r.step(ln(C_MAZE, 'int[] stop = roll'), `From (${c}) the four rolls stop at ${stops.length ? stops.map(s => `(${s})`).join(', ') : 'places already seen'}.`, L(stops.length ? stops : [c]), {});
+  }
+  r.step(0, 'Passing <i>through</i> a cell never counts: the ball must stop on the destination. (The other query, (3,2), is never a stopping point: answer false.)', L(), {});
+  return r.steps;
+}
+
+const C_MAZE2 = `
+PriorityQueue<int[]> pq = new PriorityQueue<>((a, b) -> a[0] - b[0]);
+pq.add(new int[]{0, start[0], start[1]});
+while (!pq.isEmpty()) {
+    int[] top = pq.poll();
+    if (top[0] > dist[top[1]][top[2]]) continue;
+    for (int[] d : DIRS) {
+        ... roll counting steps ...
+        if (top[0] + steps < dist[nx][ny]) {
+            dist[nx][ny] = top[0] + steps;
+            pq.add(new int[]{dist[nx][ny], nx, ny});
+        }
+    }
+}`;
+function maze2() {
+  const m = [[0, 0, 1, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 1, 0], [1, 1, 0, 1, 1], [0, 0, 0, 0, 0]], r = recorder(), dist = Array.from({ length: 5 }, () => Array(5).fill(Infinity)); dist[0][4] = 0;
+  const pq = [[0, 0, 4]], fin = [];
+  const roll = (x, y, d) => { let s = 0; while (inb(m, x + d[0], y + d[1]) && m[x + d[0]][y + d[1]] === 0) { x += d[0]; y += d[1]; s++; } return [x, y, s]; };
+  const L = (act) => [GR('best distance to each stopping point (█ wall)', m.map((row, i) => row.map((v, j) => (v ? '█' : (dist[i][j] === Infinity ? '·' : dist[i][j])))), { done: fin, active: act || [] }), Q('min-heap (dist, r, c)', pq.map(c => `${c[0]}@(${c[1]},${c[2]})`))];
+  r.step(ln(C_MAZE2, 'PriorityQueue'), 'Edge weight = how many cells the roll covers, so use Dijkstra on stopping points.', L(), {});
+  while (pq.length) {
+    pq.sort((a, b) => a[0] - b[0]); const t = pq.shift(); if (t[0] > dist[t[1]][t[2]]) continue; fin.push([t[1], t[2]]);
+    const news = [];
+    for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const [nx, ny, s] = roll(t[1], t[2], d); if (t[0] + s < dist[nx][ny]) { dist[nx][ny] = t[0] + s; pq.push([dist[nx][ny], nx, ny]); news.push(`(${nx},${ny})=${dist[nx][ny]}`); } }
+    r.step(ln(C_MAZE2, 'int[] top = pq.poll()'), `Settle (${t[1]},${t[2]}) at ${t[0]}. ${news.length ? 'Relaxed ' + news.join(', ') + '.' : 'No improvement.'}`, L([[t[1], t[2]]]), {});
+  }
+  r.step(0, `Shortest roll distance to (4,4): <b>${dist[4][4]}</b>. A plain BFS by number of rolls would be wrong: fewer rolls can still be longer.`, L(), { answer: dist[4][4] });
+  return r.steps;
+}
+
+const C_KNIGHT = `
+Set<Long> visited = new HashSet<>();
+Queue<int[]> que = new ArrayDeque<>();
+que.add(new int[]{0, 0});
+while (!que.isEmpty()) {
+    for (int size = que.size(); size > 0; size--) {
+        int[] c = que.poll();
+        if (c[0] == x && c[1] == y) return level;
+        for (int[] d : DIRS) {
+            int nx = c[0] + d[0], ny = c[1] + d[1];
+            if (nx >= -2 && ny >= -2 && visited.add(key(nx, ny))) que.add(new int[]{nx, ny});
+        }
+    }
+    level++;
+}`;
+function knight() {
+  const KD = [[2, 1], [1, 2], [-1, 2], [-2, 1], [-2, -1], [-1, -2], [1, -2], [2, -1]], tx = 5, ty = 5, r = recorder(), dist = new Map([['0,0', 0]]); let q = [[0, 0]];
+  const view = (act) => { const rows = []; for (let a = 0; a <= 6; a++) { const row = []; for (let b = 0; b <= 6; b++) row.push(dist.has(a + ',' + b) ? dist.get(a + ',' + b) : '·'); rows.push(row); } return [GR('knight distance (board 0..6, target (5,5))', rows, { active: act || [], done: [[tx, ty]].filter(c => dist.has(c + '')) }), A('frontier size', [q.length])]; };
+  r.step(0, 'Fold the board by symmetry: (−5,−5), (5,−5)… all need as many moves as (5,5). The knight may still dip to −2 on an axis, so the BFS keeps coordinates ≥ −2.', view([[0, 0]]), { level: 0 });
+  for (let level = 1; level <= 4; level++) {
+    const next = []; for (const c of q) for (const d of KD) { const nx = c[0] + d[0], ny = c[1] + d[1]; if (nx >= -2 && ny >= -2 && !dist.has(nx + ',' + ny)) { dist.set(nx + ',' + ny, level); next.push([nx, ny]); } }
+    q = next;
+    r.step(ln(C_KNIGHT, 'level++'), `Level ${level}: ${next.length} new squares at exactly ${level} knight move${level > 1 ? 's' : ''}.${dist.get('5,5') === level ? ' <b>(5,5) is reached: answer ' + level + '.</b>' : ''}`, view(next.filter(c => c[0] >= 0 && c[0] <= 6 && c[1] >= 0 && c[1] <= 6)), { level });
+  }
+  return r.steps;
+}
+
+const C_LOCK = `
+Set<String> visited = new HashSet<>(List.of("0000"));
+Queue<String> que = new ArrayDeque<>(List.of("0000"));
+int turns = 0;
+while (!que.isEmpty()) {
+    for (int size = que.size(); size > 0; size--) {
+        String cur = que.poll();
+        if (cur.equals(target)) return turns;
+        for (String next : neighbours(cur)) {
+            if (!dead.contains(next) && visited.add(next)) que.add(next);
+        }
+    }
+    turns++;
+}`;
+function lock() {
+  const dead = new Set(['0201', '0101', '0102', '1212', '2002']), target = '0202', r = recorder();
+  const nb = s => { const out = []; for (let i = 0; i < 4; i++) for (const dd of [1, 9]) out.push(s.slice(0, i) + ((+s[i] + dd) % 10) + s.slice(i + 1)); return out; };
+  const vis = new Set(['0000']); let q = ['0000'], turns = 0;
+  const L = (extra) => [A('current layer (first 8 shown)', q.slice(0, 8).concat(q.length > 8 ? ['+' + (q.length - 8)] : []), { showIdx: false }), A('deadends', [...dead], { showIdx: false, bad: [0, 1, 2, 3, 4] }), A('layers so far', [turns]), ...(extra || [])];
+  r.step(ln(C_LOCK, 'int turns = 0'), 'Each state is a 4-digit string; one turn changes one wheel by ±1 (wrapping 9↔0). BFS layer = number of turns. Deadends are walls.', L(), { turns });
+  while (q.length) {
+    if (q.includes(target)) { r.step(ln(C_LOCK, 'return turns'), `Target ${target} is in layer ${turns}: <b>${turns}</b> turns. The deadends 0201/0102/… force a detour, so the answer exceeds the wheel distance 4.`, L(), { turns }); break; }
+    const next = []; for (const s of q) for (const t of nb(s)) if (!dead.has(t) && !vis.has(t)) { vis.add(t); next.push(t); }
+    turns++; q = next;
+    r.step(ln(C_LOCK, 'turns++'), `Layer ${turns}: ${next.length} states (${vis.size} seen in total).`, L(), { turns });
+  }
+  return r.steps;
+}
+
+const C_GEN = `
+for (int i = 0; i < c.length; i++) {
+    char old = c[i];
+    for (char g : "ACGT".toCharArray()) {
+        c[i] = g;
+        String next = new String(c);
+        if (valid.contains(next) && visited.add(next)) que.add(next);
+    }
+    c[i] = old;
+}`;
+function genetic() {
+  const bank = ['AACCGGTA', 'AACCGCTA', 'AAACGGTA'], start = 'AACCGGTT', end = 'AAACGGTA', r = recorder();
+  const id = { [start]: 'S', 'AACCGGTA': 'A', 'AACCGCTA': 'B', 'AAACGGTA': 'E' }, N = { S: [0, 1], A: [1.6, 1], B: [3.2, 0], E: [3.2, 2] }, E = [['S', 'A'], ['A', 'B'], ['A', 'E']];
+  const map = A('S = AACCGGTT, A = AACCGGTA, B = AACCGCTA, E = AAACGGTA', ['S', 'A', 'B', 'E'], { showIdx: false });
+  const vis = new Set([start]); let q = [start], steps = 0;
+  const view = (act) => [graph('genes in the bank, linked when one letter apart', N, E, { cls: C({ done: [...vis].map(g => id[g]), active: act || [] }) }), Q('queue', q.map(g => id[g])), map];
+  r.step(ln(C_GEN, 'for (int i = 0'), 'A mutation changes one letter and the result must be in the bank. Genes one letter apart are neighbours, so this is a plain BFS.', view(), { steps });
+  while (q.length) {
+    steps++; const next = [];
+    for (const g of q) { const hit = [start, ...bank].filter(h => !vis.has(h) && [...h].filter((ch, i) => ch !== g[i]).length === 1); hit.forEach(h => { vis.add(h); next.push(h); }); }
+    q = next;
+    r.step(ln(C_GEN, 'visited.add(next)'), `Mutation ${steps}: reach ${next.map(g => id[g]).join(', ') || 'nothing new'}.`, view(next.map(g => id[g])), { steps });
+    if (q.includes(end)) { r.step(0, `E is reached after <b>${steps}</b> mutations. If the end gene were not in the bank the answer would be −1 immediately.`, view(['E']), { steps }); break; }
+  }
+  return r.steps;
+}
+
+const C_WL = `
+while (!que.isEmpty()) {
+    for (int size = que.size(); size > 0; size--) {
+        String cur = que.poll();
+        if (cur.equals(endWord)) return length;
+        char[] c = cur.toCharArray();
+        for (int i = 0; i < c.length; i++) {
+            char old = c[i];
+            for (char ch = 'a'; ch <= 'z'; ch++) {
+                c[i] = ch;
+                String next = new String(c);
+                if (words.contains(next) && visited.add(next)) que.add(next);
+            }
+            c[i] = old;
+        }
+    }
+    length++;
+}`;
+const WLN = { hit: [0, 1], hot: [1.8, 1], dot: [3.6, 0], lot: [3.6, 2], dog: [5.4, 0], log: [5.4, 2], cog: [7.2, 1] }, WLE = [['hit', 'hot'], ['hot', 'dot'], ['hot', 'lot'], ['dot', 'dog'], ['lot', 'log'], ['dog', 'cog'], ['log', 'cog']];
+function wordLadder() {
+  const r = recorder(), vis = new Set(['hit']); let q = ['hit'], length = 1; const adj = {}; WLE.forEach(([a, b]) => { (adj[a] = adj[a] || []).push(b); (adj[b] = adj[b] || []).push(a); });
+  const view = (act) => [graph('words (edge = differ by one letter)', WLN, WLE, { cls: C({ done: [...vis].filter(w => !(act || []).includes(w)), active: act || [] }) }), Q('queue', q), A('sequence length', [length])];
+  r.step(ln(C_WL, 'while (!que.isEmpty())'), 'Each word is a node; two words are linked when they differ by one letter. The shortest sequence = fewest edges + 1: BFS.', view(['hit']), { length });
+  while (q.length) {
+    if (q.includes('cog')) { r.step(ln(C_WL, 'return length'), `"cog" reached: the sequence hit → hot → dot → dog → cog has <b>${length}</b> words.`, view(['cog']), { length }); break; }
+    const next = []; for (const w of q) for (const v of adj[w] || []) if (!vis.has(v)) { vis.add(v); next.push(v); }
+    length++; q = next;
+    r.step(ln(C_WL, 'length++'), `Next layer: ${next.join(', ')}. Sequence length now ${length}.`, view(next), { length });
+  }
+  return r.steps;
+}
+const C_WL2 = `
+Map<String, Integer> level = new HashMap<>();
+Map<String, List<String>> parents = new HashMap<>();
+...
+if (!level.containsKey(next)) { level.put(next, level.get(cur) + 1); que.add(next); }
+if (level.get(next) == level.get(cur) + 1) parents.computeIfAbsent(next, k -> new ArrayList<>()).add(cur);
+...
+private void build(String word, String begin, ...) {
+    if (word.equals(begin)) { result.add(new ArrayList<>(path)); return; }
+    for (String p : parents.getOrDefault(word, List.of())) {
+        path.addFirst(p);
+        build(p, begin, parents, path, result);
+        path.removeFirst();
+    }
+}`;
+function wordLadder2() {
+  const r = recorder(), level = { hit: 0 }, parents = {}, adj = {}; WLE.forEach(([a, b]) => { (adj[a] = adj[a] || []).push(b); (adj[b] = adj[b] || []).push(a); });
+  const view = (cls, ecls, extra) => [graph('word graph (badge = BFS level)', WLN, WLE, { cls, ecls, badge: { ...level } }), ...(extra || [])];
+  r.step(ln(C_WL2, 'Map<String, Integer> level'), 'Goal: <b>all</b> shortest sequences. Phase 1: BFS records each word\'s level and <b>every</b> predecessor on a shortest route. Phase 2: DFS walks the predecessors back from "cog".', view(C({ active: ['hit'] })), {});
+  let q = ['hit'];
+  while (q.length && !('cog' in level)) {
+    const next = [];
+    for (const w of q) for (const v of adj[w] || []) { if (!(v in level)) { level[v] = level[w] + 1; next.push(v); } if (level[v] === level[w] + 1) (parents[v] = parents[v] || []).push(w); }
+    q = next;
+    r.step(ln(C_WL2, 'parents.computeIfAbsent'), `Level ${level[q[0]]}: ${q.join(', ')}. Parents so far: ${Object.entries(parents).map(([k, v]) => k + '←' + v.join('/')).join('; ')}.`, view(C({ active: q, done: Object.keys(level).filter(w => !q.includes(w)) })), {});
+  }
+  const paths = [];
+  (function walk(w, path) { if (w === 'hit') { paths.push(path.slice()); r.step(ln(C_WL2, 'result.add'), `Reached "hit": record <b>${path.join(' → ')}</b>.`, view(C({ done: path }), EC({ done: path.slice(1).map((v, i) => [path[i], v]) })), {}); return; } for (const p of parents[w] || []) { path.unshift(p); walk(p, path); path.shift(); } })('cog', ['cog']);
+  r.step(0, `<b>${paths.length}</b> shortest sequences. Building paths backwards from the end avoids exploring dead branches.`, view(C({ done: ['hit', 'hot', 'dot', 'lot', 'dog', 'log', 'cog'] })), {});
+  return r.steps;
+}
+
+const C_BUS = `
+Map<Integer, List<Integer>> busesAt = new HashMap<>();
+for (int b = 0; b < routes.length; b++) for (int stop : routes[b]) busesAt.computeIfAbsent(stop, k -> new ArrayList<>()).add(b);
+...
+while (!que.isEmpty()) {
+    buses++;
+    for (int size = que.size(); size > 0; size--) {
+        int stop = que.poll();
+        for (int bus : busesAt.getOrDefault(stop, List.of())) {
+            if (!usedBus.add(bus)) continue;
+            for (int next : routes[bus]) {
+                if (next == target) return buses;
+                if (usedStop.add(next)) que.add(next);
+            }
+        }
+    }
+}`;
+function bus() {
+  const routes = [[1, 2, 7], [3, 6, 7]], r = recorder(), busesAt = {}; routes.forEach((rt, b) => rt.forEach(s => (busesAt[s] = busesAt[s] || []).push(b)));
+  const usedStop = new Set([1]), usedBus = new Set(); let q = [1], buses = 0;
+  const view = (act) => [A('bus 0 stops', routes[0], { showIdx: false, active: routes[0].map((s, i) => (usedBus.has(0) ? i : -1)).filter(i => i >= 0) }), A('bus 1 stops', routes[1], { showIdx: false, active: routes[1].map((s, i) => (usedBus.has(1) ? i : -1)).filter(i => i >= 0) }), Q('stops to board from', q), A('buses taken', [buses])];
+  r.step(ln(C_BUS, 'Map<Integer, List<Integer>> busesAt'), 'Source 1, target 6. The graph hides a trap: BFS over <i>stops</i> would count every stop, but the cost is <b>buses</b>. So index "which buses pass each stop" and treat boarding a bus as one edge that unlocks all of its stops.', view(), { buses });
+  while (q.length) {
+    buses++; const next = []; let hit = false;
+    for (const stop of q) for (const bus of busesAt[stop] || []) { if (usedBus.has(bus)) continue; usedBus.add(bus); for (const nx of routes[bus]) { if (nx === 6) hit = true; if (!usedStop.has(nx)) { usedStop.add(nx); next.push(nx); } } r.step(ln(C_BUS, 'if (!usedBus.add(bus)) continue'), `Board bus ${bus} at stop ${stop} (bus #${buses}). Every stop on it becomes reachable: ${routes[bus].join(', ')}.`, view(), { buses }); }
+    if (hit) { r.step(ln(C_BUS, 'if (next == target) return buses'), `Stop 6 is on a bus taken as bus #${buses}: answer <b>${buses}</b>.`, view(), { buses }); break; }
+    q = next;
+  }
+  return r.steps;
+}
+
+const C_ALLN = `
+for (int i = 0; i < n; i++) {
+    que.add(new int[]{i, 1 << i});          // any node can be the start
+    visited[i][1 << i] = true;
+}
+while (!que.isEmpty()) {
+    steps++;
+    for (int size = que.size(); size > 0; size--) {
+        int[] cur = que.poll();
+        for (int next : graph[cur[0]]) {
+            int mask = cur[1] | (1 << next);
+            if (mask == full) return steps;
+            if (!visited[next][mask]) {
+                visited[next][mask] = true;
+                que.add(new int[]{next, mask});
+            }
+        }
+    }
+}`;
+function allNodes() {
+  const g = [[1, 2, 3], [0], [0], [0]], N = { 0: [1, 1], 1: [0, 0], 2: [0, 2], 3: [2, 1] }, E = [[0, 1], [0, 2], [0, 3]], r = recorder(), full = 15, vis = new Set(); let q = [], steps = 0;
+  const mk = m => [0, 1, 2, 3].filter(i => m >> i & 1).join('');
+  for (let i = 0; i < 4; i++) { q.push([i, 1 << i]); vis.add(i + ',' + (1 << i)); }
+  const view = (act) => [graph('star graph', N, E, { cls: C({ active: act || [] }) }), Q('states (node, visited set)', q.map(c => `${c[0]}{${mk(c[1])}}`)), A('steps', [steps])];
+  r.step(ln(C_ALLN, 'que.add(new int[]{i, 1 << i})'), 'The walk may start anywhere and revisit nodes, so a node alone is not enough: the state is <b>(node, set of nodes seen so far)</b>. Seed one state per start node.', view(), { steps });
+  let found = false;
+  while (q.length && !found) {
+    steps++; const next = [];
+    for (const [u, m] of q) for (const v of g[u]) { const nm = m | (1 << v); if (nm === full) { found = true; r.step(ln(C_ALLN, 'if (mask == full) return steps'), `Moving to ${v} completes the set {0123} after <b>${steps}</b> moves (e.g. 1 → 0 → 2 → 0 → 3).`, view([v]), { steps }); break; } if (!vis.has(v + ',' + nm)) { vis.add(v + ',' + nm); next.push([v, nm]); } }
+    if (!found) { q = next; r.step(ln(C_ALLN, 'visited[next][mask] = true'), `After ${steps} move${steps > 1 ? 's' : ''}: ${next.length} distinct (node, set) states.`, view(next.slice(0, 3).map(c => c[0])), { steps }); }
+  }
+  return r.steps;
+}
+
+const C_SAMED = `
+private void dfs(int num, int len, int n, int k, List<Integer> result) {
+    if (len == n) { result.add(num); return; }
+    int last = num % 10;
+    if (last + k <= 9) dfs(num * 10 + last + k, len + 1, n, k, result);
+    if (k != 0 && last - k >= 0) dfs(num * 10 + last - k, len + 1, n, k, result);
+}`;
+function sameDiff() {
+  const n = 3, k = 7, r = recorder(), res = [], path = [];
+  const par = { 'root': null }; const parent = () => { const p = { root: null }; ids.forEach(i => { p[i] = i.length === 1 ? 'root' : i.slice(0, -1); }); return p; }; const ids = [];
+  const T = (cls) => [tree('numbers being built (children = last digit ± 7)', parent(), { cls, wide: true }), A('results', res, { showIdx: false })];
+  r.step(0, 'Build n = 3 digit numbers where neighbouring digits differ by exactly 7. Each prefix has at most two children: last + 7 and last − 7. A tiny decision tree.', T({}), {});
+  (function go(num, len) {
+    const key = String(num); ids.push(key);
+    if (len === n) { res.push(num); r.step(ln(C_SAMED, 'result.add(num)'), `${num} has ${n} digits: record it.`, T({ [key]: 'done' }), {}); return; }
+    const last = num % 10; const kids = []; if (last + k <= 9) kids.push(num * 10 + last + k); if (last - k >= 0) kids.push(num * 10 + last - k);
+    r.step(ln(C_SAMED, 'int last = num % 10'), `${num}: last digit ${last} → next digits ${kids.map(x => x % 10).join(' or ') || 'none'} (${last}+7 ≤ 9? ${last + k <= 9}, ${last}−7 ≥ 0? ${last - k >= 0}).`, T({ [key]: 'active' }), {});
+    kids.forEach(x => go(x, len + 1));
+  })(1, 1); res.length = 0; ids.length = 0;
+  for (let f = 1; f <= 9; f++) (function go(num, len) { ids.push(String(num)); if (len === n) { res.push(num); return; } const last = num % 10; if (last + k <= 9) go(num * 10 + last + k, len + 1); if (last - k >= 0) go(num * 10 + last - k, len + 1); })(f, 1);
+  r.step(0, `All roots 1..9 explored: <b>${res.join(', ')}</b>. With k = 0 only one branch exists (the <code>k != 0</code> check avoids a duplicate).`, T(Object.fromEntries(ids.filter(i => i.length === 3).map(i => [i, 'done']))), {});
+  return r.steps;
+}
+
+const C_LEX = `
+Set<String> seen = new HashSet<>(List.of(s));
+Queue<String> que = new ArrayDeque<>(List.of(s));
+String best = s;
+while (!que.isEmpty()) {
+    String cur = que.poll();
+    if (cur.compareTo(best) < 0) best = cur;
+    for (String next : List.of(add(cur, a), rotate(cur, b))) if (seen.add(next)) que.add(next);
+}`;
+function lexSmall() {
+  const s0 = '5525', a = 9, b = 2, r = recorder();
+  const add = s => s.split('').map((c, i) => (i % 2 ? (+c + a) % 10 : +c)).join(''), rot = s => s.slice(-b) + s.slice(0, -b);
+  const seen = ['5525'], q = ['5525']; let best = '5525';
+  const L = (cur) => [A('seen states (' + seen.length + ')', seen.slice(0, 12), { showIdx: false, done: seen.slice(0, 12).map((x, i) => (x === best ? i : -1)).filter(i => i >= 0), active: cur ? [seen.indexOf(cur)].filter(i => i >= 0 && i < 12) : [] }), Q('queue', q.slice(0, 8)), A('smallest so far', [best], { showIdx: false })];
+  r.step(ln(C_LEX, 'String best = s'), 'Two operations on the digit string: add 9 to every digit at an odd index (mod 10), or rotate right by 2. The states form a graph; the numbers of states is small (at most 10 × n), so just BFS all of them and keep the minimum.', L(), { best });
+  let steps = 0;
+  while (q.length && steps < 12) {
+    const cur = q.shift(); if (cur < best) best = cur; const news = [];
+    for (const nx of [add(cur), rot(cur)]) if (!seen.includes(nx)) { seen.push(nx); q.push(nx); news.push(nx); }
+    steps++;
+    r.step(ln(C_LEX, 'for (String next'), `From ${cur}: add → ${add(cur)}, rotate → ${rot(cur)}${news.length ? '; new: ' + news.join(', ') : '; nothing new'}.`, L(cur), { best });
+  }
+  while (q.length) { const cur = q.shift(); if (cur < best) best = cur; for (const nx of [add(cur), rot(cur)]) if (!seen.includes(nx)) { seen.push(nx); q.push(nx); } }
+  r.step(0, `All ${seen.length} reachable strings seen. The smallest is <b>${best}</b>.`, [A('smallest', [best], { showIdx: false, done: [0] })], { best });
+  return r.steps;
+}
+
+const C_PRIME = `
+Map<Integer, List<Integer>> indicesOfPrime = new HashMap<>();   // prime p -> indices whose value is a multiple of p
+...
+int p = nums[i];
+if (p >= 2 && smallestFactor[p] == p) {
+    List<Integer> group = indicesOfPrime.remove(p);      // use each prime's group only once
+    if (group != null) next.addAll(group);
+}
+for (int j : next) if (dist[j] == -1) { dist[j] = dist[i] + 1; que.add(j); }`;
+function prime() {
+  const nums = [2, 3, 4, 7, 9], n = nums.length, r = recorder(), dist = Array(n).fill(-1); dist[0] = 0;
+  const isP = v => { if (v < 2) return false; for (let d = 2; d * d <= v; d++) if (v % d === 0) return false; return true; };
+  const groups = { 2: [0, 2], 3: [1, 4], 7: [3] }, used = new Set(); let q = [0];
+  const L = (act) => [A('nums', nums, { active: act !== undefined ? [act] : [], done: range(0, n - 1).filter(i => dist[i] >= 0 && i !== act) }), A('jumps to reach index', dist.map(d => (d < 0 ? '·' : d))), A('prime → indices with a multiple (unused)', Object.entries(groups).filter(([p]) => !used.has(+p)).map(([p, v]) => `${p}:[${v}]`), { showIdx: false })];
+  r.step(ln(C_PRIME, 'Map<Integer, List<Integer>>'), 'From index i you can step to i ± 1, or if nums[i] is a prime p, teleport to <b>any</b> index holding a multiple of p. Precompute, per prime, the indices that are multiples. Using a prime\'s group once is enough in BFS (all of them get the same distance).', L(0), {});
+  while (q.length) {
+    const i = q.shift(); if (i === n - 1) { r.step(0, `Reached the last index in <b>${dist[i]}</b> jumps.`, L(i), {}); break; }
+    const next = []; if (i > 0) next.push(i - 1); if (i + 1 < n) next.push(i + 1); const p = nums[i]; let tele = [];
+    if (isP(p) && !used.has(p)) { used.add(p); tele = groups[p] || []; next.push(...tele); }
+    const fresh = next.filter(j => dist[j] === -1); fresh.forEach(j => { dist[j] = dist[i] + 1; q.push(j); });
+    r.step(ln(C_PRIME, 'for (int j : next)'), `At index ${i} (value ${p}${isP(p) ? ', prime → teleport to ' + (tele.length ? 'indices ' + tele.join(', ') : 'nothing new') : ', not prime: only ±1'}). New indices: ${fresh.join(', ') || 'none'} at ${dist[i] + 1} jumps.`, L(i), { queue: q.join(',') });
+  }
+  return r.steps;
+}
+
+const C_BOMB = `
+private List<List<Integer>> build(int[][] b) {
+    ...
+            long dx = b[i][0] - b[j][0], dy = b[i][1] - b[j][1], r = b[i][2];
+            if (i != j && dx * dx + dy * dy <= r * r) adj.get(i).add(j);
+}
+...
+for (int i = 0; i < bombs.length; i++) best = Math.max(best, dfs(adj, i, new boolean[bombs.length]));`;
+function bombs() {
+  const b = [[2, 1, 3], [6, 1, 4], [1, 1, 1], [8, 4, 1]], n = 4, r = recorder(), E = [];
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) { const dx = b[i][0] - b[j][0], dy = b[i][1] - b[j][1]; if (i !== j && dx * dx + dy * dy <= b[i][2] * b[i][2]) E.push([i, j]); }
+  const N = { 0: [0, 1], 1: [2, 0], 2: [0, 0], 3: [3, 2] }, adj = adjOf(n, E, true);
+  r.step(ln(C_BOMB, 'long dx'), `Bomb i triggers bomb j when j lies inside i's blast circle: (xi−xj)² + (yi−yj)² ≤ ri². The relation is <b>not symmetric</b> (a big bomb reaches a small one but not the reverse), so the graph is directed. Edges found: ${E.map(e => e.join('→')).join(', ')}.`, [graph('can trigger', N, E, { directed: true, badge: Object.fromEntries(b.map((x, i) => [i, 'r' + x[2]])) })], {});
+  let best = 0;
+  for (let s = 0; s < n; s++) {
+    const seen = new Set(); (function d(u) { seen.add(u); adj[u].forEach(v => { if (!seen.has(v)) d(v); }); })(s); best = Math.max(best, seen.size);
+    r.step(ln(C_BOMB, 'best = Math.max'), `Detonate bomb ${s} first: chain reaction reaches {${[...seen].join(', ')}} = ${seen.size} bombs. Best ${best}.`, [graph('can trigger', N, E, { directed: true, cls: C({ active: [s], done: [...seen].filter(x => x !== s) }), badge: Object.fromEntries(b.map((x, i) => [i, 'r' + x[2]])) })], { best });
+  }
+  r.step(0, `Maximum: <b>${best}</b>. n DFS runs on a graph with up to n² edges: O(n³). Squared distances in <code>long</code> avoid overflow.`, [graph('can trigger', N, E, { directed: true, badge: Object.fromEntries(b.map((x, i) => [i, 'r' + x[2]])) })], { best });
+  return r.steps;
+}
+
+const C_CAND = `
+while (!que.isEmpty()) {
+    int box = que.poll();
+    total += candies[box];
+    for (int k : keys[box]) {
+        key[k] = true;
+        if (have[k] && !opened[k]) { opened[k] = true; que.add(k); }
+    }
+    for (int inner : containedBoxes[box]) {
+        have[inner] = true;
+        if (!opened[inner] && (status[inner] == 1 || key[inner])) { opened[inner] = true; que.add(inner); }
+    }
+}`;
+function candies() {
+  const status = [1, 0, 1, 0], cand = [7, 5, 4, 100], keys = [[], [], [1], []], inside = [[1, 2], [3], [], []], r = recorder(), have = [true, false, false, false], opened = [true, false, false, false], key = [false, false, false, false], q = [0]; let total = 0;
+  const E = []; inside.forEach((l, b) => l.forEach(x => E.push([b, x]))); const N = { 0: [0, 1], 1: [2, 0], 2: [2, 2], 3: [4, 0] };
+  const view = (act) => [graph('boxes (arrow = contains). Box 2 holds the key to box 1', N, E, { directed: true, cls: C({ active: act !== undefined ? [act] : [], done: [0, 1, 2, 3].filter(i => opened[i] && i !== act), warn: [0, 1, 2, 3].filter(i => have[i] && !opened[i]) }), badge: Object.fromEntries(cand.map((c, i) => [i, c + (status[i] ? '' : ' 🔒')])) }), A('have', have.map(Number)), A('key', key.map(Number)), A('candies so far', [total])];
+  r.step(0, 'Start with box 0 (open). Contents: 7 candies, boxes 1 and 2. Box 1 is locked (status 0) and holds box 3 (100 candies). Box 2 is open and contains the key to box 1.', view(0), { total });
+  while (q.length) {
+    const bx = q.shift(); total += cand[bx];
+    r.step(ln(C_CAND, 'total += candies[box]'), `Open box ${bx}: +${cand[bx]} candies. Total ${total}.`, view(bx), { total });
+    for (const k of keys[bx]) { key[k] = true; if (have[k] && !opened[k]) { opened[k] = true; q.push(k); } r.step(ln(C_CAND, 'key[k] = true'), `Found the key to box ${k}. ${have[k] ? 'We already hold that box: it can be opened now.' : 'We do not hold that box yet.'}`, view(bx), { total }); }
+    for (const x of inside[bx]) { have[x] = true; const ok = !opened[x] && (status[x] === 1 || key[x]); if (ok) { opened[x] = true; q.push(x); } r.step(ln(C_CAND, 'have[inner] = true'), `Box ${x} was inside. ${ok ? 'It is open (or we hold its key): queue it.' : 'It is locked and we have no key yet: keep it for later.'}`, view(bx), { total }); }
+  }
+  r.step(0, `Total <b>${total}</b>. A locked box we hold waits until its key is found: that is why we track <code>have</code> and <code>key</code> separately.`, view(), { total });
+  return r.steps;
+}
+
+mount({
+  title: "Grid and BFS Animations",
+  sub: "A grid <b>is</b> a graph: cells are nodes, the 4 (or 8) neighbours are edges, walls are missing nodes. <b>Flood fill</b> (DFS/BFS) counts and measures regions; <b>BFS layers</b> are distances, so shortest path with unit steps is just BFS. <b>Multi-source BFS</b> starts from many cells at once. When one cell can be entered in different <i>situations</i>, the BFS state grows: (cell, keys / removals / mask).",
+  problems: [
+    { name: "Number of Islands", hook: "Pour paint on a land cell: it spreads across the whole island. One bucket per island.", mantra: "NEW LAND \u21d2 COUNT++, SINK THE ISLAND", statement: "Count the groups of 4-connected 1s in a grid of 0s and 1s.",
+      anims: [{ name: "DFS", code: C_ISL, steps: islands() },
+      { name: "BFS", code: C_ISLB, steps: islandsBfs() }],
+      recall: [["Why overwrite the grid?", "It doubles as the visited marker and costs no extra array. Copy first if the input must stay intact."], ["When can DFS overflow the stack?", "A 300 \u00d7 300 snake-shaped island recurses 90,000 deep; use BFS or an explicit stack."]], links: [["Max Area of Island", 1], ["Island Perimeter", 2]] },
+    { name: "Max Area of Island", hook: "The flood fill reports how much paint it used.", mantra: "DFS RETURNS THE SIZE: 1 + SUM OF NEIGHBOURS", statement: "Return the area of the largest island (0 if none).",
+      anims: [{ name: "Walkthrough", code: C_AREA, steps: area() }],
+      recall: [["What does the DFS return?", "The number of cells it sank, including itself."], ["Why is Union-Find useful here?", "It lets you add land cells one by one and ask for the biggest component at any time."]], links: [["Number of Islands", 0], ["Maximum Number of Fish in a Grid", 8]] },
+    { name: "Island Perimeter", hook: "Wrap a ribbon round the island: every land side that meets water or the edge needs ribbon.", mantra: "4 \u00d7 LAND \u2212 2 \u00d7 SHARED EDGES", statement: "The grid has exactly one island. Return its perimeter.",
+      anims: [{ name: "Formula", code: C_PERI, steps: peri() },
+      { name: "DFS", code: C_PERID, steps: periDfs() }],
+      recall: [["Why count shared edges only up and left?", "Each touching pair is seen once if you only look at the earlier neighbours."], ["What is DFS counting?", "Each step into water or off the grid is one unit of perimeter."]], links: [["Number of Islands", 0]] },
+    { name: "Number of Distinct Islands", hook: "Describe each island with the route a turtle walks around it; equal routes mean equal shapes.", mantra: "DFS PATH STRING, WITH BACKTRACK MARKS", statement: "Count islands that are different shapes (translation allowed, rotation not).",
+      anims: [{ name: "Walkthrough", code: C_SHAPE, steps: shapes() }],
+      recall: [["Why add a character on backtracking?", "It encodes the tree shape, not just the order of moves."], ["Alternative signature?", "Subtract the island's top-left cell from every cell and store the sorted coordinates."]], links: [["Number of Islands", 0]] },
+    { name: "Detect Cycles in 2D Grid", hook: "Same letters form a ring around a different letter: you walk round and arrive back where you started.", mantra: "VISITED SAME LETTER THAT IS NOT MY PARENT", statement: "Is there a cycle (length \u2265 4, same letter, no step straight back) in the grid?",
+      anims: [{ name: "Walkthrough", code: C_GCYC, steps: gridCycle() }],
+      recall: [["Why is length \u2265 4 automatic?", "In a 4-connected grid the shortest cycle is a 2 \u00d7 2 square."], ["Why track the parent?", "The cell we just came from is a visited neighbour but not a cycle."]], links: [] },
+    { name: "Check if There is a Valid Path in a Grid", hook: "Pipe pieces: two neighbouring pipes only join if each has an opening toward the other.", mantra: "MOVE ONLY IF THE NEIGHBOUR POINTS BACK", statement: "Each cell is one of 6 street pieces. Is there a valid path from the top-left to the bottom-right?",
+      anims: [{ name: "Walkthrough", code: C_VP, steps: validPath() }],
+      recall: [["Why check the neighbour points back?", "A road only exists if both pieces have an opening onto it."], ["How do you store the pieces?", "A table from piece number to its two direction vectors."]], links: [["Number of Islands", 0]] },
+    { name: "Rotting Oranges", hook: "All rotten oranges rot their neighbours at the same moment, like several drops of ink spreading together.", mantra: "ALL ROTTEN START IN THE QUEUE; LAYER = MINUTE", statement: "Each minute fresh oranges next to rotten ones rot. Return the minutes until none is fresh, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_ROT, steps: rotting() }],
+      recall: [["Why one BFS and not one per rotten orange?", "Rot spreads from all sources simultaneously; the first to arrive wins, which is exactly multi-source BFS."], ["What if there are no fresh oranges?", "The answer is 0."]], links: [["Map of Highest Peak", 7]] },
+    { name: "Map of Highest Peak", hook: "Water is sea level; every step inland may rise by one, and the highest peak is as far from the sea as possible.", mantra: "HEIGHT = DISTANCE TO NEAREST WATER", statement: "Assign heights so water is 0, neighbours differ by at most 1, and the maximum height is as large as possible.",
+      anims: [{ name: "Walkthrough", code: C_PEAK, steps: peak() }],
+      recall: [["Why is distance the right height?", "It is the largest value that still keeps neighbours within 1 of a value that reaches 0 at water."], ["Why a single queue?", "All water cells start at distance 0."]], links: [["Rotting Oranges", 6]] },
+    { name: "Maximum Number of Fish in a Grid", hook: "Each pond is a group of connected water cells; add up the fish in the richest pond.", mantra: "DFS RETURNS THE SUM OF THE POND", statement: "Cells hold a fish count (0 = land). Return the most fish you can catch in one connected pond.",
+      anims: [{ name: "Walkthrough", code: C_FISH, steps: fish() }],
+      recall: [["What changes from Max Area?", "Only what each cell contributes."], ["Why zero the cell after reading it?", "So it is never counted twice."]], links: [["Max Area of Island", 1]] },
+    { name: "Making A Large Island", hook: "Build a bridge: measure every island once, then for each water cell add the sizes of the distinct islands around it.", mantra: "LABEL ONCE; 1 + DISTINCT NEIGHBOUR SIZES", statement: "You may flip one 0 to 1. Return the largest island possible.",
+      anims: [{ name: "Walkthrough", code: C_LARGE, steps: large() }],
+      recall: [["Why a set of ids?", "The same island can touch the zero from two sides and must be counted once."], ["What if there is no 0?", "The answer is n \u00d7 n."]], links: [["Number of Islands", 0], ["Max Area of Island", 1]] },
+    { name: "Nearest Exit from Entrance in Maze", hook: "Ripples spread from the entrance; the first ripple to touch the wall opening is the nearest exit.", mantra: "BFS FROM ENTRANCE; FIRST BORDER CELL", statement: "Find the fewest steps from the entrance to any other empty cell on the border.",
+      anims: [{ name: "Walkthrough", code: C_EXIT, steps: exit() }],
+      recall: [["Why BFS?", "Every step costs 1."], ["Why not count the entrance as an exit?", "The problem says the exit must be a different cell."]], links: [["Shortest Path in Binary Matrix", 11]] },
+    { name: "Shortest Path in Binary Matrix", hook: "Unit steps on a 8-neighbour grid: BFS is already Dijkstra.", mantra: "BFS, 8 DIRECTIONS, COUNT CELLS", statement: "Shortest clear path (counted in cells, 8-directional) from the top-left to the bottom-right of an n \u00d7 n binary matrix.",
+      anims: [{ name: "Walkthrough", code: C_BIN, steps: binMat() }],
+      recall: [["Why is BFS enough?", "All edges have equal weight."], ["Why is the path length counted in cells?", "The problem asks for the number of cells on the path, so the start counts as 1."]], links: [["Nearest Exit from Entrance in Maze", 10]] },
+    { name: "Shortest Path in a Grid with Obstacles Elimination", hook: "A cell is not enough to describe where you are: you also need to know how many walls you may still break.", mantra: "STATE = (ROW, COL, REMOVALS USED)", statement: "You may break up to k obstacles. Return the fewest steps from the top-left to the bottom-right.",
+      anims: [{ name: "Walkthrough", code: C_OBS, steps: obstacles() }],
+      recall: [["Why is visited three-dimensional?", "Arriving with fewer removals used is a different, better state."], ["Easy shortcut?", "If k \u2265 m + n \u2212 2 the answer is the Manhattan distance m + n \u2212 2."]], links: [["Shortest Path in Binary Matrix", 11], ["Shortest Path Visiting All Nodes", 21]] },
+    { name: "The Maze", hook: "A rolling ball: you only choose a direction when it stops, so only stopping points are nodes.", mantra: "NODE = STOPPING POINT, EDGE = ONE FULL ROLL", statement: "The ball rolls until it hits a wall. Can it stop at the destination?",
+      anims: [{ name: "Walkthrough", code: C_MAZE, steps: maze() }],
+      recall: [["Why is passing through not enough?", "The ball must stop exactly at the destination."], ["Cost of one roll?", "Up to max(m, n) cells, which is why total time carries the (m + n) factor."]], links: [["The Maze II", 14], ["Nearest Exit from Entrance in Maze", 10]] },
+    { name: "The Maze II", hook: "Same rolling ball, but now the roll length matters, so shortest means shortest distance, not fewest rolls.", mantra: "DIJKSTRA ON STOPS, WEIGHT = ROLL LENGTH", statement: "Return the shortest distance (cells travelled) for the ball to stop at the destination.",
+      anims: [{ name: "Walkthrough", code: C_MAZE2, steps: maze2() }],
+      recall: [["Why not plain BFS?", "Fewer rolls can still be a longer total distance."], ["Why does DFS need no visited array?", "It only recurses when it improves a distance."]], links: [["The Maze", 13]] },
+    { name: "Minimum Knight Moves", hook: "The knight's moves ripple outwards on an endless board; use symmetry to explore only a quarter.", mantra: "FOLD TO FIRST QUADRANT, ALLOW \u22122 MARGIN", statement: "A knight starts at (0, 0) on an infinite board. Return the fewest moves to reach (x, y).",
+      anims: [{ name: "Walkthrough", code: C_KNIGHT, steps: knight() }],
+      recall: [["Why allow coordinates down to \u22122?", "The shortest path to (1, 1) uses (\u22121, 2)."], ["Why fold by symmetry?", "It cuts the search space by a factor of 8."]], links: [["Shortest Path in Binary Matrix", 11]] },
+    { name: "Open the Lock", hook: "A combination lock is a graph with 10,000 rooms and 8 doors out of each room.", mantra: "STATE = 4-DIGIT STRING; DEADENDS ARE WALLS", statement: "Turn a 4-wheel lock from 0000 to the target, avoiding deadends. Return the fewest turns or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_LOCK, steps: lock() }],
+      recall: [["What if 0000 is a deadend?", "Return \u22121 at once."], ["Why does bidirectional BFS help?", "Two small balls of radius d/2 contain far fewer states than one ball of radius d."]], links: [["Word Ladder", 18], ["Minimum Genetic Mutation", 17]] },
+    { name: "Minimum Genetic Mutation", hook: "Genes are rooms; a mutation is a door between genes one letter apart, and only genes in the bank exist.", mantra: "ONE LETTER CHANGE, MUST BE IN THE BANK", statement: "Fewest single-letter mutations from startGene to endGene using only genes in the bank, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_GEN, steps: genetic() }],
+      recall: [["Why return \u22121 if the end is not in the bank?", "It can never be reached."], ["Which neighbour method is better?", "Generation, when the bank is large and the gene short."]], links: [["Word Ladder", 18], ["Open the Lock", 16]] },
+    { name: "Word Ladder", hook: "Words are stepping stones; you may jump to another word only if one letter changes.", mantra: "BFS; NEIGHBOUR = ONE LETTER CHANGED AND IN THE LIST", statement: "Return the number of words in the shortest transformation from beginWord to endWord, changing one letter at a time through words of the list.",
+      anims: [{ name: "Walkthrough", code: C_WL, steps: wordLadder() }],
+      recall: [["Why count words rather than steps?", "The problem asks for the sequence length, one more than the number of changes."], ["Why remove words as you visit?", "Removing from the set doubles as the visited array."]], links: [["Word Ladder II", 19], ["Open the Lock", 16]] },
+    { name: "Word Ladder II", hook: "First find how far the summit is; then retrace only the trails that go straight up.", mantra: "BFS FOR LEVELS + PARENTS, DFS BACK FROM END", statement: "Return all shortest transformation sequences from beginWord to endWord.",
+      anims: [{ name: "Walkthrough", code: C_WL2, steps: wordLadder2() }],
+      recall: [["Why store several parents?", "A word can be reached in the minimum number of steps from several words."], ["Why DFS backwards?", "Going forward would explore branches that never reach the end."]], links: [["Word Ladder", 18]] },
+    { name: "Bus Routes", hook: "You pay per bus, not per stop: riding a bus is free until you step off.", mantra: "BOARDING A BUS = ONE EDGE TO ALL ITS STOPS", statement: "routes[i] lists the stops bus i loops over. Return the fewest buses from source to target, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_BUS, steps: bus() }],
+      recall: [["Why not BFS on stops alone?", "Moving along one bus would cost one level per stop instead of one per bus."], ["Why track used buses?", "A bus whose stops were all added already adds nothing new."]], links: [["Word Ladder", 18]] },
+    { name: "Shortest Path Visiting All Nodes", hook: "A delivery tour where you may pass a town twice: your position is the town plus the set of towns already seen.", mantra: "STATE = (NODE, MASK OF VISITED)", statement: "In a connected undirected graph, find the shortest walk (nodes and edges may repeat, any start) that visits every node.",
+      anims: [{ name: "Walkthrough", code: C_ALLN, steps: allNodes() }],
+      recall: [["Why seed all nodes?", "The walk may start anywhere."], ["Why not DP over permutations?", "The walk can revisit nodes, so shortest paths between nodes matter, which the BFS handles automatically."]], links: [["Shortest Path in a Grid with Obstacles Elimination", 12]] },
+    { name: "Numbers With Same Consecutive Differences", hook: "Build numbers digit by digit: every prefix sprouts at most two next digits.", mantra: "APPEND last \u00b1 k; SKIP DUPLICATE WHEN k = 0", statement: "Return all n-digit numbers (no leading zero) where each pair of adjacent digits differs by exactly k.",
+      anims: [{ name: "Walkthrough", code: C_SAMED, steps: sameDiff() }],
+      recall: [["Why guard k == 0?", "Otherwise d + 0 and d \u2212 0 add the same number twice."], ["Why start at 1..9?", "No leading zeros (except the number 0 itself, which only n = 1 allows)."]], links: [] },
+    { name: "Lexicographically Smallest String After Applying Operations", hook: "Two buttons on a digit lock: explore every reachable setting and keep the smallest.", mantra: "BFS ALL REACHABLE STATES, KEEP THE MIN", statement: "Operations: add a to every digit at an odd index (mod 10), or rotate right by b. Return the lexicographically smallest reachable string.",
+      anims: [{ name: "Walkthrough", code: C_LEX, steps: lexSmall() }],
+      recall: [["Why is it finite?", "Adding a repeatedly returns to the start within 10 steps, and rotating by b returns within n steps."], ["Why a visited set?", "The two operations create cycles."]], links: [["Open the Lock", 16]] },
+    { name: "Minimum Jumps to Reach End via Prime Teleportation", hook: "A prime is a portal key: standing on p lets you teleport to every multiple of p, but each portal group only needs opening once.", mantra: "GROUP INDICES BY PRIME FACTOR; USE EACH GROUP ONCE", statement: "From index i you can move to i \u00b1 1, or if nums[i] is a prime p, jump to any index whose value is divisible by p. Return the fewest jumps to the last index.",
+      anims: [{ name: "Walkthrough", code: C_PRIME, steps: prime() }],
+      recall: [["Why remove the group after using it?", "Every index in it already received the shortest distance; scanning it again is pure waste."], ["Why a smallest-factor sieve?", "It factors every number in O(log) time."]], links: [["Word Ladder", 18], ["Bus Routes", 20]] },
+    { name: "Detonate the Maximum Bombs", hook: "A chain of firecrackers: a big one reaches a small one, but the small one may not reach back.", mantra: "EDGE i \u2192 j IF j IS INSIDE i'S CIRCLE", statement: "Each bomb has a position and radius. Detonating one triggers all bombs in its range, recursively. Return the maximum bombs set off by detonating a single bomb.",
+      anims: [{ name: "Walkthrough", code: C_BOMB, steps: bombs() }],
+      recall: [["Why directed?", "A large bomb can reach a small one without the reverse."], ["Why long?", "Squared distances reach 2\u00b710\u00b9\u2070."]], links: [] },
+    { name: "Maximum Candies You Can Get from Boxes", hook: "A box may be in your hands but locked, or its key may arrive before the box does; open it only when you have both.", mantra: "OPEN WHEN HAVE BOX AND (OPEN OR KEY)", statement: "Boxes may be open or locked, contain candies, keys, and other boxes. Starting from initialBoxes, return the maximum candies you can collect.",
+      anims: [{ name: "Walkthrough", code: C_CAND, steps: candies() }],
+      recall: [["Why both have[] and key[]?", "The key can arrive before the box, or the box before the key."], ["Why mark opened when queuing?", "So a box that gains both its box and key at once is processed once."]], links: [] }
+  ]
+});
+
+</script>
+</body>
+</html>

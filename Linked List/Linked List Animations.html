@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linked List Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, recorder, mount, ln } = BrainAnim;
+// A list drawn as "v →" cells with pointer labels: ptrs = {index: 'slow'}
+const LL = (name, vals, ptrs = {}, o = {}) => lane(name, vals.map((v, i) => (i < vals.length - 1 ? `${v} →` : `${v} ⊣`)), { ptr: Object.fromEntries(Object.entries(ptrs).map(([k, v]) => [k, v])), ...o });
+const steps = (intro, list) => { const r = recorder(); r.step(intro[0], intro[1], intro[2]); for (const [line, say, lanes, vars] of list) r.step(line, say, lanes, vars); return r.steps; };
+
+const C_REV = `
+public ListNode reverseList(ListNode head) {
+    ListNode prev = null;
+    while (head != null) {
+        ListNode nx = head.next;     // 1. save next
+        head.next = prev;            // 2. turn the arrow around
+        prev = head;                 // 3. advance prev
+        head = nx;                   // 4. advance cur
+    }
+    return prev;
+}`;
+function rev() {
+  const a = [1, 2, 3, 4], r = recorder();
+  r.step(0, `Turn every arrow around while walking: three pointers <b>prev, cur, next</b>.`, [LL('original', a, { 0: 'cur' }), lane('reversed so far', ['∅'])]);
+  for (let i = 0; i < 4; i++) r.step(ln(C_REV, 'turn the arrow'), `Save next, point ${a[i]} back to ${i ? a[i - 1] : 'null'}, advance.`, [LL('remaining', a.slice(i + 1), { 0: 'cur' }), lane('reversed (prev = first)', a.slice(0, i + 1).reverse().map((v, k, arr) => (k < arr.length - 1 ? `${v} →` : `${v} ⊣`)), { ptr: { 0: 'prev' } })]);
+  r.step(ln(C_REV, 'return prev'), `cur fell off the end; prev is the new head → <b>4 → 3 → 2 → 1</b>.`, [LL('result', [4, 3, 2, 1], { 0: 'head' }, { done: [0, 1, 2, 3] })]);
+  return r.steps;
+}
+
+const C_MID = `
+ListNode slow = head, fast = head;
+while (fast != null && fast.next != null) { slow = slow.next; fast = fast.next.next; }
+return slow;`;
+function mid() {
+  const a = [1, 2, 3, 4, 5, 6], r = recorder(); let s = 0, f = 0;
+  r.step(0, `<b>Tortoise and hare</b>: fast moves 2, slow moves 1. When fast finishes, slow is halfway.`, [LL('list', a, { 0: 'slow/fast' })]);
+  while (f < a.length && f + 1 < a.length) { s++; f += 2; r.step(ln(C_MID, 'slow = slow.next'), `slow → ${a[s]}, fast → ${f < a.length ? a[f] : 'null'}.`, [LL('list', a, { [s]: 'slow', ...(f < a.length ? { [f]: 'fast' } : {}) })]); }
+  r.step(ln(C_MID, 'return slow'), `Even length → the <b>second</b> middle (${a[s]}).`, [LL('list', a, { [s]: 'middle' }, { done: [s] })]);
+  return r.steps;
+}
+
+const C_CYC = `
+while (fast != null && fast.next != null) {
+    slow = slow.next; fast = fast.next.next;
+    if (slow == fast) {                       // they meet inside the cycle
+        ListNode p = head;
+        while (p != slow) { p = p.next; slow = slow.next; }   // equal distance to the entry
+        return p;
+    }
+}`;
+function cyc() {
+  const r = recorder();
+  r.step(0, `3 → 2 → 0 → −4 → back to 2. Floyd: if there is a cycle, fast laps slow and they <b>meet</b>.`, [LL('list (−4 points back to 2)', [3, 2, 0, -4], { 0: 'slow/fast' })]);
+  r.step(ln(C_CYC, 'they meet'), `After a few moves slow and fast meet at −4.`, [LL('list', [3, 2, 0, -4], { 3: 'meet' })]);
+  r.step(ln(C_CYC, 'equal distance'), `Math: head→entry = meet→entry (mod cycle). Walk one pointer from head, one from the meeting point, one step each → they meet at the <b>entry (2)</b>.`, [LL('list', [3, 2, 0, -4], { 0: 'p', 3: 'slow' }, { done: [1] })]);
+  return r.steps;
+}
+
+const C_M2 = `
+ListNode dummy = new ListNode(0), t = dummy;
+while (a != null && b != null) {
+    if (a.val <= b.val) { t.next = a; a = a.next; } else { t.next = b; b = b.next; }
+    t = t.next;
+}
+t.next = a != null ? a : b;          // attach the leftover
+return dummy.next;`;
+function m2() {
+  const A = [1, 2, 4], B = [1, 3, 4], out = [], r = recorder(); let i = 0, j = 0;
+  r.step(0, `A <b>dummy head</b> removes the "is the result empty?" special case. Always take the smaller head.`, [LL('a', A, { 0: 'a' }), LL('b', B, { 0: 'b' })]);
+  while (i < 3 && j < 3) { if (A[i] <= B[j]) out.push(A[i++]); else out.push(B[j++]); r.step(ln(C_M2, 'a.val <= b.val'), `take ${out.at(-1)}.`, [LL('a', A, i < 3 ? { [i]: 'a' } : {}), LL('b', B, j < 3 ? { [j]: 'b' } : {}), LL('result', out)]); }
+  out.push(...A.slice(i), ...B.slice(j));
+  r.step(ln(C_M2, 'leftover'), `One list is empty → attach the other → <b>${out.join(' → ')}</b>.`, [LL('result', out, {}, { done: out.map((_, k) => k) })]);
+  return r.steps;
+}
+
+const C_MK = `
+PriorityQueue<ListNode> pq = new PriorityQueue<>((a, b) -> Integer.compare(a.val, b.val));
+for (ListNode l : lists) if (l != null) pq.offer(l);
+while (!pq.isEmpty()) {
+    t = t.next = pq.poll();               // smallest head overall
+    if (t.next != null) pq.offer(t.next); // its successor becomes a candidate
+}`;
+function mk() {
+  const L = [[1, 4, 5], [1, 3, 4], [2, 6]], ptr = [0, 0, 0], out = [], r = recorder();
+  const V = () => [...L.map((l, k) => LL(`list ${k}`, l, ptr[k] < l.length ? { [ptr[k]]: 'head' } : {})), lane('heap (current heads)', L.map((l, k) => l[ptr[k]]).filter(x => x !== undefined).sort((a, b) => a - b)), LL('result', out)];
+  r.step(0, `k sorted lists → a min-heap holds one <b>head per list</b>. (Or merge pairs like merge sort: O(N log k).)`, V());
+  for (let s = 0; s < 8; s++) { let best = -1; for (let k = 0; k < 3; k++) if (ptr[k] < L[k].length && (best < 0 || L[k][ptr[k]] < L[best][ptr[best]])) best = k; out.push(L[best][ptr[best]++]); r.step(ln(C_MK, 'smallest head'), `poll ${out.at(-1)} from list ${best}; push its successor.`, V()); }
+  return r.steps;
+}
+
+const C_RKG = `
+for (int g = 0; g < len / k; g++) {          // only full groups
+    ListNode cur = groupPrev.next;
+    for (int i = 0; i < k - 1; i++) {        // head-insertion inside the group
+        ListNode move = cur.next;
+        cur.next = move.next;
+        move.next = groupPrev.next;
+        groupPrev.next = move;
+    }
+    groupPrev = cur;                          // cur is now the group's tail
+}`;
+function rkg() {
+  return steps([0, `k = 3. Count the length so the last partial group is left alone. Inside a group, repeatedly move the node after <b>cur</b> to the front of the group ("head insertion").`, [LL('list', [1, 2, 3, 4, 5, 6, 7, 8], { 0: 'cur' })]], [
+    [ln(C_RKG, 'move.next = groupPrev.next'), `Group 1: move 2 to the front → 2 1 3, move 3 → 3 2 1.`, [LL('list', [3, 2, 1, 4, 5, 6, 7, 8], { 2: 'groupPrev', 3: 'cur' }, { done: [0, 1, 2] })]],
+    [ln(C_RKG, 'groupPrev = cur'), `Group 2 (4 5 6) → 6 5 4. The tail 7 8 is shorter than k → stays.`, [LL('list', [3, 2, 1, 6, 5, 4, 7, 8], {}, { done: [0, 1, 2, 3, 4, 5] })]]]);
+}
+
+const C_RB = `
+for (int i = 1; i < left; i++) prev = prev.next;       // node before the window
+ListNode cur = prev.next;
+for (int i = 0; i < right - left; i++) {
+    ListNode move = cur.next;                          // take the node after cur
+    cur.next = move.next;
+    move.next = prev.next;                             // and put it right after prev
+    prev.next = move;
+}`;
+function rb() {
+  return steps([0, `left = 2, right = 4 in 1→2→3→4→5. Stop at the node <b>before</b> the window (dummy handles left = 1).`, [LL('list', [1, 2, 3, 4, 5], { 0: 'prev', 1: 'cur' })]], [
+    [ln(C_RB, 'put it right after prev'), `Move 3 right after prev → 1 3 2 4 5.`, [LL('list', [1, 3, 2, 4, 5], { 0: 'prev', 2: 'cur' })]],
+    [ln(C_RB, 'put it right after prev'), `Move 4 → <b>1 4 3 2 5</b>. One pass.`, [LL('list', [1, 4, 3, 2, 5], { 0: 'prev', 3: 'cur' }, { done: [1, 2, 3] })]]]);
+}
+
+const C_NTH = `
+ListNode dummy = new ListNode(0, head), fast = dummy, slow = dummy;
+for (int i = 0; i < n; i++) fast = fast.next;            // gap of n
+while (fast.next != null) { fast = fast.next; slow = slow.next; }
+slow.next = slow.next.next;                               // slow is just before the target`;
+function nth() {
+  return steps([0, `n = 2 in 1→2→3→4→5. Keep a <b>gap of n</b> between two pointers.`, [LL('dummy + list', ['D', 1, 2, 3, 4, 5], { 0: 'slow/fast' })]], [
+    [ln(C_NTH, 'gap of n'), `fast moves 2 ahead.`, [LL('dummy + list', ['D', 1, 2, 3, 4, 5], { 0: 'slow', 2: 'fast' })]],
+    [ln(C_NTH, 'while (fast.next'), `Move both until fast is the last node.`, [LL('dummy + list', ['D', 1, 2, 3, 4, 5], { 3: 'slow', 5: 'fast' })]],
+    [ln(C_NTH, 'slow is just before'), `slow.next (4) is the 2nd from the end → unlink → <b>1 2 3 5</b>.`, [LL('result', [1, 2, 3, 5], {}, { done: [2, 3] })]]]);
+}
+
+const C_PAL = `
+// 1. middle (slow/fast)   2. reverse the second half   3. compare the halves
+while (slow != null) { ListNode nx = slow.next; slow.next = prev; prev = slow; slow = nx; }
+for (ListNode a = head, b = prev; b != null; a = a.next, b = b.next) if (a.val != b.val) return false;`;
+function pal() {
+  return steps([0, `1 2 2 1: no extra array. Find the middle, <b>reverse the second half</b>, compare.`, [LL('list', [1, 2, 2, 1], { 2: 'middle' })]], [
+    [ln(C_PAL, 'slow.next = prev'), `Second half reversed: 1 2 | 1 2.`, [LL('first half', [1, 2], { 0: 'a' }), LL('reversed second half', [1, 2], { 0: 'b' })]],
+    [ln(C_PAL, 'a.val != b.val'), `1 = 1, 2 = 2 → <b>palindrome</b>.`, [LL('first half', [1, 2], {}, { done: [0, 1] }), LL('reversed second half', [1, 2], {}, { done: [0, 1] })]]]);
+}
+
+const C_REORD = `
+// split at the middle, reverse the second half, then zip
+for (ListNode a = head, b = prev; b != null; ) {
+    ListNode an = a.next, bn = b.next;
+    a.next = b;  b.next = an;               // a → b → (old a.next)
+    a = an;  b = bn;
+}`;
+function reord() {
+  return steps([0, `L0 L1 L2 L3 L4 → L0 L4 L1 L3 L2: the tail must be read <b>backwards</b> → reverse the second half.`, [LL('list', [1, 2, 3, 4, 5], { 2: 'middle' })]], [
+    [0, `Halves: 1 2 3 and reversed 5 4.`, [LL('first', [1, 2, 3]), LL('second (reversed)', [5, 4])]],
+    [ln(C_REORD, 'a.next = b'), `Zip: 1 5 2 4 3.`, [LL('result', [1, 5, 2, 4, 3], {}, { done: [0, 1, 2, 3, 4] })]]]);
+}
+
+const C_ODD = `
+ListNode odd = head, even = head.next, evenHead = even;
+while (even != null && even.next != null) {
+    odd.next = even.next;  odd = odd.next;      // odd chain skips one
+    even.next = odd.next;  even = even.next;    // even chain skips one
+}
+odd.next = evenHead;                            // odds, then evens`;
+function odd() {
+  return steps([0, `Two chains built in place: positions 1, 3, 5… and 2, 4, 6…`, [LL('list', [1, 2, 3, 4, 5], { 0: 'odd', 1: 'even' })]], [
+    [ln(C_ODD, 'odd chain skips'), `odd: 1 → 3 → 5, even: 2 → 4.`, [LL('odd chain', [1, 3, 5]), LL('even chain', [2, 4])]],
+    [ln(C_ODD, 'odds, then evens'), `Attach evens after the last odd → <b>1 3 5 2 4</b>.`, [LL('result', [1, 3, 5, 2, 4], {}, { done: [0, 1, 2, 3, 4] })]]]);
+}
+
+const C_PART = `
+for (; head != null; head = head.next) {
+    if (head.val < x) less = less.next = head;    // stable: original order kept
+    else more = more.next = head;
+}
+more.next = null;                                  // avoid a cycle
+less.next = moreD.next;`;
+function part() {
+  return steps([0, `x = 3. Deal nodes into two dummy-headed piles: &lt; x and ≥ x.`, [LL('list', [1, 4, 3, 2, 5, 2])]], [
+    [ln(C_PART, 'stable'), `less: 1 2 2, more: 4 3 5.`, [LL('less', [1, 2, 2]), LL('more', [4, 3, 5])]],
+    [ln(C_PART, 'avoid a cycle'), `End the more-pile with null (its last node used to point elsewhere), join → <b>1 2 2 4 3 5</b>.`, [LL('result', [1, 2, 2, 4, 3, 5], {}, { done: [0, 1, 2, 3, 4, 5] })]]]);
+}
+
+const C_ROT = `
+tail.next = head;                                        // close the ring
+for (int i = 0; i < len - k - 1; i++) newTail = newTail.next;
+ListNode newHead = newTail.next;
+newTail.next = null;                                     // cut`;
+function rot() {
+  return steps([0, `k = 2 (k %= length first). Rotating = <b>close into a ring, cut</b> at the right place.`, [LL('list', [1, 2, 3, 4, 5])]], [
+    [ln(C_ROT, 'close the ring'), `Ring 1 2 3 4 5 (back to 1). The new tail is len − k − 1 = 2 steps from the head → node 3.`, [lane('ring', ['1 →', '2 →', '3 →', '4 →', '5 ↺'], { ptr: { 2: 'newTail' } })]],
+    [ln(C_ROT, 'cut'), `Cut after 3 → <b>4 5 1 2 3</b>.`, [LL('result', [4, 5, 1, 2, 3], {}, { done: [0, 1] })]]]);
+}
+
+const C_SWAP = `
+public ListNode swapPairs(ListNode head) {
+    if (head == null || head.next == null) return head;
+    ListNode second = head.next;
+    head.next = swapPairs(second.next);     // trust recursion for the rest
+    second.next = head;
+    return second;
+}`;
+function swap() {
+  return steps([0, `1 2 3 4: swap the first pair, recursion swaps the rest.`, [LL('list', [1, 2, 3, 4])]], [
+    [ln(C_SWAP, 'trust recursion'), `rest (3 4) → 4 3; then 1 points to it.`, [LL('partial', [1, 4, 3])]],
+    [ln(C_SWAP, 'second.next = head'), `2 → 1 → 4 → 3.`, [LL('result', [2, 1, 4, 3], {}, { done: [0, 1, 2, 3] })]]]);
+}
+
+const C_ADD = `
+for (; a != null; a = a.next) s1.push(a.val);       // digits from the back
+for (; b != null; b = b.next) s2.push(b.val);
+while (!s1.isEmpty() || !s2.isEmpty() || carry > 0) {
+    int s = carry + (s1.isEmpty() ? 0 : s1.pop()) + (s2.isEmpty() ? 0 : s2.pop());
+    head = new ListNode(s % 10, head);               // prepend
+    carry = s / 10;
+}`;
+function add() {
+  return steps([0, `7243 + 564. Digits are most-significant first, but addition starts from the back → <b>stacks</b> (or reverse).`, [LL('a', [7, 2, 4, 3]), LL('b', [5, 6, 4])]], [
+    [ln(C_ADD, 'prepend'), `3+4 = 7, 4+6 = 10 → 0 carry 1, 2+5+1 = 8, 7 → prepend each.`, [LL('result', [7, 8, 0, 7], {}, { done: [0, 1, 2, 3] })]]]);
+}
+
+const C_COPY = `
+for (Node t = head; t != null; t = t.next.next) { Node c = new Node(t.val); c.next = t.next; t.next = c; }   // A A' B B'
+for (Node t = head; t != null; t = t.next.next) t.next.random = t.random == null ? null : t.random.next;   // copy's random
+for (Node t = head; t != null; t = t.next) { tail = tail.next = t.next; t.next = t.next.next; }          // unzip`;
+function copy() {
+  return steps([0, `Random pointers make copying hard: where is the copy of X? Weave each copy <b>right after its original</b>: then copy(X) = X.next.`, [LL('original', ['A', 'B', 'C'])]], [
+    [ln(C_COPY, "A A' B B'"), `Interleave: A A' B B' C C'.`, [LL('woven', ['A', "A'", 'B', "B'", 'C', "C'"], {}, { warn: [1, 3, 5] })]],
+    [ln(C_COPY, "copy's random"), `A.random = C → A'.random = C.next = C'.`, [LL('woven', ['A', "A'", 'B', "B'", 'C', "C'"], { 1: '→C\'' })]],
+    [ln(C_COPY, 'unzip'), `Unzip into two lists; the original is restored. O(1) extra space.`, [LL('copy', ["A'", "B'", "C'"], {}, { done: [0, 1, 2] }), LL('original', ['A', 'B', 'C'])]]]);
+}
+
+const C_ZERO = `
+for (ListNode t = dummy; t != null; t = t.next) { sum += t.val; last.put(sum, t); }   // last node per prefix sum
+sum = 0;
+for (ListNode t = dummy; t != null; t = t.next) { sum += t.val; t.next = last.get(sum).next; }   // jump over zero blocks`;
+function zero() {
+  return steps([0, `1 2 −3 3 1. Equal prefix sums at two nodes ⇒ the nodes between them sum to <b>0</b>.`, [LL('list', [0, 1, 2, -3, 3, 1], { 0: 'dummy' }), lane('prefix sums', [0, 1, 3, 0, 3, 4])]], [
+    [ln(C_ZERO, 'last node per prefix sum'), `Remember the LAST node for each prefix sum: 0 → node −3, 3 → node 3 (the second one).`, [lane('prefix sums', [0, 1, 3, 0, 3, 4], { warn: [0, 3] })]],
+    [ln(C_ZERO, 'jump over zero blocks'), `dummy (sum 0) jumps to after −3 → 3 1. → <b>[3, 1]</b>.`, [LL('result', [3, 1], {}, { done: [0, 1] })]]]);
+}
+
+const C_DMID = `
+ListNode slow = head, fast = head.next.next;     // fast starts 2 ahead
+while (fast != null && fast.next != null) { slow = slow.next; fast = fast.next.next; }
+slow.next = slow.next.next;                       // slow is just before the middle`;
+function dmid() {
+  return steps([0, `Delete index n/2. Start fast <b>two steps ahead</b> so slow stops one node before the middle.`, [LL('list', [1, 3, 4, 7, 1, 2, 6], { 0: 'slow', 2: 'fast' })]], [
+    [ln(C_DMID, 'slow is just before'), `slow stops at 4 (index 2); delete 7 → <b>1 3 4 1 2 6</b>.`, [LL('result', [1, 3, 4, 1, 2, 6], {}, { done: [2] })]]]);
+}
+
+const C_DEL = `
+public void deleteNode(ListNode node) {
+    node.val = node.next.val;            // become your successor
+    node.next = node.next.next;          // and skip it
+}`;
+function del() {
+  return steps([0, `Delete 5 in 4 5 1 9 — but you only have a pointer to 5, not to 4.`, [LL('list', [4, 5, 1, 9], { 1: 'node' })]], [
+    [ln(C_DEL, 'become your successor'), `Copy 1 into this node, then skip the old 1 → <b>4 1 9</b>.`, [LL('result', [4, 1, 9], { 1: 'node' }, { done: [1] })]]]);
+}
+
+const C_DIA = `
+ListNode dummy = new ListNode(0, head), t = dummy;
+while (t.next != null) {
+    if (bad.contains(t.next.val)) t.next = t.next.next;   // unlink, do NOT advance
+    else t = t.next;
+}`;
+function dia() {
+  return steps([0, `Delete values {1, 2, 3}. Look one node ahead; a dummy head makes deleting the first node normal.`, [LL('list', [1, 2, 3, 4, 5], {})]], [
+    [ln(C_DIA, 'unlink, do NOT advance'), `Unlink 1, 2, 3 (staying put each time, because the new next may also be bad).`, [LL('result', [4, 5], {}, { done: [0, 1] })]]]);
+}
+
+const C_DBL = `
+if (head.val >= 5) head = new ListNode(0, head);   // the answer gets one more digit
+for (ListNode t = head; t != null; t = t.next) {
+    t.val = t.val * 2 % 10;
+    if (t.next != null && t.next.val >= 5) t.val++;  // the next digit sends a carry of 1
+}`;
+function dbl() {
+  return steps([0, `Double 189 → 378. A digit's carry comes only from its right neighbour, and that carry is 1 exactly when the neighbour is ≥ 5.`, [LL('digits', [1, 8, 9])]], [
+    [ln(C_DBL, 'sends a carry'), `1 → 2 (+1 because 8 ≥ 5) = 3; 8 → 6 (+1 because 9 ≥ 5) = 7; 9 → 8.`, [LL('result', [3, 7, 8], {}, { done: [0, 1, 2] })]]]);
+}
+
+const C_FNR = `
+for (char c : s.toCharArray()) {
+    if (cnt[c - 'a']++ == 0) q.offer(c);                      // first sighting → candidate
+    while (!q.isEmpty() && cnt[q.peek() - 'a'] > 1) q.poll();  // front repeated → drop
+    sb.append(q.isEmpty() ? '#' : q.peek());
+}`;
+function fnr() { const s = 'aabc', q = [], cnt = {}, out = [], r = recorder(); r.step(0, `Stream "aabc". Candidates in arrival order; the answer is the front that has not repeated.`, [lane('stream', [...s])]); for (const c of s) { cnt[c] = (cnt[c] || 0) + 1; if (cnt[c] === 1) q.push(c); while (q.length && cnt[q[0]] > 1) q.shift(); out.push(q[0] || '#'); r.step(ln(C_FNR, 'front repeated'), `"${c}" → answer ${out.at(-1)}.`, [lane('queue (DLL)', [...q]), lane('output', [...out])]); } return r.steps; }
+
+const C_CRIT = `
+boolean crit = (cur.val > prev.val && cur.val > cur.next.val) || (cur.val < prev.val && cur.val < cur.next.val);
+if (crit) {
+    if (first == -1) first = idx; else minD = Math.min(minD, idx - last);
+    last = idx;
+}`;
+function crit() {
+  return steps([0, `Critical point = local max or local min. Only the first, the previous, and the current one matter.`, [LL('list', [5, 3, 1, 2, 5, 1, 2], {})]], [
+    [ln(C_CRIT, 'boolean crit'), `Critical at indices 2 (min), 4 (max), 5 (min).`, [LL('list', [5, 3, 1, 2, 5, 1, 2], {}, { warn: [2, 4, 5] })]],
+    [ln(C_CRIT, 'minD = Math.min'), `min distance = adjacent critical points = 1; max = last − first = 3 → <b>[1, 3]</b>.`, [lane('answer', [1, 3], { done: [0, 1] })]]]);
+}
+
+const C_FML = `
+for (Node cur = head; cur != null; cur = cur.next) {
+    if (cur.child == null) continue;
+    Node child = cur.child, tail = child;
+    while (tail.next != null) tail = tail.next;
+    tail.next = cur.next; if (cur.next != null) cur.next.prev = tail;   // child's tail → old next
+    cur.next = child; child.prev = cur; cur.child = null;               // splice in
+}`;
+function fml() {
+  return steps([0, `1-2-3-4-5-6, 3 has child 7-8-9-10, 8 has child 11-12. <b>Splice</b> each child list in place, then keep walking (nested children get handled as we reach them).`, [LL('level 1', [1, 2, 3, 4, 5, 6], { 2: 'child↓' }), LL('level 2', [7, 8, 9, 10], { 1: 'child↓' }), LL('level 3', [11, 12])]], [
+    [ln(C_FML, 'splice in'), `At 3: splice 7-8-9-10 between 3 and 4.`, [LL('main', [1, 2, 3, 7, 8, 9, 10, 4, 5, 6], { 4: 'child↓' }), LL('level 3', [11, 12])]],
+    [ln(C_FML, 'splice in'), `At 8: splice 11-12 → 1 2 3 7 8 11 12 9 10 4 5 6. Fix prev pointers too.`, [LL('result', [1, 2, 3, 7, 8, 11, 12, 9, 10, 4, 5, 6], {}, { done: [5, 6] })]]]);
+}
+
+const C_FLAT = `
+public Node flatten(Node root) {
+    if (root == null || root.next == null) return root;
+    Node rest = flatten(root.next);          // flatten everything to the right
+    root.next = null;
+    return merge(root, rest);                // Merge Two Sorted Lists along bottom
+}`;
+function flat() {
+  return steps([0, `Columns 5-7-8-30 | 10-20 | 19-22-50 | 28-35-40-45, each sorted downwards.`, [lane('columns', ['5 7 8 30', '10 20', '19 22 50', '28 35 40 45'])]], [
+    [ln(C_FLAT, 'flatten everything to the right'), `Recursion flattens from the right: merge(19…, 28…) → merge(10…, that) …`, [lane('merged right part', ['10', '19', '20', '22', '28', '35', '40', '45', '50'])]],
+    [ln(C_FLAT, 'Merge Two Sorted Lists'), `Finally merge the first column → one sorted list along bottom.`, [lane('result', [5, 7, 8, 10, 19, 20, 22, 28, 30, 35, 40, 45, 50], { done: [0, 1, 2] })]]]);
+}
+
+const C_GCD = `
+for (ListNode t = head; t.next != null; t = t.next.next)
+    t.next = new ListNode(gcd(t.val, t.next.val), t.next);   // insert, then jump over the new node`;
+function gcdl() {
+  return steps([0, `18 6 10 3: insert gcd between neighbours.`, [LL('list', [18, 6, 10, 3])]], [
+    [ln(C_GCD, 'insert, then jump'), `gcd(18,6)=6, gcd(6,10)=2, gcd(10,3)=1. Jump two nodes each time.`, [LL('result', [18, 6, 6, 2, 10, 1, 3], {}, { warn: [1, 3, 5] })]]]);
+}
+
+const C_INS = `
+while (head != null) {
+    ListNode nx = head.next, p = dummy;
+    while (p.next != null && p.next.val <= head.val) p = p.next;   // find the slot
+    head.next = p.next;
+    p.next = head;                                                  // insert
+    head = nx;
+}`;
+function ins() { const a = [4, 2, 1, 3], sorted = [], r = recorder(); r.step(0, `Take nodes one by one; insert each into a growing sorted list behind a dummy.`, [LL('input', a)]); for (const x of a) { let i = 0; while (i < sorted.length && sorted[i] <= x) i++; sorted.splice(i, 0, x); r.step(ln(C_INS, 'find the slot'), `insert ${x} at position ${i}.`, [LL('sorted', [...sorted], { [i]: 'new' })]); } return r.steps; }
+
+const C_BIN = `
+for (; head != null; head = head.next) v = (v << 1) | head.val;   // shift in each bit`;
+function bin() { const b = [1, 0, 1], r = recorder(); let v = 0; r.step(0, `Bits come most significant first: shift left and add.`, [LL('bits', b)]); for (const x of b) { v = (v << 1) | x; r.step(ln(C_BIN, 'shift in'), `v = v·2 + ${x} = ${v}.`, [LL('bits', b)], { v }); } return r.steps; }
+
+const C_RND = `
+public int getRandom() {
+    int res = 0, i = 0;
+    for (ListNode t = head; t != null; t = t.next)
+        if (rnd.nextInt(++i) == 0) res = t.val;     // keep node i with probability 1/i
+    return res;
+}`;
+function rnd() {
+  return steps([0, `Reservoir sampling: unknown length, one pass, O(1) space.`, [LL('list', [1, 2, 3])]], [
+    [ln(C_RND, 'probability 1/i'), `Node 1 kept with 1/1, replaced by node 2 with 1/2, by node 3 with 1/3.`, [LL('list', [1, 2, 3])]],
+    [0, `P(node 1 survives) = 1 · 1/2 · 2/3 = 1/3. Every node ends with 1/n.`, [lane('probabilities', ['1/3', '1/3', '1/3'], { done: [0, 1, 2] })]]]);
+}
+
+const C_TWIN = `
+// middle → reverse the second half → walk both halves together
+for (ListNode a = head, b = prev; b != null; a = a.next, b = b.next) best = Math.max(best, a.val + b.val);`;
+function twin() {
+  return steps([0, `5 4 2 1: twins are (0, 3) and (1, 2).`, [LL('list', [5, 4, 2, 1])]], [
+    [ln(C_TWIN, 'best = Math.max'), `Reverse the second half → 1 2. Pair 5+1 = 6, 4+2 = 6 → <b>6</b>.`, [LL('first half', [5, 4]), LL('reversed second half', [1, 2])]]]);
+}
+
+const C_M2R = `
+while (a != null || b != null) {
+    ListNode take = (b == null || (a != null && a.val <= b.val)) ? a : b;   // smaller one
+    advance that list;
+    take.next = res;  res = take;                                            // push to the FRONT
+}`;
+function m2r() {
+  return steps([0, `Merge ascending lists but <b>prepend</b> each taken node → the result comes out descending.`, [LL('a', [5, 10, 15, 40]), LL('b', [2, 3, 20])]], [
+    [ln(C_M2R, 'push to the FRONT'), `Take 2, 3, 5, 10, 15, 20, 40, each pushed to the front.`, [LL('result', [40, 20, 15, 10, 5, 3, 2], {}, { done: [0] })]]]);
+}
+
+const C_MIB = `
+for (int i = 0; i < a - 1; i++) left = left.next;           // node a-1
+for (int i = a - 1; i <= b; i++) right = right.next;        // node b+1
+left.next = list2;
+tail(list2).next = right;`;
+function mib() {
+  return steps([0, `Remove nodes a=3..b=4 of list1 and put list2 there.`, [LL('list1', [10, 1, 13, 6, 9, 5], { 2: 'a', 3: 'b' }), LL('list2', [1000000, 1000001, 1000002])]], [
+    [ln(C_MIB, 'node a-1'), `left = node a−1 (1), right = node b+1 (5).`, [LL('list1', [10, 1, 13, 6, 9, 5], { 1: 'left', 5: 'right' })]],
+    [ln(C_MIB, 'tail(list2)'), `left → list2 → … → right.`, [LL('result', [10, 1, '1000000', '1000001', '1000002', 5], {}, { done: [2, 3, 4] })]]]);
+}
+
+const C_MZ = `
+ListNode holder = head;                         // reuse each zero as the sum holder
+for (ListNode t = head.next; t != null; t = t.next) {
+    if (t.val != 0) holder.val += t.val;
+    else if (t.next != null) { holder.next = t; holder = t; }
+    else holder.next = null;
+}`;
+function mz() {
+  return steps([0, `0 3 1 0 4 5 2 0: sum each block between zeros.`, [LL('list', [0, 3, 1, 0, 4, 5, 2, 0], { 0: 'holder' })]], [
+    [ln(C_MZ, 'holder.val += t.val'), `Block 1 → 4 stored in the first zero; block 2 → 11 in the next zero.`, [LL('result', [4, 11], {}, { done: [0, 1] })]]]);
+}
+
+const C_PLUS = `
+for (ListNode t = head; t != null; t = t.next) if (t.val != 9) notNine = t;   // last non-9 digit
+notNine.val++;
+for (ListNode t = notNine.next; t != null; t = t.next) t.val = 0;             // 9s become 0
+return sentinel.val == 1 ? sentinel : head;                                   // 999 → 1000`;
+function plus() {
+  return steps([0, `1 2 9 9 + 1: the trailing 9s turn into 0s and the last non-9 digit increments.`, [LL('digits', [1, 2, 9, 9], { 1: 'last non-9' })]], [
+    [ln(C_PLUS, '9s become 0'), `→ <b>1 3 0 0</b>. For 9 9 9 a sentinel 0 in front becomes 1.`, [LL('result', [1, 3, 0, 0], {}, { done: [1, 2, 3] })]]]);
+}
+
+const C_RN = `
+public ListNode removeNodes(ListNode head) {
+    if (head == null || head.next == null) return head;
+    ListNode rest = removeNodes(head.next);     // the rest is already non-increasing
+    if (head.val < rest.val) return rest;        // a bigger value to the right → drop head
+    head.next = rest;
+    return head;
+}`;
+function rn() {
+  return steps([0, `5 2 13 3 8: remove every node that has a bigger node somewhere to its right.`, [LL('list', [5, 2, 13, 3, 8])]], [
+    [ln(C_RN, 'already non-increasing'), `From the right: 8 stays, 3 &lt; 8 drop, 13 stays, 2 drop, 5 drop.`, [LL('list', [5, 2, 13, 3, 8], {}, { bad: [0, 1, 3] })]],
+    [ln(C_RN, 'return head'), `Result <b>13 8</b>.`, [LL('result', [13, 8], {}, { done: [0, 1] })]]]);
+}
+
+const C_SIC = `
+if (data < head.val) { insert after the tail, return the new node as head; }
+ListNode t = head;
+while (t.next != head && t.next.val <= data) t = t.next;   // last node <= data
+node.next = t.next;  t.next = node;`;
+function sic() {
+  return steps([0, `Sorted circular 1 2 4 (4 ↺ 1). Insert 3.`, [lane('ring', ['1 →', '2 →', '4 ↺'])]], [
+    [ln(C_SIC, 'last node <= data'), `Walk while next ≤ 3 → stop at 2; insert 3 after it.`, [lane('ring', ['1 →', '2 →', '3 →', '4 ↺'], { done: [2] })]],
+    [ln(C_SIC, 'data < head.val'), `Inserting 0 (smaller than the head) goes after the tail and becomes the new head.`, [lane('ring', ['0 →', '1 →', '2 →', '3 →', '4 ↺'], { done: [0] })]]]);
+}
+
+const C_SPLIT = `
+for (int i = 0; i < k && cur != null; i++) {
+    parts[i] = cur;
+    int size = len / k + (i < len % k ? 1 : 0);   // first len%k parts get one extra
+    for (int j = 1; j < size; j++) cur = cur.next;
+    ListNode nx = cur.next; cur.next = null; cur = nx;
+}`;
+function split() {
+  return steps([0, `10 nodes into k = 3 parts: 10 / 3 = 3 each, and the first 10 % 3 = 1 part gets an extra.`, [LL('list', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])]], [
+    [ln(C_SPLIT, 'one extra'), `Sizes 4, 3, 3.`, [LL('part 1', [1, 2, 3, 4]), LL('part 2', [5, 6, 7]), LL('part 3', [8, 9, 10])]]]);
+}
+
+const C_SWK = `
+ListNode first = head;
+for (int i = 1; i < k; i++) first = first.next;                  // k-th from the front
+ListNode second = head;
+for (ListNode t = first; t.next != null; t = t.next) second = second.next;   // k-th from the end
+swap(first.val, second.val);`;
+function swk() {
+  return steps([0, `k = 2 in 1 2 3 4 5.`, [LL('list', [1, 2, 3, 4, 5])]], [
+    [ln(C_SWK, 'k-th from the front'), `first = 2. Start second at head and move it while a probe goes from first to the end → second = 4.`, [LL('list', [1, 2, 3, 4, 5], { 1: 'first', 3: 'second' })]],
+    [ln(C_SWK, 'swap'), `Swap values → <b>1 4 3 2 5</b>.`, [LL('result', [1, 4, 3, 2, 5], {}, { done: [1, 3] })]]]);
+}
+
+const C_BST = `
+ListNode prev = null, slow = head, fast = head;
+while (fast != null && fast.next != null) { prev = slow; slow = slow.next; fast = fast.next.next; }
+prev.next = null;                                 // cut the left half
+TreeNode root = new TreeNode(slow.val);           // middle = root
+root.left = sortedListToBST(head);
+root.right = sortedListToBST(slow.next);`;
+function bst() {
+  return steps([0, `−10 −3 0 5 9: the middle becomes the root so both sides have equal size → balanced.`, [LL('list', [-10, -3, 0, 5, 9], { 2: 'middle' })]], [
+    [ln(C_BST, 'middle = root'), `Root 0; left half −10 −3, right half 5 9 → recurse.`, [lane('tree', ['0', '/ −3 \\ 9', '−10 · 5'])]]]);
+}
+
+const T = (name, hook, mantra, statement, code, steps, recall, links = []) => ({ name, hook, mantra, statement, anims: [{ name: 'Walkthrough', code, steps }], recall, links });
+mount({
+  title: 'Linked List Animations',
+  sub: 'Five tools solve almost everything: <b>dummy head</b>, <b>slow/fast pointers</b>, <b>reverse in place</b>, <b>merge two sorted</b>, <b>two pointers with a gap</b>. Draw boxes and arrows; change at most one arrow per line.',
+  problems: [
+    T('Add Two Numbers II (445)', 'Column addition starts at the <b>right</b>, but the list starts at the left → stacks.', 'STACKS (OR REVERSE), PREPEND', 'Add two numbers stored most-significant-first.', C_ADD, add(), [['Without modifying input?', 'Two stacks.']], [['Reverse Linked List', 31]]),
+    T('Sorted List → BST (109)', 'The <b>middle</b> of a sorted list is the fair root.', 'MIDDLE = ROOT, RECURSE HALVES', 'Height-balanced BST from a sorted list.', C_BST, bst(), [['Faster?', 'In-order simulation: build left subtree first while advancing the list pointer (O(n)).']], [['Middle of the Linked List', 21]]),
+    T('Copy Random List (138)', 'Weave each copy <b>right behind</b> its original.', 'INTERLEAVE, SET random, UNZIP', 'Deep copy a list with random pointers.', C_COPY, copy(), [['Easy version?', 'HashMap old → new.']]),
+    T('Delete Node (237)', 'If you cannot reach your predecessor, <b>become your successor</b>.', 'COPY NEXT VALUE, SKIP NEXT', 'Delete a given (non-tail) node.', C_DEL, del(), [['Why not the tail?', 'There is no successor to copy.']]),
+    T('Delete Nodes in Array (3217)', 'A bouncer looking <b>one step ahead</b>.', 'SET + DUMMY + LOOK AHEAD', 'Remove nodes whose value is in nums.', C_DIA, dia(), [['Why not advance after unlinking?', 'The new next may also need deleting.']]),
+    T('Delete Middle (2095)', 'Give the hare a <b>two-step head start</b>.', 'fast = head.next.next', 'Delete node at index n/2.', C_DMID, dmid(), [['Single node?', 'Return null.']], [['Middle of the Linked List', 21]]),
+    T('Double a Number (2816)', 'A digit only gets a carry if its <b>right neighbour ≥ 5</b>.', 'CARRY = NEXT ≥ 5', 'Double a number stored as a list.', C_DBL, dbl(), [['Classic approaches?', 'Reverse + carry, or recursion returning the carry.']], [['Plus One', 26]]),
+    T('First Non-Repeating Stream (GFG)', 'A <b>waiting line</b> of candidates; repeat offenders leave.', 'QUEUE / DLL OF CANDIDATES', 'First non-repeating char after each arrival.', C_FNR, fnr(), [['DLL version?', 'LinkedHashSet: O(1) removal.']]),
+    T('Critical Points (2058)', 'Hills and valleys: only <b>first, previous, current</b> matter.', 'TRACK first, last, minGap', 'Min and max distance between critical points.', C_CRIT, crit(), [['Max distance?', 'last − first.']]),
+    T('Flatten Multilevel DLL (430)', '<b>Splice</b> each child chain into the main road.', 'CHILD BETWEEN cur AND cur.next', 'Flatten a multilevel doubly linked list.', C_FML, fml(), [['Don\'t forget?', 'prev pointers and child = null.']]),
+    T('Flattening a List (GFG)', 'Sorted <b>columns</b> merged right to left.', 'FLATTEN RIGHT, MERGE TWO SORTED', 'Flatten columns linked by next into one sorted bottom list.', C_FLAT, flat(), [['Heap version?', 'Push all column heads, pop min, push its bottom.']], [['Merge Two Sorted Lists', 20]]),
+    T('Insert GCDs (2807)', 'A <b>bridge</b> between every pair of neighbours.', 'INSERT gcd, JUMP TWO', 'Insert gcd nodes between adjacent nodes.', C_GCD, gcdl(), [['Why t = t.next.next?', 'Skip over the inserted node.']]),
+    T('Insertion Sort List (147)', 'Deal cards into a <b>sorted hand</b>.', 'DUMMY, FIND SLOT, INSERT', 'Insertion sort on a list.', C_INS, ins(), [['Complexity?', 'O(n²); merge sort gives O(n log n).']]),
+    T('Binary List → Int (1290)', 'Read binary like decimal: <b>shift and add</b>.', 'v = 2v + bit', 'Value of a binary number stored MSB first.', C_BIN, bin(), [['Why no reverse?', 'Horner\'s method consumes digits left to right.']]),
+    T('Cycle II (142)', 'Two runners on a track meet; then <b>a new runner from the start</b> meets the slow one at the entrance.', 'FLOYD MEET, RESET ONE TO HEAD', 'Node where the cycle begins.', C_CYC, cyc(), [['Why do they meet at the entry?', 'distance(head → entry) ≡ distance(meet → entry) mod cycle length.']]),
+    T('Random Node (382)', 'Reservoir: keep the i-th visitor with <b>probability 1/i</b>.', 'RESERVOIR SAMPLING', 'Uniform random node in one pass.', C_RND, rnd(), [['Why 1/i?', 'Telescoping product gives 1/n for every node.']]),
+    T('Max Twin Sum (2130)', 'Fold the list in half like <b>a sheet of paper</b>.', 'MIDDLE, REVERSE SECOND HALF, PAIR UP', 'Max of node[i] + node[n−1−i].', C_TWIN, twin(), [['Stack version?', 'Push the first half, pop while walking the second.']], [['Palindrome Linked List', 24]]),
+    T('Merge in Reverse (GFG)', 'Merge, but put each taken card on <b>top</b> of the pile.', 'MERGE + PREPEND', 'Merge two ascending lists into one descending list.', C_M2R, m2r(), [['Why prepend?', 'Ascending picks + prepending = descending.']], [['Merge Two Sorted Lists', 20]]),
+    T('Merge In Between (1669)', 'Cut out a section of track and <b>splice in</b> a new one.', 'FIND a−1 AND b+1, SPLICE', 'Replace nodes a..b of list1 by list2.', C_MIB, mib(), [['Pointers needed?', 'Node a−1, node b+1, tail of list2.']]),
+    T('Merge k Sorted (23)', 'k sorted queues → one <b>referee (heap)</b> calls the smallest head.', 'MIN-HEAP OF HEADS (OR DIVIDE & CONQUER)', 'Merge k sorted lists.', C_MK, mk(), [['Complexity?', 'O(N log k) both ways.']], [['Merge Two Sorted Lists', 20]]),
+    T('Merge Two Sorted (21)', 'Two sorted decks: always take the <b>smaller top card</b>.', 'DUMMY + TAIL, TAKE SMALLER, ATTACH REST', 'Merge two sorted lists.', C_M2, m2(), [['Recursive version?', 'smaller.next = merge(smaller.next, other).']], [['Merge k Sorted', 19]]),
+    T('Middle (876)', '<b>Tortoise and hare</b>.', 'SLOW 1, FAST 2', 'Middle node (second middle if even).', C_MID, mid(), [['First middle instead?', 'Loop while fast.next != null && fast.next.next != null.']], [['Delete Middle', 5]]),
+    T('Merge Nodes Between Zeros (2181)', 'Each zero is a <b>bucket</b> that collects the block after it.', 'REUSE ZEROS AS HOLDERS', 'Sum each block between zeros.', C_MZ, mz(), [['Last zero?', 'holder.next = null.']]),
+    T('Odd Even (328)', 'Two <b>zippers</b> separated: odd positions and even positions.', 'TWO CHAINS IN PLACE, ODDS THEN EVENS', 'Group odd-indexed nodes, then even-indexed.', C_ODD, odd(), [['Why save evenHead?', 'To attach it after the last odd node.']]),
+    T('Palindrome List (234)', 'Fold the list; the halves must <b>match</b>.', 'MIDDLE, REVERSE SECOND HALF, COMPARE', 'Is the list a palindrome (O(1) space)?', C_PAL, pal(), [['Restore the list?', 'Reverse the second half back.']], [['Max Twin Sum', 16]]),
+    T('Partition List (86)', 'Deal cards into <b>two piles</b>, keep their order, stack the piles.', 'TWO DUMMY CHAINS, more.next = null', 'Nodes < x before nodes ≥ x, stable.', C_PART, part(), [['Cycle trap?', 'Set the last ≥ node\'s next to null.']]),
+    T('Plus One (369)', 'An <b>odometer</b>: 9s roll over to 0, the last non-9 digit ticks up.', 'LAST NON-9 ++, ZEROS AFTER, SENTINEL', 'Add one to a number stored as a list.', C_PLUS, plus(), [['999?', 'The sentinel 0 becomes 1 and is returned.']], [['Double a Number', 6]]),
+    T('Remove Nodes (2487)', 'Keep only nodes that <b>see no taller building</b> to their right.', 'RECURSE RIGHT, KEEP IF ≥ NEXT', 'Remove nodes with a greater value anywhere to the right.', C_RN, rn(), [['Stack version?', 'Monotonic non-increasing stack.']]),
+    T('Remove Nth From End (19)', 'Two hikers with a <b>fixed rope</b> of n between them.', 'GAP n, MOVE BOTH, UNLINK slow.next', 'Remove the n-th node from the end in one pass.', C_NTH, nth(), [['Why a dummy?', 'Removing the head is then normal.']]),
+    T('Zero Sum Consecutive (1171)', '<b>Same prefix sum twice</b> ⇒ everything between them cancels.', 'LAST NODE PER PREFIX SUM, JUMP', 'Remove consecutive zero-sum sequences.', C_ZERO, zero(), [['Why the LAST node?', 'It removes the longest zero block in one jump.']]),
+    T('Reorder List (143)', 'Shuffle a deck by <b>alternating</b> from the top and the bottom: the bottom half must be read backwards.', 'MIDDLE, REVERSE SECOND HALF, ZIP', 'L0 → Ln → L1 → Ln−1 → … in place.', C_REORD, reord(), [['Stack version?', 'Push all nodes, pop n/2 of them while walking from the front.']], [['Palindrome List', 24]]),
+    T('Reverse List (206)', 'Turn every <b>arrow</b> around while walking.', 'SAVE NEXT, FLIP, ADVANCE', 'Reverse a singly linked list.', C_REV, rev(), [['Recursive version?', 'reverse(rest); head.next.next = head; head.next = null.']], [['Reverse List II', 32], ['Reverse k-Group', 33]]),
+    T('Reverse List II (92)', 'Reverse a <b>window</b> by moving each node to the window\'s front.', 'STOP BEFORE left, HEAD-INSERT right−left TIMES', 'Reverse nodes left..right in one pass.', C_RB, rb(), [['Pointers?', 'prev (fixed), cur (fixed, drifts right), move.']], [['Reverse k-Group', 33]]),
+    T('Reverse k-Group (25)', 'Reverse-List-II applied to <b>every full window</b>.', 'COUNT, HEAD-INSERT k−1 PER GROUP', 'Reverse every group of k nodes; leave the tail.', C_RKG, rkg(), [['Partial group?', 'Unchanged (count first).']], [['Reverse List II', 32]]),
+    T('Rotate List (61)', 'Bend the list into a <b>ring</b> and cut at a new place.', 'k %= len, RING, CUT', 'Rotate right by k.', C_ROT, rot(), [['New tail index?', 'len − k − 1.']]),
+    T('Sorted Insert Circular (GFG)', 'Seat a newcomer at a <b>round table</b> sorted by number.', 'SMALLER THAN HEAD → NEW HEAD; ELSE AFTER LAST ≤', 'Insert into a sorted circular list.', C_SIC, sic(), [['Empty list?', 'The node points to itself.']]),
+    T('Split in Parts (725)', 'Share n sweets among k kids: the <b>first n % k kids</b> get one more.', 'SIZE = n/k (+1 FOR FIRST n%k)', 'Split into k consecutive parts.', C_SPLIT, split(), [['k > n?', 'Trailing parts are null.']]),
+    T('Swap Pairs (24)', 'Swap the first two and <b>trust recursion</b> for the rest.', 'SECOND → HEAD → SWAP(REST)', 'Swap every two adjacent nodes.', C_SWAP, swap(), [['Iterative?', 'Dummy + prev; rewire 3 arrows per pair.']]),
+    T('Swapping Nodes (1721)', 'The k-th from the end is found by a pointer <b>trailing</b> a probe that started at the k-th from the front.', 'FIND FIRST, TRAIL TO SECOND, SWAP VALUES', 'Swap values of the k-th from the front and the k-th from the end.', C_SWK, swk(), [['Swap values or nodes?', 'Values are enough here.']], [['Remove Nth From End', 28]])
+  ]
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Line Sweep Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, recorder, mount } = BrainAnim;
+
+// Timeline grid: one row per interval, one column per gap between sorted boundary points
+function gantt(name, iv, pts, col, extraCls) {
+  const m = iv.map(x => pts.slice(0, -1).map((p, c) => (x.s <= p && pts[c + 1] <= x.e) ? x.v : null));
+  return grid(name, m, { rowLabels: iv.map(x => x.name), colLabels: pts.slice(0, -1).map((p, c) => `${p}-${pts[c + 1]}`),
+    cls: (r, c) => (extraCls && extraCls(r, c)) || (m[r][c] === null ? (c === col ? 'ghost' : '') : c === col ? 'active' : 'done') });
+}
+// Sorted map snapshot as a lane of "key:delta" cells
+const mapLane = (name, mp, act) => { const ks = [...mp.keys()].sort((a, b) => a - b); return lane(name, ks.map(k => `${k}: ${mp.get(k) > 0 ? '+' : ''}${mp.get(k)}`), { active: act === undefined ? [] : [ks.indexOf(act)], tag: 'TreeMap, sorted by time' }); };
+const add = (mp, k, d) => mp.set(k, (mp.get(k) || 0) + d);
+
+// Generic TreeMap sweep used by several problems
+function mapSweep(r, iv, lines, words, limit) {
+  const mp = new Map(), pts = [...new Set(iv.flatMap(x => [x.s, x.e]))].sort((a, b) => a - b);
+  for (const x of iv) {
+    add(mp, x.s, x.v); add(mp, x.e, -x.v);
+    r.step(lines.fill, `${x.name}: <b>+${x.v}</b> at ${x.s}, <b>−${x.v}</b> at ${x.e}. ${words.fill}`, [gantt('Timeline', iv, pts, -1), mapLane('events', mp, x.s)]);
+  }
+  let run = 0, best = 0;
+  const ks = [...mp.keys()].sort((a, b) => a - b);
+  for (let i = 0; i < ks.length; i++) {
+    run += mp.get(ks[i]); best = Math.max(best, run);
+    const col = pts.indexOf(ks[i]);
+    const over = limit !== undefined && run > limit;
+    r.step(over ? lines.fail : lines.sweep, `Sweep reaches t = ${ks[i]}: running ${words.unit} += ${mp.get(ks[i])} → <b>${run}</b>${over ? ` > ${limit}. <b>Fail!</b>` : ''}.`,
+      [gantt('Timeline (column = gap starting at t)', iv, pts, col, over ? ((rr, c) => c === col && iv[rr].s <= pts[c] && pts[c + 1] <= iv[rr].e ? 'bad' : '') : null), mapLane('events', mp, ks[i])], { [words.unit]: run, max: best });
+    if (over) return { ok: false, best };
+  }
+  return { ok: true, best };
+}
+
+// Animates LC 1094 with the TreeMap sweep
+function carPool() {
+  const r = recorder(), iv = [{ name: 'trip0', s: 1, e: 5, v: 2 }, { name: 'trip1', s: 3, e: 7, v: 3 }];
+  r.step(0, `capacity = 4. Instead of simulating every kilometre, record only <b>where the count changes</b>: people get in (+) and get out (−).`, [gantt('Timeline', iv, [1, 3, 5, 7], -1)]);
+  const res = mapSweep(r, iv, { fill: 4, sweep: 9, fail: 10 }, { fill: 'Drop-off happens before pickup at the same point, so −count at the end is right.', unit: 'inCar' }, 4);
+  r.step(res.ok ? 12 : 10, res.ok ? 'Never above capacity → true.' : `Return <b>false</b>: between 3 and 5 there are 2 + 3 = 5 people.`, [gantt('Timeline', iv, [1, 3, 5, 7], 1, (rr, c) => c === 1 ? 'bad' : '')]);
+  return r.steps;
+}
+
+// Animates LC 1109 difference array then prefix sum
+function flights() {
+  const r = recorder(), n = 5, B = [[1, 2, 10], [2, 3, 20], [2, 5, 25]], diff = Array(n + 2).fill(0), res = Array(n).fill(null);
+  const D = o => lane('diff[] (index = flight)', diff, { showIdx: true, ...o });
+  r.step(1, `n = 5 flights. Adding seats to a range one by one is O(n) per booking. The difference array makes each booking <b>O(1)</b>: mark where it starts and where it stops.`, [D()]);
+  B.forEach(([a, b, c]) => { diff[a] += c; diff[b + 1] -= c; r.step(4, `Booking [${a}, ${b}] with ${c} seats: diff[${a}] += ${c}, diff[${b + 1}] −= ${c}.`, [D({ active: [a], warn: [b + 1] })]); });
+  let run = 0;
+  for (let i = 1; i <= n; i++) { run += diff[i]; res[i - 1] = run; r.step(10, `Prefix sum: running += diff[${i}] = ${diff[i]} → flight ${i} has <b>${run}</b> seats.`, [D({ active: [i] }), lane('answer', res, { emptyVal: null, done: [i - 1] })], { running: run }); }
+  r.step(13, `Answer <b>[${res}]</b>. "Open the tap at start, close it after the end, then let it flow."`, [D(), lane('answer', res, { done: res.map((_, i) => i) })]);
+  return r.steps;
+}
+
+// Animates LC 1943 painting segments from boundaries
+function painting() {
+  const r = recorder(), iv = [{ name: 'seg0', s: 1, e: 7, v: 9 }, { name: 'seg1', s: 6, e: 8, v: 15 }, { name: 'seg2', s: 8, e: 10, v: 7 }];
+  const pts = [1, 6, 7, 8, 10], mp = new Map(), out = [];
+  for (const x of iv) { add(mp, x.s, x.v); add(mp, x.e, -x.v); }
+  r.step(4, `Mixed colour = <b>sum</b> of the colour ids covering a spot. Put +colour at each start and −colour at each end.`, [gantt('Painting', iv, pts, -1), mapLane('events', mp)]);
+  let sum = 0, prev = null;
+  for (const k of [...mp.keys()].sort((a, b) => a - b)) {
+    if (prev !== null && sum > 0) out.push(`[${prev},${k}) = ${sum}`);
+    r.step(prev !== null && sum > 0 ? 11 : 12, prev !== null ? (sum > 0 ? `Close the piece [${prev}, ${k}) with sum <b>${sum}</b>.` : `[${prev}, ${k}) is unpainted, so skip it.`) : `First boundary ${k}: just start.`,
+      [gantt('Painting', iv, pts, pts.indexOf(prev)), mapLane('events', mp, k), lane('result', out, { done: out.map((_, i) => i) })], { sum, prev });
+    sum += mp.get(k); prev = k;
+  }
+  r.step(15, `Every boundary starts a new piece, <b>even if the net change is 0</b>. (In LC example 3, colours 5+7 end at 4 and 1+11 start there: both sum to 12 but are different mixes.)`, [gantt('Painting', iv, pts, -1), lane('result', out, { done: out.map((_, i) => i) })]);
+  return r.steps;
+}
+
+// Animates LC 1854 sorted birth/death events
+function population() {
+  const r = recorder(), logs = [[1950, 1961], [1960, 1971], [1970, 1981]];
+  const ev = logs.flatMap(([b, d]) => [[b, 1], [d, -1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const E = o => lane('events sorted by (year, delta)', ev.map(([y, d]) => `${y} ${d > 0 ? '+1' : '−1'}`), o);
+  r.step(0, `People alive in [birth, death). A birth is +1, a death is −1. Sort the events, and on the <b>same year put the death first</b> (that person is not alive in that year).`, [E()]);
+  let alive = 0, best = 0, year = 0;
+  ev.forEach(([y, d], i) => {
+    alive += d; const better = alive > best; if (better) { best = alive; year = y; }
+    r.step(better ? 25 : 24, `${y} ${d > 0 ? 'birth' : 'death'} → alive = <b>${alive}</b>${better ? `, a new max, so remember year ${y}` : ''}.`, [E({ active: [i], ghost: [...Array(i).keys()] })], { alive, best, year });
+  });
+  r.step(27, `Answer <b>${year}</b>. Use strict "&gt;" so the <b>earliest</b> year wins ties.`, [E()], { year });
+  return r.steps;
+}
+
+// Animates LC 1589 coverage frequency then greedy pairing
+function maxPerm() {
+  const r = recorder(), nums = [1, 2, 3, 4, 5], req = [[1, 3], [0, 1]], n = 5, f = Array(n + 1).fill(0);
+  const F = o => lane('freq[] (how many requests cover i)', f.slice(0, n), { showIdx: true, ...o });
+  r.step(4, `We can reorder nums. Each index i is added <b>freq[i]</b> times, so put the biggest numbers on the busiest indices.`, [F(), lane('nums', nums)]);
+  req.forEach(([a, b]) => { f[a]++; f[b + 1]--; r.step(6, `Request [${a}, ${b}]: freq[${a}]++, freq[${b + 1}]--.`, [F({ active: [a], warn: b + 1 < n ? [b + 1] : [] }), lane('nums', nums)]); });
+  for (let i = 1; i < n; i++) f[i] += f[i - 1];
+  r.step(9, `Prefix sum → coverage counts <b>[${f.slice(0, n)}]</b>.`, [F({ done: [0, 1, 2, 3, 4] }), lane('nums', nums)]);
+  const fs = f.slice(0, n).sort((a, b) => a - b), ns = [...nums].sort((a, b) => a - b);
+  let res = 0; const parts = [];
+  for (let i = n - 1; i >= 0; i--) { res += ns[i] * fs[i]; parts.push(`${ns[i]}×${fs[i]}`); r.step(14, `Pair the ${n - i}-th biggest number ${ns[i]} with the ${n - i}-th biggest frequency ${fs[i]}. Sum = ${parts.join(' + ')} = <b>${res}</b>.`, [lane('freq sorted', fs, { active: [i] }), lane('nums sorted', ns, { active: [i] })], { res }); }
+  return r.steps;
+}
+
+// Animates Meeting Rooms II max overlap
+function rooms() {
+  const r = recorder(), iv = [{ name: 'm0', s: 0, e: 30, v: 1 }, { name: 'm1', s: 5, e: 10, v: 1 }, { name: 'm2', s: 15, e: 20, v: 1 }];
+  r.step(0, `Rooms needed = the <b>maximum number of meetings happening at the same moment</b>.`, [gantt('Meetings', iv, [0, 5, 10, 15, 20, 30], -1)]);
+  const res = mapSweep(r, iv, { fill: 4, sweep: 9 }, { fill: '', unit: 'busy' });
+  r.step(12, `Answer = max busy = <b>${res.best}</b>. An end and a start at the same time cancel, so that room is reused.`, [gantt('Meetings', iv, [0, 5, 10, 15, 20, 30], -1)], { rooms: res.best });
+  return r.steps;
+}
+
+// Animates LC 731 booking with rollback on triple overlap
+function calendar2() {
+  const r = recorder(), books = [[10, 20], [50, 60], [10, 40], [5, 15], [5, 10], [25, 55]], mp = new Map(), kept = [];
+  for (const [s, e] of books) {
+    add(mp, s, 1); add(mp, e, -1);
+    let run = 0, bad = null;
+    for (const k of [...mp.keys()].sort((a, b) => a - b)) { run += mp.get(k); if (run > 2) { bad = k; break; } }
+    const iv = [...kept, { name: `new [${s},${e})`, s, e, v: 1 }];
+    const pts = [...new Set(iv.flatMap(x => [x.s, x.e]))].sort((a, b) => a - b);
+    if (bad !== null) {
+      r.step(7, `Try [${s}, ${e}): add +1/−1, sweep … at t = ${bad} the count hits <b>3</b>. Triple booking!`, [gantt('Calendar', iv, pts, pts.indexOf(bad), (rr, c) => c === pts.indexOf(bad) && iv[rr].s <= pts[c] && pts[c + 1] <= iv[rr].e ? 'bad' : ''), mapLane('events', mp, bad)]);
+      add(mp, s, -1); add(mp, e, 1);
+      r.step(8, `<b>Undo</b> the +1/−1 and return false.`, [gantt('Calendar', kept, [...new Set(kept.flatMap(x => [x.s, x.e]))].sort((a, b) => a - b), -1), mapLane('events', mp)]);
+    } else {
+      kept.push({ name: `[${s},${e})`, s, e, v: 1 });
+      r.step(13, `Book [${s}, ${e}): sweep never goes above 2 → keep it, return true.`, [gantt('Calendar', iv, pts, -1), mapLane('events', mp, s)]);
+    }
+  }
+  return r.steps;
+}
+
+// Animates LC 732 running max overlap after each booking
+function calendar3() {
+  const r = recorder(), books = [[10, 20], [50, 60], [10, 40], [5, 15], [5, 10], [25, 55]], mp = new Map(), all = [];
+  for (const [s, e] of books) {
+    add(mp, s, 1); add(mp, e, -1); all.push({ name: `[${s},${e})`, s, e, v: 1 });
+    let run = 0, best = 0, at = null;
+    for (const k of [...mp.keys()].sort((a, b) => a - b)) { run += mp.get(k); if (run > best) { best = run; at = k; } }
+    const pts = [...new Set(all.flatMap(x => [x.s, x.e]))].sort((a, b) => a - b);
+    r.step(9, `book(${s}, ${e}) → sweep the whole map; the max overlap is <b>${best}</b> (first at t = ${at}).`, [gantt('Calendar', all, pts, pts.indexOf(at)), mapLane('events', mp, s)], { returned: best });
+  }
+  return r.steps;
+}
+
+const T = (name, hook, mantra, statement, code, steps, recall, links) => ({ name, hook, mantra, statement, anims: [{ name: 'Sweep', code, steps }], recall, links });
+mount({
+  title: 'Line Sweep Animations',
+  sub: 'Do not walk every point in time. Record only the moments where something changes (+ at a start, − at an end), then sweep left to right with a running sum.',
+  problems: [
+    T('Car Pooling (LC 1094)', 'A <b>bus conductor</b> notes only "+2 get on at 1, −2 get off at 5". Reading the notebook in order of kilometres gives the passenger count everywhere.', '+ AT START, − AT END, RUNNING SUM ≤ CAP',
+      'trips[i] = [count, from, to]. Can a car with <code>capacity</code> seats pick up and drop everyone (driving east only)?', `
+public boolean carPoolingMap(int[][] trips, int capacity) {
+    TreeMap<Integer, Integer> events = new TreeMap<>();
+    for (int[] t : trips) {
+        events.merge(t[1], t[0], Integer::sum);
+        events.merge(t[2], -t[0], Integer::sum);
+    }
+    int inCar = 0;
+    for (int delta : events.values()) {
+        inCar += delta;
+        if (inCar > capacity) return false;
+    }
+    return true;
+}`, carPool(), [['Why is "−count at `to`" correct, not at to+1?', 'Passengers leave at `to`, so the seat is free for someone who boards at `to`.'], ['When is a plain int[] better than TreeMap?', 'When coordinates are small (≤ 1000 here): O(range) with no log factor.'], ['TreeMap idiom for += ?', 'map.merge(key, delta, Integer::sum).']], [['Meeting Rooms II', 5], ['My Calendar III', 7]]),
+    T('Flight Bookings (LC 1109)', 'A <b>water tap</b>: open it at <code>first</code>, close it after <code>last</code>. The prefix sum is the water flowing past each flight.', 'diff[l] += x; diff[r+1] −= x; PREFIX',
+      'bookings[i] = [first, last, seats] adds seats to every flight in [first, last]. Return the total for flights 1..n.', `
+public int[] corpFlightBookings(int[][] bookings, int n) {
+    int[] diff = new int[n + 2];
+    for (int[] b : bookings) {
+        diff[b[0]] += b[2];
+        diff[b[1] + 1] -= b[2];
+    }
+    int[] res = new int[n];
+    int run = 0;
+    for (int i = 1; i <= n; i++) {
+        run += diff[i];
+        res[i - 1] = run;
+    }
+    return res;
+}`, flights(), [['Why size n + 2?', 'Flights are 1-indexed and we write to last + 1, which can be n + 1.'], ['Inclusive end → which index gets the minus?', 'r + 1.'], ['Complexity?', 'O(n + bookings) instead of O(n · bookings).']], [['Max Sum of Any Permutation (same diff array)', 4]]),
+    T('Describe the Painting (LC 1943)', 'Paint layers on a wall: at each <b>boundary</b> you start a new strip, even if the colour sum looks the same.', 'BOUNDARIES CUT PIECES, SUM > 0 → EMIT',
+      'Segments [start, end, color] overlap; a mixed area is described by the sum of its colours. Return the minimal list of painted pieces.', `
+public List<List<Long>> splitPainting(int[][] segments) {
+    TreeMap<Integer, Long> events = new TreeMap<>();
+    for (int[] s : segments) {
+        events.merge(s[0], (long) s[2], Long::sum);
+        events.merge(s[1], (long) -s[2], Long::sum);
+    }
+    List<List<Long>> res = new ArrayList<>();
+    long sum = 0;
+    Integer prev = null;
+    for (Map.Entry<Integer, Long> e : events.entrySet()) {
+        if (prev != null && sum > 0) res.add(List.of((long) prev, (long) e.getKey(), sum));
+        sum += e.getValue();
+        prev = e.getKey();
+    }
+    return res;
+}`, painting(), [['Why keep a boundary whose net change is 0?', 'The set of colours changed (e.g. 5+7 → 1+11), so the problem wants a new piece.'], ['Does TreeMap.merge drop a key when the value becomes 0?', 'No. merge only removes when the function returns null, so 0-delta boundaries stay.'], ['Why long?', 'The sum of colours can exceed int (1e5 segments × 1e9).']], [['Car Pooling', 0]]),
+    T('Max Population Year (LC 1854)', 'A <b>census clicker</b>: click up at a birth and down at a death. The first year with the highest count wins.', 'BIRTH +1, DEATH −1, FIRST MAX',
+      'logs[i] = [birth, death]; a person is alive in [birth, death − 1]. Return the earliest year with maximum population.', `
+// Approach 1 (difference array)
+public int maximumPopulation(int[][] logs) {
+    int[] diff = new int[2051];
+    for (int[] l : logs) {
+        diff[l[0]]++;
+        diff[l[1]]--;
+    }
+    int best = 0, alive = 0, year = 1950;
+    for (int y = 1950; y <= 2050; y++) {
+        alive += diff[y];
+        if (alive > best) { best = alive; year = y; }
+    }
+    return year;
+}
+// Approach 2 (sorted events; animated)
+public int maximumPopulationEvents(int[][] logs) {
+    int[][] ev = new int[logs.length * 2][];
+    int k = 0;
+    for (int[] l : logs) { ev[k++] = new int[]{l[0], 1}; ev[k++] = new int[]{l[1], -1}; }
+    Arrays.sort(ev, (a, b) -> a[0] != b[0] ? Integer.compare(a[0], b[0])
+                                           : Integer.compare(a[1], b[1]));
+    int best = 0, alive = 0, year = 0;
+    for (int[] e : ev) {
+        alive += e[1];
+        if (alive > best) { best = alive; year = e[0]; }
+    }
+    return year;
+}`, population(), [['Tie at the same year: birth or death first?', 'Death (−1) first, because the person is not alive in their death year.'], ['How do you get the earliest year on ties?', 'Update only on strictly greater (>).'], ['Which approach is O(n) here?', 'The difference array, because years are bounded (1950–2050).']], [['Car Pooling', 0]]),
+    T('Max Sum Any Permutation (LC 1589)', 'A <b>busy street</b>: put the biggest shops where the most people walk past. Line sweep counts the foot traffic.', 'COUNT COVERAGE, SORT BOTH, BIG×BIG',
+      'Permute nums to maximise the total of all request range sums (mod 1e9+7).', `
+public int maxSumRangeQuery(int[] nums, int[][] requests) {
+    final int MOD = 1_000_000_007;
+    int n = nums.length;
+    int[] freq = new int[n + 1];
+    for (int[] q : requests) {
+        freq[q[0]]++;
+        freq[q[1] + 1]--;
+    }
+    for (int i = 1; i < n; i++) freq[i] += freq[i - 1];
+    int[] f = Arrays.copyOf(freq, n);
+    Arrays.sort(f);
+    Arrays.sort(nums);
+    long res = 0;
+    for (int i = n - 1; i >= 0; i--) res = (res + (long) nums[i] * f[i]) % MOD;
+    return (int) res;
+}`, maxPerm(), [['Why is pairing sorted with sorted optimal?', 'Rearrangement inequality: the sum of products is maximised when both sequences are in the same order.'], ['Why freq of size n + 1?', 'To write at r + 1 = n without a bounds check.'], ['Overflow guard?', '(long) nums[i] * f[i] before taking mod.']], [['Flight Bookings (same diff array)', 1]]),
+    T('Meeting Rooms II', 'A <b>hotel receptionist</b> counts room keys out (+1) and back (−1). The most keys out at once = rooms needed.', 'MAX OVERLAP = ROOMS',
+      'Given meeting intervals, find the minimum number of rooms so no two overlapping meetings share a room.', `
+public int minMeetingRooms(int[] start, int[] end) {
+    TreeMap<Integer, Integer> events = new TreeMap<>();
+    for (int i = 0; i < start.length; i++) {
+        events.merge(start[i], 1, Integer::sum);
+        events.merge(end[i], -1, Integer::sum);
+    }
+    int busy = 0, rooms = 0;
+    for (int d : events.values()) {
+        busy += d;
+        rooms = Math.max(rooms, busy);
+    }
+    return rooms;
+}`, rooms(), [['What does the max running count represent?', 'The maximum number of meetings overlapping at one moment.'], ['End at 10, start at 10: one room or two?', 'One. Merging into the same key cancels +1/−1.'], ['Alternative approach?', 'Sort the meetings by start plus a min-heap of end times (see the Heap folder).']], [['Car Pooling (same sweep)', 0], ['My Calendar III (online version)', 7]]),
+    T('My Calendar II (LC 731)', 'A <b>pencil booking</b>: write it in, check for any triple clash, and <b>erase</b> it if there is one.', 'ADD, SWEEP, >2 → UNDO',
+      'book(start, end) succeeds unless it would create a triple booking.', `
+public boolean book(int start, int end) {
+    events.merge(start, 1, Integer::sum);
+    events.merge(end, -1, Integer::sum);
+    int active = 0;
+    for (int d : events.values()) {
+        active += d;
+        if (active > 2) {
+            events.merge(start, -1, Integer::sum);
+            events.merge(end, 1, Integer::sum);
+            return false;
+        }
+    }
+    return true;
+}`, calendar2(), [['Why must you undo before returning false?', 'A rejected booking must not affect future checks.'], ['Cost per book?', 'O(n) sweep over the map (n ≤ 1000 calls), so O(n²) overall, which is fine.'], ['How does My Calendar I differ?', 'Limit 1 instead of 2 (or use TreeMap floor/ceiling).']], [['My Calendar III', 7]]),
+    T('My Calendar III (LC 732)', 'A <b>stadium counter</b> that shows the highest crowd ever after each new event is added.', 'ADD, SWEEP, RETURN MAX',
+      'After each book(start, end), return the maximum k such that some moment has k overlapping bookings.', `
+public int book(int start, int end) {
+    events.merge(start, 1, Integer::sum);
+    events.merge(end, -1, Integer::sum);
+    int active = 0, best = 0;
+    for (int d : events.values()) {
+        active += d;
+        best = Math.max(best, active);
+    }
+    return best;
+}`, calendar3(), [['Difference from My Calendar II?', 'Never reject; just report the max overlap.'], ['Faster alternative?', 'Segment tree with lazy propagation: O(log C) per booking (see Segment Tree).'], ['Same as which offline problem?', 'Meeting Rooms II.']], [['My Calendar II', 6], ['Meeting Rooms II', 5]])
+  ]
+});
+</script>
+</body>
+</html>

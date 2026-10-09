@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, tree, recorder, mount, ln } = BrainAnim;
+const mapLane = (name, m, hl) => { const ks = [...m.keys()]; return lane(name, ks.map(k => `${k}: ${fmt(m.get(k))}`), { active: hl === undefined ? [] : [ks.indexOf(hl)] }); };
+const fmt = v => Array.isArray(v) ? `[${v.join(',')}]` : v instanceof Set ? `{${[...v].join(',')}}` : String(v);
+
+// ===== LRU =====
+const C_LRU = `
+public int get(int key) {
+    Node n = map.get(key);
+    if (n == null) return -1;
+    remove(n);
+    addFront(n);
+    return n.val;
+}
+
+public void put(int key, int value) {
+    Node n = map.get(key);
+    if (n != null) { n.val = value; remove(n); addFront(n); return; }
+    if (map.size() == capacity) { Node lru = tail.prev; remove(lru); map.remove(lru.key); }
+    n = new Node(key, value);
+    addFront(n);
+    map.put(key, n);
+}`;
+function lru() {
+  const r = recorder(), cap = 2; let list = [];
+  const L = (o = {}) => [lane('DLL: head → … → tail (left = most recent)', list.map(([k, v]) => `${k}=${v}`), o), lane('HashMap keys', list.map(([k]) => k))];
+  const ops = [['put', 1, 1], ['put', 2, 2], ['get', 1], ['put', 3, 3], ['get', 2], ['put', 4, 4], ['get', 1], ['get', 3], ['get', 4]];
+  r.step(0, `Capacity 2. The HashMap finds a node in O(1); the <b>doubly linked list</b> keeps recency order, so moving a node to the front or dropping the tail is also O(1).`, L());
+  for (const [op, k, v] of ops) {
+    const i = list.findIndex(x => x[0] === k);
+    if (op === 'get') {
+      if (i < 0) { r.step(ln(C_LRU, 'return -1'), `get(${k}) → miss → <b>-1</b>.`, L()); continue; }
+      const [n] = list.splice(i, 1); list.unshift(n);
+      r.step(ln(C_LRU, 'addFront(n);'), `get(${k}) → hit <b>${n[1]}</b>. Move it to the front (most recent).`, L({ active: [0] }));
+    } else {
+      if (i >= 0) { list.splice(i, 1); list.unshift([k, v]); r.step(ln(C_LRU, 'n.val = value'), `put(${k}) updates and moves to front.`, L({ active: [0] })); continue; }
+      if (list.length === cap) { const ev = list.pop(); r.step(ln(C_LRU, 'Node lru = tail.prev'), `Full → evict the tail (least recent) <b>${ev[0]}</b>.`, L({ bad: [] })); }
+      list.unshift([k, v]);
+      r.step(ln(C_LRU, 'addFront(n);', 2), `put(${k}, ${v}) → new node at the front.`, L({ active: [0] }));
+    }
+  }
+  return r.steps;
+}
+
+// ===== LFU =====
+const C_LFU = `
+private void touch(int key) {
+    int[] d = data.get(key);
+    LinkedHashSet<Integer> b = buckets.get(d[1]);
+    b.remove(key);
+    if (b.isEmpty() && d[1] == minFreq) minFreq++;
+    d[1]++;
+    buckets.computeIfAbsent(d[1], f -> new LinkedHashSet<>()).add(key);
+}
+
+public void put(int key, int value) {
+    if (data.containsKey(key)) { data.get(key)[0] = value; touch(key); return; }
+    if (data.size() == capacity) {
+        Iterator<Integer> it = buckets.get(minFreq).iterator();
+        data.remove(it.next());
+        it.remove();
+    }
+    data.put(key, new int[]{value, 1});
+    buckets.computeIfAbsent(1, f -> new LinkedHashSet<>()).add(key);
+    minFreq = 1;
+}`;
+function lfu() {
+  const r = recorder(), cap = 2, data = new Map(), buckets = new Map(); let minF = 0;
+  const L = () => [lane('freq buckets (each = keys oldest → newest)', [...buckets.keys()].sort().filter(f => buckets.get(f).length).map(f => `f${f}: [${buckets.get(f)}]`)), lane('minFreq', [minF])];
+  const touch = k => { const d = data.get(k), b = buckets.get(d[1]); b.splice(b.indexOf(k), 1); if (!b.length && d[1] === minF) minF++; d[1]++; if (!buckets.has(d[1])) buckets.set(d[1], []); buckets.get(d[1]).push(k); };
+  r.step(0, `Evict the key with the <b>lowest frequency</b>; ties → the least recently used. Bucket per frequency, each bucket in recency order.`, L());
+  for (const [op, k, v] of [['put', 1, 1], ['put', 2, 2], ['get', 1], ['put', 3, 3], ['get', 2], ['get', 3], ['put', 4, 4]]) {
+    if (op === 'get') { if (!data.has(k)) { r.step(0, `get(${k}) → -1.`, L()); continue; } touch(k); r.step(ln(C_LFU, 'd[1]++'), `get(${k}) → ${data.get(k)[0]}; move ${k} up to bucket f${data.get(k)[1]}.`, L()); continue; }
+    if (data.size === cap) { const b = buckets.get(minF), ev = b.shift(); data.delete(ev); r.step(ln(C_LFU, 'data.remove(it.next())'), `Full → evict the oldest key in bucket f${minF}: <b>${ev}</b>.`, L()); }
+    data.set(k, [v, 1]); if (!buckets.has(1)) buckets.set(1, []); buckets.get(1).push(k); minF = 1;
+    r.step(ln(C_LFU, 'minFreq = 1;'), `put(${k}) → bucket f1, minFreq = 1.`, L());
+  }
+  return r.steps;
+}
+
+// ===== AllOne =====
+const C_ALL = `
+public void inc(String key) {
+    Bucket cur = where.getOrDefault(key, head);
+    Bucket nx = cur.next.count == cur.count + 1 ? cur.next : addAfter(cur, cur.count + 1);
+    nx.keys.add(key);
+    where.put(key, nx);
+    if (cur != head) { cur.keys.remove(key); removeIfEmpty(cur); }
+}
+// dec is the mirror image; getMax = tail.prev, getMin = head.next`;
+function allOne() {
+  const r = recorder(), m = new Map();
+  const L = () => { const counts = [...new Set(m.values())].sort((a, b) => a - b); return [lane('buckets head → tail (count: keys)', counts.map(c => `${c}: {${[...m].filter(([, v]) => v === c).map(([k]) => k)}}`)), lane('min / max key', counts.length ? [`min ${[...m].find(([, v]) => v === counts[0])[0]}`, `max ${[...m].find(([, v]) => v === counts.at(-1))[0]}`] : [])]; };
+  r.step(0, `Buckets sorted by count in a DLL. A key only moves to a <b>neighbouring</b> bucket (count ±1), so every op is O(1).`, L());
+  for (const [op, k] of [['inc', 'a'], ['inc', 'b'], ['inc', 'a'], ['inc', 'c'], ['inc', 'a'], ['dec', 'a'], ['dec', 'b']]) {
+    if (op === 'inc') m.set(k, (m.get(k) || 0) + 1); else { if (m.get(k) === 1) m.delete(k); else m.set(k, m.get(k) - 1); }
+    r.step(ln(C_ALL, op === 'inc' ? 'nx.keys.add' : 'dec is'), `${op}("${k}") → ${m.has(k) ? `moves to bucket ${m.get(k)}` : 'removed'}.`, L());
+  }
+  return r.steps;
+}
+
+// ===== Generic small sims =====
+function seqSim(intro, ops) { const r = recorder(); r.step(0, intro.say, intro.lanes()); for (const o of ops) { o.do(); r.step(o.line, o.say(), o.lanes()); } return r.steps; }
+
+const C_WD = `
+private boolean dfs(Node node, String w, int i) {
+    if (node == null) return false;
+    if (i == w.length()) return node.end;
+    char c = w.charAt(i);
+    if (c != '.') return dfs(node.next[c - 'a'], w, i + 1);
+    for (Node child : node.next) if (dfs(child, w, i + 1)) return true;
+    return false;
+}`;
+function wordDict() {
+  const r = recorder(), words = ['bad', 'dad', 'mad'];
+  const P = { '^': -1 }, L = { '^': '•' }; for (const w of words) { let p = '^'; for (const c of w) { const id = p + c; if (!(id in P)) { P[id] = p; L[id] = c; } p = id; } }
+  const T = (cls) => tree('Trie of bad, dad, mad', P, { labels: L, cls });
+  r.step(0, `addWord: normal trie insert. search with '.': a '.' must try <b>every child</b> (DFS branch).`, [T({})]);
+  r.step(ln(C_WD, "if (c != '.')"), `search("bad"): plain walk b→a→d → <b>true</b>.`, [T({ '^b': 'done', '^ba': 'done', '^bad': 'done' })]);
+  r.step(ln(C_WD, 'for (Node child'), `search(".ad"): '.' branches into b, d, m; the first branch b→a→d succeeds → <b>true</b>.`, [T({ '^b': 'warn', '^d': 'warn', '^m': 'warn', '^ba': 'done', '^bad': 'done' })]);
+  r.step(ln(C_WD, 'return false;', 2), `search("b.."): b, then any, any → "bad" ✓. search("pad"): no 'p' child → false.`, [T({ '^b': 'done', '^ba': 'active', '^bad': 'done' })]);
+  return r.steps;
+}
+
+const C_FOOD = `
+public void changeRating(String food, int newRating) {
+    TreeSet<String> set = byCuisine.get(cuisineOf.get(food));
+    set.remove(food);             // remove with OLD rating (comparator must still find it)
+    rating.put(food, newRating);
+    set.add(food);                // re-insert with NEW rating
+}
+
+public String highestRated(String cuisine) { return byCuisine.get(cuisine).first(); }`;
+function food() {
+  const rating = new Map([['kimchi', 9], ['bulgogi', 7], ['ramen', 14], ['sushi', 12]]);
+  const korean = () => ['kimchi', 'bulgogi'].sort((a, b) => rating.get(b) - rating.get(a) || a.localeCompare(b)).map(f => `${f} (${rating.get(f)})`);
+  const V = () => [lane('korean TreeSet (rating desc, name asc)', korean(), { done: [0] })];
+  return seqSim({ say: `One TreeSet per cuisine sorted by (rating ↓, name ↑). <b>first()</b> is the answer.`, lanes: V }, [
+    { line: ln(C_FOOD, 'byCuisine.get(cuisine).first()'), do() {}, say: () => `highestRated("korean") → <b>kimchi</b>.`, lanes: V },
+    { line: ln(C_FOOD, 'set.remove(food)'), do() { rating.set('bulgogi', 16); }, say: () => `changeRating("bulgogi", 16): remove it <b>before</b> changing the rating (the TreeSet locates it by the old rating), then re-add.`, lanes: V },
+    { line: ln(C_FOOD, 'set.add(food)'), do() { rating.set('kimchi', 16); }, say: () => `changeRating("kimchi", 16): tie at 16 → name order → <b>bulgogi</b> first.`, lanes: V }]);
+}
+
+const C_NUM = `
+public void change(int index, int number) {
+    Integer old = idxToNum.put(index, number);
+    if (old != null) {
+        TreeSet<Integer> s = numToIdx.get(old);
+        s.remove(index);
+        if (s.isEmpty()) numToIdx.remove(old);
+    }
+    numToIdx.computeIfAbsent(number, k -> new TreeSet<>()).add(index);
+}
+
+public int find(int number) {
+    TreeSet<Integer> s = numToIdx.get(number);
+    return s == null ? -1 : s.first();
+}`;
+function numberContainers() {
+  const idx = new Map(), num = new Map();
+  const ch = (i, n) => { if (idx.has(i)) num.get(idx.get(i)).delete(i); idx.set(i, n); if (!num.has(n)) num.set(n, new Set()); num.get(n).add(i); };
+  const V = () => [mapLane('index → number', idx), lane('number → sorted indices', [...num].filter(([, s]) => s.size).map(([n, s]) => `${n}: {${[...s].sort((a, b) => a - b)}}`))];
+  return seqSim({ say: `Two maps: <b>index → number</b> and <b>number → TreeSet of indices</b>. find = first() of the set.`, lanes: V }, [
+    { line: ln(C_NUM, 'computeIfAbsent'), do() { ch(2, 10); ch(1, 10); ch(3, 10); ch(5, 10); }, say: () => `change(2/1/3/5, 10). find(10) → <b>1</b>.`, lanes: V },
+    { line: ln(C_NUM, 's.remove(index)'), do() { ch(1, 20); }, say: () => `change(1, 20): index 1 leaves 10's set first. find(10) → <b>2</b>.`, lanes: V }]);
+}
+
+const C_INC = `
+public int pop() {
+    if (top < 0) return -1;
+    int res = st[top] + inc[top];
+    if (top > 0) inc[top - 1] += inc[top];   // hand the pending increment down
+    inc[top] = 0;
+    top--;
+    return res;
+}
+
+public void increment(int k, int val) {
+    int i = Math.min(k, top + 1) - 1;
+    if (i >= 0) inc[i] += val;               // tag only the highest affected index
+}`;
+function customStack() {
+  const st = [], inc = [];
+  const V = () => [lane('stack values (bottom → top)', [...st], { showIdx: true }), lane('lazy inc[]', [...inc], { showIdx: true, active: inc.map((x, i) => (x ? i : -1)).filter(i => i >= 0) }), lane('real values', st.map((v, i) => v + inc.slice(i).reduce((a, b) => a + b, 0)))];
+  return seqSim({ say: `Increment the bottom k elements in O(1): write the increment <b>only at index k−1</b>; it flows down on pop.`, lanes: V }, [
+    { line: 0, do() { st.push(1, 2, 3); inc.push(0, 0, 0); }, say: () => `push 1, 2, 3.`, lanes: V },
+    { line: ln(C_INC, 'inc[i] += val'), do() { inc[1] += 100; }, say: () => `increment(2, 100) → tag inc[1] += 100 (covers indices 0..1).`, lanes: V },
+    { line: ln(C_INC, 'int res = st[top] + inc[top]'), do() { st.pop(); inc.pop(); }, say: () => `pop() → 3 (no tag at the top).`, lanes: V },
+    { line: ln(C_INC, 'hand the pending'), do() { const t = inc.pop(); st.pop(); inc[inc.length - 1] += t; }, say: () => `pop() → 2 + 100 = <b>102</b>; pass +100 down to index 0.`, lanes: V },
+    { line: ln(C_INC, 'int res'), do() { }, say: () => `next pop() → 1 + 100 = <b>101</b>. Each element was touched once.`, lanes: V }]);
+}
+
+const C_BH = `
+public void visit(String url) {
+    cur++;
+    if (cur < pages.size()) pages.set(cur, url); else pages.add(url);
+    last = cur;                       // forward history is gone
+}
+public String back(int steps) { cur = Math.max(0, cur - steps); return pages.get(cur); }
+public String forward(int steps) { cur = Math.min(last, cur + steps); return pages.get(cur); }`;
+function browser() {
+  const pages = ['leet']; let cur = 0, last = 0;
+  const V = () => [lane('pages', [...pages], { showIdx: true, active: [cur], ghost: pages.map((_, i) => (i > last ? i : -1)).filter(i => i >= 0), ptr: { [cur]: 'cur', ...(last !== cur ? { [last]: 'last' } : {}) } })];
+  const visit = u => { cur++; if (cur < pages.length) pages[cur] = u; else pages.push(u); last = cur; };
+  return seqSim({ say: `One array + <b>cur</b> + <b>last</b>. Back/forward just move cur; visit overwrites and resets last.`, lanes: V }, [
+    { line: ln(C_BH, 'last = cur'), do() { visit('google'); visit('facebook'); visit('youtube'); }, say: () => `visit google, facebook, youtube.`, lanes: V },
+    { line: ln(C_BH, 'public String back'), do() { cur = Math.max(0, cur - 2); }, say: () => `back(2) → <b>${pages[cur]}</b>.`, lanes: V },
+    { line: ln(C_BH, 'last = cur'), do() { visit('linkedin'); }, say: () => `visit linkedin overwrites slot ${cur}; youtube is no longer reachable (last = ${last}).`, lanes: V },
+    { line: ln(C_BH, 'public String forward'), do() { cur = Math.min(last, cur + 2); }, say: () => `forward(2) → stays at <b>${pages[cur]}</b>.`, lanes: V },
+    { line: ln(C_BH, 'public String back'), do() { cur = Math.max(0, cur - 7); }, say: () => `back(7) → clamps at 0 → <b>${pages[cur]}</b>.`, lanes: V }]);
+}
+
+const C_CQ = `
+public boolean enQueue(int v) {
+    if (isFull()) return false;
+    a[(front + size) % a.length] = v;
+    size++;
+    return true;
+}
+public boolean deQueue() {
+    if (isEmpty()) return false;
+    front = (front + 1) % a.length;
+    size--;
+    return true;
+}
+public int Rear() { return isEmpty() ? -1 : a[(front + size - 1) % a.length]; }`;
+function circular() {
+  const a = Array(3).fill(null); let front = 0, size = 0;
+  const V = () => [lane('array (k = 3)', a.map(x => x ?? '·'), { showIdx: true, active: [...Array(size).keys()].map(i => (front + i) % 3), ptr: { [front]: 'front', ...(size ? { [(front + size - 1) % 3]: front === (front + size - 1) % 3 ? 'front/rear' : 'rear' } : {}) } })];
+  const enq = v => { if (size === 3) return false; a[(front + size) % 3] = v; size++; return true; }, deq = () => { if (!size) return false; a[front] = null; front = (front + 1) % 3; size--; return true; };
+  return seqSim({ say: `Fixed array, <b>front</b> + <b>size</b>. Indices wrap with % k, so freed slots at the start get reused.`, lanes: V }, [
+    { line: ln(C_CQ, 'a[(front + size)'), do() { enq(1); enq(2); enq(3); }, say: () => `enQueue 1, 2, 3 → full.`, lanes: V },
+    { line: ln(C_CQ, 'if (isFull()) return false'), do() { }, say: () => `enQueue(4) → <b>false</b> (full).`, lanes: V },
+    { line: ln(C_CQ, 'front = (front + 1)'), do() { deq(); }, say: () => `deQueue → front moves to 1.`, lanes: V },
+    { line: ln(C_CQ, 'a[(front + size)'), do() { enq(4); }, say: () => `enQueue(4) → (front + size) % 3 = 0: <b>wraps</b> into slot 0. Rear() = 4.`, lanes: V }]);
+}
+
+const C_HM = `
+private int[] find(int key) {
+    List<int[]> b = buckets[key % SIZE];
+    if (b == null) return null;
+    for (int[] p : b) if (p[0] == key) return p;
+    return null;
+}
+public void put(int key, int value) {
+    int[] p = find(key);
+    if (p != null) { p[1] = value; return; }
+    if (buckets[key % SIZE] == null) buckets[key % SIZE] = new LinkedList<>();
+    buckets[key % SIZE].add(new int[]{key, value});
+}`;
+function hashmap() {
+  const B = [[], [], [], [], []];
+  const V = (hl) => [lane('buckets (SIZE = 5 for the demo; real code uses 10007)', B.map((b, i) => `${i}: ${b.map(([k, v]) => `${k}→${v}`).join(', ') || '∅'}`), { active: hl === undefined ? [] : [hl] })];
+  const put = (k, v) => { const b = B[k % 5], p = b.find(x => x[0] === k); if (p) p[1] = v; else b.push([k, v]); };
+  return seqSim({ say: `Hash → bucket index (key % SIZE). Collisions live together in the bucket's list (<b>separate chaining</b>).`, lanes: () => V() }, [
+    { line: ln(C_HM, 'buckets[key % SIZE].add'), do() { put(1, 1); put(6, 6); put(11, 11); }, say: () => `put 1, 6, 11 → all land in bucket 1 (collision chain).`, lanes: () => V(1) },
+    { line: ln(C_HM, 'p[1] = value'), do() { put(6, 60); }, say: () => `put(6, 60): found in the chain → update.`, lanes: () => V(1) },
+    { line: ln(C_HM, 'for (int[] p : b)'), do() { }, say: () => `get(11): go to bucket 1, scan the short chain → <b>11</b>. A prime SIZE spreads keys evenly.`, lanes: () => V(1) }]);
+}
+
+const C_HS = `
+// Approach 1: boolean[1_000_001] present → add / remove / contains are one array access
+// Approach 2: buckets[key % 10007] chains, like Design HashMap but storing keys only
+public void remove(int key) { if (buckets[key % SIZE] != null) buckets[key % SIZE].remove(Integer.valueOf(key)); }`;
+function hashset() {
+  const r = recorder();
+  r.step(1, `Keys are ≤ 10^6, so a <b>direct-address</b> boolean array works: O(1) everything, ~1 MB memory.`, [lane('present[0..9] (demo)', ['F', 'T', 'T', 'F', 'F', 'F', 'F', 'F', 'F', 'F'], { showIdx: true, done: [1, 2] })]);
+  r.step(2, `For huge key ranges use <b>chaining</b> instead (see Design HashMap).`, [lane('buckets', ['0: ∅', '1: 1 → 10008', '2: 2'], { active: [1] })]);
+  r.step(ln(C_HS, 'Integer.valueOf(key)'), `Java trap: <code>list.remove(key)</code> with an int removes by <b>index</b>. Use <code>remove(Integer.valueOf(key))</code>.`, [lane('bucket list', [1, 10008], { bad: [0] })]);
+  return r.steps;
+}
+
+const C_MOVIE = `
+public void rent(int shop, int movie) {
+    int p = price.get(key(shop, movie));
+    available.get(movie).remove(new int[]{p, shop});
+    rented.add(new int[]{p, shop, movie});
+}
+// search(movie): first 5 of available[movie]   ordered by (price, shop)
+// report():      first 5 of rented             ordered by (price, shop, movie)`;
+function movie() {
+  const avail = { 1: [[5, 0], [4, 1], [5, 2]], 2: [[6, 0]], 3: [[7, 0], [8, 1]] }, rented = [];
+  const S = a => [...a].sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  const V = () => [lane('available[1] (price, shop)', S(avail[1]).map(([p, s]) => `$${p} s${s}`)), lane('rented (price, shop, movie)', [...rented].sort((x, y) => x[0] - y[0] || x[1] - y[1] || x[2] - y[2]).map(([p, s, m]) => `$${p} s${s} m${m}`))];
+  const rent = (s, m) => { const i = avail[m].findIndex(x => x[1] === s); const [p] = avail[m].splice(i, 1)[0]; rented.push([p, s, m]); };
+  return seqSim({ say: `Two kinds of sorted sets: per-movie <b>available</b> (price, shop) and one global <b>rented</b> (price, shop, movie). Renting moves an entry between them.`, lanes: V }, [
+    { line: ln(C_MOVIE, 'search(movie)'), do() { }, say: () => `search(1) → shops <b>[1, 0, 2]</b> (cheapest first, then smaller shop).`, lanes: V },
+    { line: ln(C_MOVIE, 'rented.add'), do() { rent(0, 1); rent(0, 2); }, say: () => `rent(0, 1) and rent(0, 2): each entry moves from its movie's available set into the global rented set.`, lanes: V },
+    { line: ln(C_MOVIE, 'search(movie)'), do() { }, say: () => `search(1) now → <b>[1, 2]</b> (shop 0's copy is out).`, lanes: V },
+    { line: ln(C_MOVIE, 'report()'), do() { }, say: () => `report() → rented sorted by (price, shop, movie) → <b>[[0,1], [0,2]]</b>.`, lanes: V }]);
+}
+
+const C_PARK = `
+public boolean addCar(int carType) {
+    if (slots[carType] == 0) return false;
+    slots[carType]--;
+    return true;
+}`;
+function park() {
+  const s = [0, 1, 1, 0];
+  const V = () => [lane('slots (big, medium, small)', s.slice(1))];
+  return seqSim({ say: `Three counters. Index by carType directly (slot 0 unused).`, lanes: V }, [
+    { line: ln(C_PARK, 'slots[carType]--'), do() { s[1]--; }, say: () => `addCar(1) → true.`, lanes: V },
+    { line: ln(C_PARK, 'slots[carType]--'), do() { s[2]--; }, say: () => `addCar(2) → true.`, lanes: V },
+    { line: ln(C_PARK, 'return false'), do() { }, say: () => `addCar(3) → false (0 small), addCar(1) → false (big used).`, lanes: V }]);
+}
+
+const C_SHEET = `
+private int value(String op) {
+    return Character.isLetter(op.charAt(0)) ? grid[Integer.parseInt(op.substring(1))][op.charAt(0) - 'A'] : Integer.parseInt(op);
+}
+public int getValue(String formula) {
+    int plus = formula.indexOf('+');
+    return value(formula.substring(1, plus)) + value(formula.substring(plus + 1));
+}`;
+function sheet() {
+  const g = [[0, 0], [0, 0], [0, 0]];
+  const V = () => [grid('cells (rows 1..2, columns A, B)', g.slice(1), { colLabels: ['A', 'B'], rowLabels: [1, 2] })];
+  return seqSim({ say: `"B12": column = letter − 'A', row = the number after it.`, lanes: V }, [
+    { line: ln(C_SHEET, 'Integer.parseInt(op)'), do() { }, say: () => `getValue("=5+7") → both operands are numbers → <b>12</b>.`, lanes: V },
+    { line: ln(C_SHEET, 'grid[Integer.parseInt'), do() { g[1][0] = 10; }, say: () => `setCell("A1", 10); getValue("=A1+6") → 10 + 6 = <b>16</b>.`, lanes: V },
+    { line: ln(C_SHEET, 'int plus'), do() { g[2][1] = 15; }, say: () => `setCell("B2", 15); "=A1+B2" → split at '+' → 10 + 15 = <b>25</b>.`, lanes: V }]);
+}
+
+const C_TASK = `
+public int execTop() {
+    if (order.isEmpty()) return -1;
+    int[] top = order.pollFirst();          // (priority desc, taskId desc)
+    return info.remove(top[1])[0];
+}
+public void edit(int taskId, int newPriority) {
+    int[] t = info.get(taskId);
+    order.remove(new int[]{t[1], taskId});
+    t[1] = newPriority;
+    order.add(new int[]{newPriority, taskId});
+}`;
+function task() {
+  let tasks = [[1, 101, 10], [2, 102, 20], [3, 103, 15]];
+  const V = () => [lane('TreeSet (priority ↓, taskId ↓)', [...tasks].sort((a, b) => b[2] - a[2] || b[1] - a[1]).map(([u, t, p]) => `p${p} t${t} u${u}`), { done: [0] })];
+  return seqSim({ say: `TreeSet of (priority, taskId) gives the top task; a map gives userId and current priority.`, lanes: V }, [
+    { line: ln(C_TASK, 'order.add'), do() { tasks.push([4, 104, 5]); tasks.find(t => t[1] === 102)[2] = 8; }, say: () => `add(4,104,5); edit(102, 8): remove the old entry, insert the new one.`, lanes: V },
+    { line: ln(C_TASK, 'order.pollFirst'), do() { tasks = tasks.filter(t => t[1] !== 103); }, say: () => `execTop() → task 103 (p15) → user <b>3</b>.`, lanes: V }]);
+}
+
+const C_TTT = `
+public int move(int row, int col, int player) {
+    int v = player == 1 ? 1 : -1;
+    rows[row] += v;
+    cols[col] += v;
+    if (row == col) diag += v;
+    if (row + col == n - 1) anti += v;
+    return Math.abs(rows[row]) == n || Math.abs(cols[col]) == n || Math.abs(diag) == n || Math.abs(anti) == n ? player : 0;
+}`;
+function ttt() {
+  const n = 3, b = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], rows = [0, 0, 0], cols = [0, 0, 0]; let d = 0, a = 0;
+  const V = () => [grid('board', b.map(r => r.map(x => (x === 1 ? 'X' : x === 2 ? 'O' : '·'))), {}), lane('rows / cols / diag / anti', [`rows ${rows}`, `cols ${cols}`, `diag ${d}`, `anti ${a}`])];
+  const mv = (r, c, p) => { b[r][c] = p; const v = p === 1 ? 1 : -1; rows[r] += v; cols[c] += v; if (r === c) d += v; if (r + c === 2) a += v; };
+  return seqSim({ say: `Don't scan the board. Player 1 adds +1, player 2 adds −1 to its row, column and diagonals. |counter| = n ⇒ win.`, lanes: V }, [
+    { line: ln(C_TTT, 'rows[row] += v'), do() { mv(0, 0, 1); mv(0, 2, 2); mv(2, 2, 1); }, say: () => `X(0,0), O(0,2), X(2,2).`, lanes: V },
+    { line: ln(C_TTT, 'if (row == col)'), do() { mv(1, 1, 2); mv(2, 0, 1); }, say: () => `O(1,1), X(2,0).`, lanes: V },
+    { line: ln(C_TTT, 'return Math.abs'), do() { mv(1, 0, 2); mv(2, 1, 1); }, say: () => `O(1,0), X(2,1) → rows[2] = 3 = n → <b>X wins</b>.`, lanes: V }]);
+}
+
+const C_UG = `
+public void checkOut(int id, String station, int t) {
+    Object[] in = inside.remove(id);
+    long[] s = stats.computeIfAbsent(in[0] + "->" + station, k -> new long[2]);
+    s[0] += t - (int) in[1];
+    s[1]++;
+}
+public double getAverageTime(String start, String end) {
+    long[] s = stats.get(start + "->" + end);
+    return (double) s[0] / s[1];
+}`;
+function underground() {
+  const inside = new Map(), stats = new Map();
+  const V = () => [mapLane('travelling: id → (station, t)', inside), mapLane('route → [total, trips]', stats)];
+  return seqSim({ say: `Store only what averages need: <b>total time and trip count per route</b>.`, lanes: V }, [
+    { line: 0, do() { inside.set(45, ['Leyton', 3]); inside.set(27, ['Leyton', 10]); }, say: () => `checkIn 45 @Leyton t3, 27 @Leyton t10.`, lanes: V },
+    { line: ln(C_UG, 's[0] += t'), do() { inside.delete(45); inside.delete(27); stats.set('Leyton->Waterloo', [12 + 10, 2]); }, say: () => `checkOut 45 @Waterloo t15 (12), 27 @Waterloo t20 (10).`, lanes: V },
+    { line: ln(C_UG, 'return (double)'), do() { }, say: () => `getAverageTime(Leyton, Waterloo) = 22 / 2 = <b>11.0</b>.`, lanes: V }]);
+}
+
+const C_FSP = `
+public void add(int index, int val) {
+    freqB.merge(b[index], -1, Integer::sum);
+    b[index] += val;
+    freqB.merge(b[index], 1, Integer::sum);
+}
+public int count(int tot) {
+    int c = 0;
+    for (int x : a) c += freqB.getOrDefault(tot - x, 0);
+    return c;
+}`;
+function findSum() {
+  const a = [1, 1, 2, 2, 2, 3], b = [1, 4, 5, 2, 5, 4], f = new Map(); b.forEach(x => f.set(x, (f.get(x) || 0) + 1));
+  const V = () => [lane('nums1 (≤ 1000, loop over it)', a), lane('nums2', [...b]), mapLane('freq(nums2)', new Map([...f].sort((x, y) => x[0] - y[0])))];
+  return seqSim({ say: `nums1 is small and never changes; nums2 is big and changes. Loop over nums1 and look up <b>tot − x</b> in nums2's frequency map (Two Sum).`, lanes: V }, [
+    { line: ln(C_FSP, 'freqB.getOrDefault'), do() { }, say: () => `count(7): x=1→6 (0), x=2→5 (2 each ×3 = 6), x=3→4 (2) → <b>8</b>.`, lanes: V },
+    { line: ln(C_FSP, 'b[index] += val'), do() { f.set(b[3], f.get(b[3]) - 1); b[3] += 2; f.set(b[3], (f.get(b[3]) || 0) + 1); }, say: () => `add(3, 2): nums2[3] 2 → 4; fix both counts.`, lanes: V }]);
+}
+
+const C_MED = `
+public void addNum(int num) {
+    left.offer(num);                  // max-heap: smaller half
+    right.offer(left.poll());         // min-heap: larger half
+    if (right.size() > left.size()) left.offer(right.poll());
+}
+public double findMedian() {
+    return left.size() > right.size() ? left.peek() : (left.peek() + (double) right.peek()) / 2.0;
+}`;
+function median() {
+  const L = [], R = [];
+  const V = () => [lane('left max-heap (smaller half)', [...L].sort((a, b) => b - a), { done: [0] }), lane('right min-heap (larger half)', [...R].sort((a, b) => a - b), { done: [0] })];
+  const add = x => { L.push(x); L.sort((a, b) => b - a); R.push(L.shift()); R.sort((a, b) => a - b); if (R.length > L.length) { L.push(R.shift()); L.sort((a, b) => b - a); } };
+  const med = () => (L.length > R.length ? L[0] : (L[0] + R[0]) / 2);
+  const ops = [5, 15, 1, 3, 8].map(x => ({ line: ln(C_MED, 'right.offer(left.poll())'), do() { add(x); }, say: () => `addNum(${x}) → pass through left into right, rebalance. Median = <b>${med()}</b>.`, lanes: V }));
+  return seqSim({ say: `Two heaps split the numbers into a smaller half and a larger half. The median lives at the <b>tops</b>.`, lanes: V }, ops);
+}
+
+const C_NEST = `
+public boolean hasNext() {
+    while (!st.isEmpty() && !st.peek().isInteger()) pushAll(st.pop().getList());
+    return !st.isEmpty();
+}
+public Integer next() {
+    hasNext();
+    return st.pop().getInteger();
+}`;
+function nested() {
+  const r = recorder();
+  const S = (s, o) => lane('stack (top on the right)', s, o);
+  r.step(0, `Input [[1,1],2,[1,1]]. Push the top-level items in reverse so the first one is on top.`, [S(['[1,1]', '2', '[1,1]'].reverse())]);
+  r.step(ln(C_NEST, 'pushAll(st.pop()'), `hasNext(): the top is a list → pop it and push its items (reversed). Now an integer is on top.`, [S(['[1,1]', '2', '1', '1'], { active: [3] })]);
+  r.step(ln(C_NEST, 'return st.pop().getInteger()'), `next() → 1, next() → 1, next() → 2.`, [S(['[1,1]'], {}), lane('output', [1, 1, 2])]);
+  r.step(ln(C_NEST, 'pushAll(st.pop()'), `Unpack again → 1, 1. Lazy: lists are opened only when needed.`, [S([]), lane('output', [1, 1, 2, 1, 1], { done: [0, 1, 2, 3, 4] })]);
+  return r.steps;
+}
+
+const C_ROUTER = `
+public boolean addPacket(int source, int destination, int timestamp) {
+    if (!seen.add(key(source, destination, timestamp))) return false;
+    if (queue.size() == limit) forwardPacket();
+    queue.offerLast(new int[]{source, destination, timestamp});
+    times.computeIfAbsent(destination, k -> new ArrayList<>()).add(timestamp);
+    return true;
+}
+public int getCount(int destination, int startTime, int endTime) {
+    List<Integer> a = times.get(destination);
+    if (a == null) return 0;
+    int s = start.getOrDefault(destination, 0);   // forwarded ones are a prefix
+    return lowerBound(a, s, endTime + 1) - lowerBound(a, s, startTime);
+}`;
+function router() {
+  const q = [], times = { 5: [], 6: [] }, start = { 5: 0, 6: 0 };
+  const V = () => [lane('FIFO queue (s, d, t)', q.map(p => `${p}`)), lane('times[5] (live part)', times[5].map((t, i) => (i < start[5] ? `(${t})` : t)), { ghost: [...Array(start[5]).keys()] })];
+  const add = (s, d, t) => { if (q.length === 3) { const p = q.shift(); start[p[1]]++; } q.push([s, d, t]); times[d].push(t); };
+  return seqSim({ say: `Memory limit 3. A FIFO queue for forwarding, a set to reject duplicates, and per destination a <b>sorted</b> list of timestamps (they arrive in order).`, lanes: V }, [
+    { line: ln(C_ROUTER, 'queue.offerLast'), do() { add(1, 5, 90); add(2, 5, 90); add(1, 6, 92); }, say: () => `add (1,5,90), (2,5,90), (1,6,92). A second (1,5,90) → false (duplicate).`, lanes: V },
+    { line: ln(C_ROUTER, 'forwardPacket();'), do() { add(4, 5, 105); }, say: () => `add (4,5,105) while full → the oldest packet is forwarded first; its timestamp drops out of times[5] by moving the start index.`, lanes: V },
+    { line: ln(C_ROUTER, 'return lowerBound'), do() { }, say: () => `getCount(5, 90, 110) → two binary searches on the live part → <b>2</b>.`, lanes: V }]);
+}
+
+const C_STQ = `
+public void push(int x) {
+    q.offer(x);
+    for (int i = 1; i < q.size(); i++) q.offer(q.poll());   // rotate older items behind x
+}
+public int pop() { return q.poll(); }`;
+function stackQ() {
+  const q = [];
+  const V = () => [lane('queue (front on the left = stack top)', [...q], { active: q.length ? [0] : [] })];
+  const push = x => { q.push(x); for (let i = 1; i < q.length; i++) q.push(q.shift()); };
+  return seqSim({ say: `Make the newest element come out first: after offering x, <b>rotate</b> the older elements behind it.`, lanes: V }, [
+    { line: ln(C_STQ, 'q.offer(q.poll())'), do() { push(1); push(2); }, say: () => `push 1, push 2 → rotate 1 behind 2.`, lanes: V },
+    { line: ln(C_STQ, 'q.offer(q.poll())'), do() { push(3); }, say: () => `push 3 → rotate 2 and 1 behind it → front is 3.`, lanes: V },
+    { line: ln(C_STQ, 'public int pop'), do() { q.shift(); }, say: () => `pop() → <b>3</b>. Push costs O(n), pop is O(1).`, lanes: V }]);
+}
+
+const C_RS = `
+public boolean remove(int val) {
+    Integer i = pos.remove(val);
+    if (i == null) return false;
+    int last = vals.remove(vals.size() - 1);
+    if (i < vals.size()) { vals.set(i, last); pos.put(last, i); }   // fill the hole
+    return true;
+}
+public int getRandom() { return vals.get(rnd.nextInt(vals.size())); }`;
+function randSet() {
+  const vals = [], pos = new Map();
+  const V = () => [lane('vals (ArrayList)', [...vals], { showIdx: true }), mapLane('pos: value → index', pos)];
+  const ins = v => { pos.set(v, vals.length); vals.push(v); };
+  return seqSim({ say: `getRandom needs an <b>array</b>; O(1) delete needs a map to find the index, then <b>swap with the last</b> element.`, lanes: V }, [
+    { line: 0, do() { ins(10); ins(20); ins(30); ins(40); }, say: () => `insert 10, 20, 30, 40.`, lanes: V },
+    { line: ln(C_RS, 'fill the hole'), do() { const i = pos.get(20); pos.delete(20); const last = vals.pop(); vals[i] = last; pos.set(last, i); }, say: () => `remove(20): move the last value (40) into index 1, then shrink. No shifting.`, lanes: V },
+    { line: ln(C_RS, 'rnd.nextInt'), do() { }, say: () => `getRandom → a uniform random index into vals.`, lanes: V }]);
+}
+
+const C_MAPSUM = `
+public void insert(String key, int val) {
+    int delta = val - vals.getOrDefault(key, 0);   // overwrite-safe
+    vals.put(key, val);
+    Node cur = root;
+    for (char c : key.toCharArray()) {
+        if (cur.next[c - 'a'] == null) cur.next[c - 'a'] = new Node();
+        cur = cur.next[c - 'a'];
+        cur.sum += delta;
+    }
+}`;
+function mapSum() {
+  const P = { '^': -1 }, L = { '^': '•' }, S = {};
+  const add = (k, d) => { let p = '^'; for (const c of k) { const id = p + c; if (!(id in P)) { P[id] = p; L[id] = c; S[id] = 0; } S[id] += d; p = id; } };
+  const V = () => [tree('Trie (badge = sum below)', P, { labels: L, badge: S })];
+  return seqSim({ say: `Each trie node stores the sum of all values whose key passes through it. sum(prefix) = one walk.`, lanes: V }, [
+    { line: ln(C_MAPSUM, 'cur.sum += delta'), do() { add('apple', 3); }, say: () => `insert("apple", 3) → +3 along the path. sum("ap") = 3.`, lanes: V },
+    { line: ln(C_MAPSUM, 'cur.sum += delta'), do() { add('app', 2); }, say: () => `insert("app", 2) → sum("ap") = <b>5</b>.`, lanes: V },
+    { line: ln(C_MAPSUM, 'int delta'), do() { add('apple', 1 - 3); }, say: () => `insert("apple", 1) overwrites: add the <b>delta</b> −2, not 1. sum("ap") = 3.`, lanes: V }]);
+}
+
+const C_MAX = `
+public void push(int x) {
+    int[] e = {x, ids++};
+    byId.add(e);
+    byVal.add(e);
+}
+public int popMax() {
+    int[] e = byVal.pollLast();     // largest value, largest id on ties = top-most
+    byId.remove(e);
+    return e[0];
+}`;
+function maxStack() {
+  let es = [];
+  const V = () => [lane('byId (stack order, top right)', es.map(([v, i]) => `${v}#${i}`)), lane('byVal (value, id)', [...es].sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([v, i]) => `${v}#${i}`), { done: es.length ? [es.length - 1] : [] })];
+  let id = 0;
+  return seqSim({ say: `Give every push an id. Two TreeSets over the same entries: by id (stack) and by (value, id) (max). Removing from one → remove from the other.`, lanes: V }, [
+    { line: ln(C_MAX, 'byVal.add'), do() { [5, 1, 5].forEach(v => es.push([v, id++])); }, say: () => `push 5, 1, 5.`, lanes: V },
+    { line: ln(C_MAX, 'byVal.pollLast'), do() { es = es.filter(e => e[1] !== 2); }, say: () => `popMax() → 5 #2 (the <b>top-most</b> 5, because ties order by id).`, lanes: V },
+    { line: 0, do() { es.pop(); }, say: () => `pop() → 1. Every operation is O(log n).`, lanes: V }]);
+}
+
+const C_MF = `
+for (int i = 0; i < nums.length; i++) {
+    long c = count.merge(nums[i], (long) freq[i], Long::sum);
+    pq.offer(new long[]{c, nums[i]});
+    while (!pq.isEmpty() && pq.peek()[0] != count.get((int) pq.peek()[1])) pq.poll();   // stale top
+    ans[i] = pq.isEmpty() ? 0 : pq.peek()[0];
+}`;
+function mostFreq() {
+  const nums = [2, 3, 2, 1], fr = [3, 2, -3, 1], cnt = new Map(); let pq = [];
+  const V = (i) => [lane('nums / freq', nums.map((n, k) => `${n}:${fr[k] > 0 ? '+' : ''}${fr[k]}`), { active: [i] }), mapLane('count', cnt), lane('max-heap entries (count, id)', [...pq].sort((a, b) => b[0] - a[0]).map(([c, id]) => `(${c},${id})`))];
+  const r = recorder(); r.step(0, `Counts go up and down. Push (newCount, id) every time; old entries become <b>stale</b>. Pop stale tops lazily.`, V(-1));
+  nums.forEach((n, i) => { cnt.set(n, (cnt.get(n) || 0) + fr[i]); pq.push([cnt.get(n), n]); pq.sort((a, b) => b[0] - a[0]); while (pq.length && pq[0][0] !== cnt.get(pq[0][1])) pq.shift(); r.step(ln(C_MF, 'stale top'), `step ${i}: id ${n} → ${cnt.get(n)}. Top after cleaning: <b>${pq[0] ? pq[0][0] : 0}</b>.`, V(i)); });
+  return r.steps;
+}
+
+const C_LOCK = `
+public boolean upgrade(int num, int user) {
+    if (lockedBy[num] != 0) return false;
+    for (int a = parent[num]; a != -1; a = parent[a]) if (lockedBy[a] != 0) return false;
+    if (!hasLockedDescendant(num)) return false;
+    unlockDescendants(num);
+    lockedBy[num] = user;
+    return true;
+}`;
+function lockTree() {
+  const P = { 0: -1, 1: 0, 2: 0, 3: 1, 4: 1, 5: 2, 6: 2 }, lk = {};
+  const V = () => [tree('Tree (badge = locked by user)', P, { badge: Object.fromEntries(Object.entries(lk).map(([k, v]) => [k, 'u' + v])), cls: Object.fromEntries(Object.keys(lk).map(k => [k, 'warn'])) })];
+  return seqSim({ say: `lock/unlock: check the owner. <b>upgrade</b>: node unlocked + no locked ancestor + some locked descendant.`, lanes: V }, [
+    { line: 0, do() { lk[2] = 2; }, say: () => `lock(2, user 2) → true. unlock(2, user 3) → false (not the owner).`, lanes: V },
+    { line: 0, do() { delete lk[2]; lk[4] = 5; }, say: () => `unlock(2, 2) → true; lock(4, 5) → true.`, lanes: V },
+    { line: ln(C_LOCK, 'unlockDescendants(num)'), do() { delete lk[4]; lk[0] = 1; }, say: () => `upgrade(0, 1): 0 is free, has no ancestors, descendant 4 is locked → unlock 4, lock 0 → <b>true</b>.`, lanes: V }]);
+}
+
+const C_SS = `
+for (char c : searchWord.toCharArray()) {
+    prefix += c;
+    int lo = start, hi = products.length;
+    while (lo < hi) { int m = (lo + hi) >>> 1; if (products[m].compareTo(prefix) < 0) lo = m + 1; else hi = m; }
+    start = lo;                                   // the next prefix starts no earlier
+    for (int i = lo; i < Math.min(lo + 3, products.length) && products[i].startsWith(prefix); i++) cur.add(products[i]);
+}`;
+function suggest() {
+  const p = ['mobile', 'moneypot', 'monitor', 'mouse', 'mousepad'], r = recorder();
+  r.step(0, `Sort the products. All words with a given prefix form one <b>contiguous block</b> in sorted order.`, [lane('sorted products', p, { showIdx: true })]);
+  ['m', 'mo', 'mou', 'mous', 'mouse'].forEach(pre => { const lo = p.findIndex(x => x >= pre); const hits = p.slice(lo, lo + 3).filter(x => x.startsWith(pre)); r.step(ln(C_SS, 'start = lo'), `"${pre}": lower bound → index ${lo}; take up to 3 that still start with "${pre}" → [${hits}].`, [lane('sorted products', p, { showIdx: true, done: hits.map(h => p.indexOf(h)), ptr: { [lo]: 'lo' } })]); });
+  return r.steps;
+}
+
+const C_SEAT = `
+public int reserve() { return returned.isEmpty() ? next++ : returned.poll(); }
+public void unreserve(int seat) { returned.offer(seat); }`;
+function seat() {
+  let next = 1; const ret = [];
+  const V = () => [lane('next never-used seat', [next]), lane('returned (min-heap)', [...ret].sort((a, b) => a - b))];
+  return seqSim({ say: `No need to preload n seats. Seats ≥ next are untouched; only <b>returned</b> seats go into a heap.`, lanes: V }, [
+    { line: ln(C_SEAT, 'next++'), do() { next += 3; }, say: () => `reserve ×3 → 1, 2, 3.`, lanes: V },
+    { line: ln(C_SEAT, 'returned.offer'), do() { ret.push(2); }, say: () => `unreserve(2).`, lanes: V },
+    { line: ln(C_SEAT, 'returned.poll()'), do() { ret.shift(); }, say: () => `reserve → returned seat <b>2</b> (smaller than next = 4).`, lanes: V }]);
+}
+
+const C_BANK = `
+private boolean valid(int a) { return a >= 1 && a <= bal.length; }
+public boolean transfer(int a1, int a2, long money) {
+    if (!valid(a1) || !valid(a2) || bal[a1 - 1] < money) return false;
+    bal[a1 - 1] -= money;
+    bal[a2 - 1] += money;
+    return true;
+}`;
+function bank() {
+  const b = [10, 100, 20, 50, 30];
+  const V = () => [lane('balances (accounts 1..5)', [...b], {})];
+  return seqSim({ say: `Validate first (account exists, enough money), then change. Accounts are 1-based → index a − 1.`, lanes: V }, [
+    { line: 0, do() { b[2] -= 10; }, say: () => `withdraw(3, 10) → true.`, lanes: V },
+    { line: ln(C_BANK, 'bal[a2 - 1] += money'), do() { b[4] -= 20; b[0] += 20; }, say: () => `transfer(5, 1, 20) → true.`, lanes: V },
+    { line: ln(C_BANK, 'return false'), do() { }, say: () => `transfer(3, 4, 15) → false (account 3 has 10). withdraw(10, 50) → false (no account 10).`, lanes: V }]);
+}
+
+const C_SNAP = `
+public void set(int index, int val) {
+    List<int[]> h = hist.get(index);
+    if (h.get(h.size() - 1)[0] == snapId) h.get(h.size() - 1)[1] = val;
+    else h.add(new int[]{snapId, val});
+}
+public int get(int index, int id) {          // last change with snapId <= id
+    List<int[]> h = hist.get(index);
+    int lo = 0, hi = h.size() - 1;
+    while (lo < hi) { int m = (lo + hi + 1) >>> 1; if (h.get(m)[0] <= id) lo = m; else hi = m - 1; }
+    return h.get(lo)[1];
+}`;
+function snapshot() {
+  const h = [[[0, 0]], [[0, 0]], [[0, 0]]]; let snap = 0;
+  const V = () => [lane('history per index: (snap, value)', h.map((x, i) => `${i}: ${x.map(([s, v]) => `(${s},${v})`).join(' ')}`)), lane('current snapId', [snap])];
+  const set = (i, v) => { const x = h[i]; if (x.at(-1)[0] === snap) x.at(-1)[1] = v; else x.push([snap, v]); };
+  return seqSim({ say: `Copying the array per snap is O(n·snaps). Store only <b>changes</b> per index, tagged with the snap id.`, lanes: V }, [
+    { line: ln(C_SNAP, 'h.get(h.size() - 1)[1] = val'), do() { set(0, 5); }, say: () => `set(0, 5) during snap 0 → overwrite (0,0) with (0,5).`, lanes: V },
+    { line: 0, do() { snap++; }, say: () => `snap() → returns 0, now snapId = 1.`, lanes: V },
+    { line: ln(C_SNAP, 'h.add(new int[]'), do() { set(0, 6); }, say: () => `set(0, 6) in snap 1 → append (1,6).`, lanes: V },
+    { line: ln(C_SNAP, 'return h.get(lo)[1]'), do() { }, say: () => `get(0, 0) → binary search for the last entry with snap ≤ 0 → <b>5</b>.`, lanes: V }]);
+}
+
+const C_TM = `
+public String get(String key, int timestamp) {
+    TreeMap<Integer, String> t = m.get(key);
+    if (t == null) return "";
+    Map.Entry<Integer, String> e = t.floorEntry(timestamp);
+    return e == null ? "" : e.getValue();
+}`;
+function timeMap() {
+  const t = new Map();
+  const V = () => [mapLane('foo: TreeMap(timestamp → value)', t)];
+  return seqSim({ say: `Per key a TreeMap of timestamp → value. get = <b>floorEntry</b>: the largest timestamp ≤ the query.`, lanes: V }, [
+    { line: 0, do() { t.set(1, 'bar'); }, say: () => `set(foo, bar, 1). get(foo, 3) → floor(3) = 1 → "bar".`, lanes: V },
+    { line: ln(C_TM, 'floorEntry'), do() { t.set(4, 'bar2'); }, say: () => `set(foo, bar2, 4). get(foo, 4) → "bar2"; get(foo, 5) → "bar2"; get(foo, 0) → "" (no floor).`, lanes: V }]);
+}
+
+const C_ROBOT = `
+Robot(int width, int height) {
+    for (int x = 0; x < width; x++) { pos.add(new int[]{x, 0}); dir.add("East"); }
+    for (int y = 1; y < height; y++) { pos.add(new int[]{width - 1, y}); dir.add("North"); }
+    for (int x = width - 2; x >= 0; x--) { pos.add(new int[]{x, height - 1}); dir.add("West"); }
+    for (int y = height - 2; y > 0; y--) { pos.add(new int[]{0, y}); dir.add("South"); }
+    dir.set(0, "South");               // arriving back at the origin means facing South
+}
+public void step(int num) { moved = true; i = (i + num) % pos.size(); }
+public String getDir() { return !moved ? "East" : dir.get(i); }`;
+function robot() {
+  const W = 6, H = 3, cells = []; for (let x = 0; x < W; x++) cells.push([x, 0, 'E']); for (let y = 1; y < H; y++) cells.push([W - 1, y, 'N']); for (let x = W - 2; x >= 0; x--) cells.push([x, H - 1, 'W']); for (let y = H - 2; y > 0; y--) cells.push([0, y, 'S']);
+  let i = 0;
+  const G = () => grid('6 × 3 field (top row = y 2)', [...Array(H)].map((_, ry) => [...Array(W)].map((_, x) => { const k = cells.findIndex(c => c[0] === x && c[1] === H - 1 - ry); return k < 0 ? '' : k === i ? '🤖' : cells[k][2]; })), { rowLabels: [2, 1, 0], cls: (ry, x) => (cells[i][0] === x && cells[i][1] === H - 1 - ry ? 'active' : '') });
+  return seqSim({ say: `The robot only ever walks the <b>border</b>. Precompute the perimeter (${cells.length} cells) once; step(num) is a modulo.`, lanes: () => [G()] }, [
+    { line: ln(C_ROBOT, 'public void step'), do() { i = 4; }, say: () => `step(2), step(2) → (4, 0) facing East.`, lanes: () => [G()] },
+    { line: ln(C_ROBOT, 'public void step'), do() { i = (i + 7) % cells.length; }, say: () => `step(2), step(1), step(4) → (1, 2) facing West.`, lanes: () => [G()] },
+    { line: ln(C_ROBOT, 'dir.set(0, "South")'), do() { i = 0; }, say: () => `Gotcha: back at (0,0) after moving, it faces <b>South</b> (it arrived from above), not East.`, lanes: () => [G()] }]);
+}
+
+const T = (name, hook, mantra, statement, code, steps, recall, links = []) => ({ name, hook, mantra, statement, anims: [{ name: 'Walkthrough', code, steps }], recall, links });
+mount({
+  title: 'Design Animations',
+  sub: 'Design questions = <b>pick the right combination of data structures</b> so every operation hits its target complexity. Ask: what must be O(1)? what needs order? what changes?',
+  problems: [
+    T('LRU Cache (146)', 'A <b>stack of books on your desk</b>: the book you touch moves to the top; when the desk is full, the book at the bottom goes back to the shelf.', 'HASHMAP + DLL, TOUCH → FRONT, EVICT TAIL', 'get/put in O(1), evicting the least recently used key.', C_LRU, lru(), [['Why a doubly linked list?', 'O(1) removal of any node given a pointer, plus O(1) insert at the front.'], ['Why store the key in the node?', 'To delete it from the map when the tail node is evicted.'], ['Java shortcut?', 'LinkedHashMap(cap, 0.75f, true) + removeEldestEntry. Know both.']], [['LFU Cache', 1]]),
+    T('LFU Cache (460)', 'A <b>popularity chart</b> with floors: each floor holds the keys used f times, oldest first. Evict from the lowest floor, oldest key.', 'FREQ BUCKETS (LinkedHashSet) + minFreq', 'get/put in O(1), evicting the least frequently used key (ties: least recently used).', C_LFU, lfu(), [['When does minFreq change?', 'It becomes 1 on every new insert, and +1 when its bucket empties during a touch.'], ['Why LinkedHashSet?', 'O(1) remove plus insertion order = recency.']], [['LRU Cache', 0]]),
+    T("All O'one (432)", 'An <b>elevator of buckets</b>: a key only ever moves one floor up or down, so every move is to a neighbour.', 'COUNT BUCKETS IN A DLL, MOVE ±1', 'inc/dec/getMaxKey/getMinKey, all O(1).', C_ALL, allOne(), [['Why are the buckets sorted for free?', 'New buckets are only created right next to an existing neighbour (count ± 1).'], ['Max key?', 'Any key in tail.prev.']], [['LFU Cache', 1]]),
+    T('Add & Search Words (211)', 'A <b>trie with wildcards</b>: a dot is a fork in the road, so try every child.', 'TRIE + DFS ON "."', 'addWord and search with "." matching any letter.', C_WD, wordDict(), [['Worst case search?', 'O(26^dots · L).'], ['Base case?', 'i == word length → node.end.']], []),
+    T('Food Rating System (2353)', 'A <b>leaderboard per cuisine</b>: always read the top line.', 'TREESET (rating ↓, name ↑) PER CUISINE', 'changeRating and highestRated(cuisine).', C_FOOD, food(), [['Why remove before updating the rating?', 'The TreeSet comparator reads the rating; changing it first would make the element impossible to find.'], ['Lazy heap alternative?', 'PQ of (rating, name) snapshots; skip stale tops.']], []),
+    T('Number Container (2349)', 'A <b>library catalogue both ways</b>: shelf → book and book → sorted list of shelves.', 'idx→num + num→TreeSet<idx>', 'change(index, number) and find(number) = smallest index.', C_NUM, numberContainers(), [['Why remove from the old set?', 'The index no longer holds the old number.']], []),
+    T('Stack with Increment (1381)', 'A <b>sticky note</b> on the k-th plate: "add 100 to me and everything below". The note passes down when the plate leaves.', 'LAZY inc[k−1], PASS DOWN ON POP', 'push, pop, increment(k, val) for the bottom k elements, all O(1).', C_INC, customStack(), [['Where is the increment stored?', 'inc[min(k, size) − 1].'], ['What happens on pop?', 'Add inc[top] to the value and pass it to inc[top − 1].']], []),
+    T('Browser History (1472)', 'A <b>book with a bookmark</b>: back/forward move the bookmark; writing a new page tears out the pages after it.', 'ARRAY + cur + last', 'visit, back(steps), forward(steps).', C_BH, browser(), [['Why keep last instead of truncating?', 'Overwriting in place is O(1).'], ['Two-stack alternative?', 'Back stack and forward stack.']], []),
+    T('Circular Queue (622)', 'A <b>round table</b>: seats wrap around, and the head moves instead of people shifting.', 'front + size, INDEX % k', 'Fixed-size queue with enQueue, deQueue, Front, Rear.', C_CQ, circular(), [['Rear index?', '(front + size − 1) % k.'], ['Why store size?', 'It distinguishes full from empty when front == rear.']], []),
+    T('Design HashMap (706)', 'A <b>wall of mailboxes</b>: the key\'s hash picks the box; boxes may hold several letters (chaining).', 'key % SIZE → BUCKET LIST', 'put/get/remove without built-in hash tables.', C_HM, hashmap(), [['Why a prime size?', 'It spreads keys more evenly.'], ['Load factor idea?', 'Resize when entries / buckets grows too big.']], [['Design HashSet', 10]]),
+    T('Design HashSet (705)', 'A <b>light switch per key</b> (direct addressing), or mailboxes when keys are huge.', 'boolean[1e6+1] OR CHAINING', 'add/remove/contains.', C_HS, hashset(), [['Java remove trap?', 'List<Integer>.remove(int) removes by index; use Integer.valueOf.']], [['Design HashMap', 9]]),
+    T('Movie Rental (1912)', 'Two <b>display shelves</b>: "in store" per movie and "on loan" for everyone, both sorted by price.', 'available[movie] + rented: TreeSets', 'search, rent, drop, report (first 5 each).', C_MOVIE, movie(), [['Comparator for rented?', '(price, shop, movie).'], ['Why a (shop, movie) → price map?', 'rent/drop must rebuild the exact TreeSet element.']], []),
+    T('Parking System (1603)', 'Three <b>ticket counters</b>, one per car size.', 'COUNTER PER TYPE', 'addCar(type) if a slot is free.', C_PARK, park(), [['Index trick?', 'Store slots at index carType (1..3).']], []),
+    T('Spreadsheet (3484)', 'A <b>calculator that can look up cells</b>.', 'PARSE "=X+Y", CELL OR NUMBER', 'setCell, resetCell, getValue("=X+Y").', C_SHEET, sheet(), [['Cell or number?', 'Starts with a letter → cell.']], []),
+    T('Task Manager (3408)', 'A <b>priority inbox</b>: edits re-sort the task, execTop takes the top.', 'TREESET (priority ↓, id ↓) + MAP', 'add, edit, rmv, execTop.', C_TASK, task(), [['Tie rule?', 'Higher taskId wins.'], ['Lazy heap version?', 'Push new entries on edit and skip stale ones on execTop.']], []),
+    T('Tic-Tac-Toe (348)', 'A <b>scoreboard per line</b>: +1 for X, −1 for O. A line reaching ±n is a win.', 'ROW/COL/DIAG COUNTERS ±1', 'move(row, col, player) returns the winner in O(1).', C_TTT, ttt(), [['Anti-diagonal test?', 'row + col == n − 1.']], []),
+    T('Underground System (1396)', 'A <b>travel diary</b>: remember check-ins; on check-out, add the trip to the route\'s total.', 'id → (station, t); ROUTE → (total, count)', 'checkIn, checkOut, getAverageTime.', C_UG, underground(), [['Route key?', '"start->end" string (or a nested map).']], []),
+    T('Finding Pairs Sum (1865)', 'Two Sum where the <b>big list keeps changing</b>: keep its frequency map up to date.', 'LOOP SMALL, MAP BIG', 'add(index, val) on nums2; count pairs with sum tot.', C_FSP, findSum(), [['Why loop over nums1?', 'It has ≤ 1000 elements and never changes.']], []),
+    T('Median Data Stream (295)', 'Two <b>piles of cards</b>: small cards face-down highest on top, big cards lowest on top. The median is at the tops.', 'MAX-HEAP LEFT, MIN-HEAP RIGHT, BALANCE', 'addNum and findMedian.', C_MED, median(), [['Why push through left into right?', 'It keeps every left element ≤ every right element.'], ['Which heap gets the extra element?', 'left (by convention).']], []),
+    T('Nested List Iterator (341)', 'A <b>box of boxes</b>: open boxes only when you need the next item.', 'STACK, UNPACK IN hasNext()', 'Iterate over a nested list of integers.', C_NEST, nested(), [['Why do the work in hasNext?', 'It must know whether an integer exists; empty lists are skipped there.']], []),
+    T('Implement Router (3508)', 'A <b>post office</b>: a conveyor belt (FIFO), a duplicate stamp register, and a sorted logbook per destination.', 'QUEUE + SET + SORTED TIMES WITH START INDEX', 'addPacket, forwardPacket, getCount(dest, start, end).', C_ROUTER, router(), [['Why is a moving start index enough?', 'Forwarded packets of a destination are always its oldest ones.']], []),
+    T('Stack using Queues (225)', 'A <b>revolving door</b>: after a new person enters, everyone older walks round behind them.', 'OFFER x, ROTATE n−1', 'LIFO stack using only queue operations.', C_STQ, stackQ(), [['Two-queue version?', 'Push O(1), pop O(n) by moving n−1 into a helper.']], []),
+    T('Insert Delete GetRandom (380)', 'A <b>row of seats</b> with a seating chart: when someone leaves, the last person moves into their seat.', 'LIST + MAP, SWAP-WITH-LAST DELETE', 'insert, remove, getRandom in O(1).', C_RS, randSet(), [['Why not a LinkedList?', 'Random access by index is needed.'], ['Edge case?', 'Removing the last element itself.']], []),
+    T('Map Sum Pairs (677)', 'A <b>tally at every crossroads</b> of the trie.', 'TRIE NODE SUMS, ADD THE DELTA', 'insert(key, val) (overwrite) and sum(prefix).', C_MAPSUM, mapSum(), [['Why the delta?', 'Overwriting a key must remove its old value from every node.']], []),
+    T('Max Stack (716)', 'One pile of numbered plates, <b>two catalogues</b>: by arrival and by size.', 'IDs + TREESET BY ID + TREESET BY (VAL, ID)', 'push, pop, top, peekMax, popMax (top-most max).', C_MAX, maxStack(), [['Why ids?', 'Duplicates must be distinct objects, and ties break by recency.']], []),
+    T('Most Frequent IDs (3092)', 'A <b>leaderboard that keeps old printouts</b>: ignore any printout that no longer matches the live score.', 'COUNT MAP + LAZY MAX-HEAP', 'After each step, the highest frequency of any ID.', C_MF, mostFreq(), [['What is a stale entry?', 'Its stored count differs from the current count.']], []),
+    T('Operations on Tree (1993)', 'A <b>family vault</b>: upgrade only if you are free, your elders are free, and a descendant holds a key.', 'CHECK UP, CHECK DOWN, CLEAR DOWN', 'lock, unlock, upgrade on a tree.', C_LOCK, lockTree(), [['Three upgrade conditions?', 'Node unlocked, no locked ancestor, at least one locked descendant.']], []),
+    T('Search Suggestions (1268)', 'A <b>dictionary</b>: all words with a prefix sit together on the same page.', 'SORT + LOWER BOUND + TAKE 3', 'After each typed character, up to 3 lexicographically smallest products with that prefix.', C_SS, suggest(), [['Why can start only move right?', 'Longer prefixes sort no earlier.'], ['Trie version?', 'Store the 3 smallest words at each node.']], []),
+    T('Seat Reservation (1845)', 'A <b>ticket roll</b> plus a tray of returned tickets.', 'COUNTER + MIN-HEAP OF RETURNS', 'reserve smallest free seat, unreserve.', C_SEAT, seat(), [['Why are returned seats always smaller than next?', 'Only reserved seats (< next) can be returned.']], []),
+    T('Simple Bank (2043)', 'A <b>teller</b> who checks your ID and balance before touching money.', 'VALIDATE, THEN APPLY', 'transfer, deposit, withdraw with validation.', C_BANK, bank(), [['Index?', 'account − 1.']], []),
+    T('Snapshot Array (1146)', 'A <b>diary of changes</b> per cell instead of photocopying the whole array.', 'PER INDEX (snapId, val) LIST + BINARY SEARCH', 'set, snap, get(index, snapId).', C_SNAP, snapshot(), [['Search target?', 'The last entry with snap ≤ id.'], ['TreeMap alternative?', 'floorEntry(snapId) per index.']], []),
+    T('Time Based KV (981)', 'A <b>version history</b>: ask for the latest version at or before a time.', 'TREEMAP floorEntry', 'set(key, value, ts), get(key, ts).', C_TM, timeMap(), [['Timestamps increasing?', 'Yes, so an ArrayList + binary search also works.']], [['Snapshot Array (same "floor" idea)', 30]]),
+    T('Walking Robot II (2069)', 'A <b>racetrack</b>: the robot only laps the border, so the position is just an index on the lap.', 'PRECOMPUTE PERIMETER, step % LEN, ORIGIN FACES SOUTH', 'step(num), getPos, getDir on a width × height grid.', C_ROBOT, robot(), [['The gotcha?', 'At (0,0) after any movement the direction is South.'], ['Perimeter length?', '2·(w + h) − 4.']], [])
+  ]
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trees and Advanced Graphs Animations</title>
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/graph-kit.js"></script>
+<script>
+const { lane, graph, grid, tree, recorder, mount, ln } = BrainAnim;
+const { range, C, EC, Q, S, A, story, adjOf } = GK;
+const bits = a => a.map(b => (b ? 1 : 0));
+const inc = (obj) => Object.fromEntries(Object.entries(obj));
+
+const C_DIA = `
+public int diameterTwoBfs(int[][] edges) {
+    List<List<Integer>> adj = build(n, edges);
+    int[] first = bfs(adj, 0);          // farthest node from any start
+    int[] second = bfs(adj, first[0]);  // farthest from that node
+    return second[1];
+}`;
+function diameter() {
+  const N = { 0: [0, 1], 1: [1, 1], 2: [2, 0], 3: [3, 0], 4: [2, 2], 5: [3, 2] }, E = [[0, 1], [1, 2], [2, 3], [1, 4], [4, 5]], adj = adjOf(6, E, false), r = recorder();
+  const run = (s, tag) => { const d = Array(6).fill(-1); d[s] = 0; let q = [s], far = s; while (q.length) { const u = q.shift(); if (d[u] > d[far]) far = u; adj[u].forEach(v => { if (d[v] < 0) { d[v] = d[u] + 1; q.push(v); } }); } return { d, far }; };
+  r.step(ln(C_DIA, 'bfs(adj, 0)'), 'Claim: the farthest node from <i>any</i> start is an end of some diameter. So BFS twice.', [graph('tree', N, E, {})], {});
+  const a = run(0); r.step(ln(C_DIA, 'int[] first'), `BFS from 0 (distance badges). Farthest node: <b>${a.far}</b> at distance ${a.d[a.far]}.`, [graph('BFS from 0', N, E, { cls: C({ active: [0], warn: [a.far] }), badge: Object.fromEntries(a.d.map((x, i) => [i, x])) })], {});
+  const b = run(a.far); r.step(ln(C_DIA, 'int[] second'), `BFS from ${a.far}: farthest node ${b.far} at distance <b>${b.d[b.far]}</b>. That is the diameter (path ${a.far} → … → ${b.far}).`, [graph(`BFS from ${a.far}`, N, E, { cls: C({ active: [a.far], warn: [b.far] }), badge: Object.fromEntries(b.d.map((x, i) => [i, x])) })], { diameter: b.d[b.far] });
+  r.step(ln(C_DIA, 'return second[1]'), 'One-pass alternative: DFS where each node combines its two tallest child heights (see the second approach in the note).', [graph('answer', N, E, { cls: C({ done: [3, 5], active: [1] }) })], {});
+  return r.steps;
+}
+
+const C_MERGE = `
+int d1 = diameter(edges1), d2 = diameter(edges2);
+return Math.max(Math.max(d1, d2), (d1 + 1) / 2 + (d2 + 1) / 2 + 1);`;
+function merge() {
+  const r = recorder(), E1 = [[0, 1], [0, 2], [0, 3]], N1 = { 0: [0.7, 0.7], 1: [0, 0], 2: [0, 1.4], 3: [1.5, 0.7] }, E2 = [[0, 1]], N2 = { 0: [0, 0], 1: [1, 0] };
+  r.step(0, 'Join one node of tree A to one node of tree B with a new edge. The longest path in the result either stays inside A, inside B, or crosses the new edge.', [graph('tree A (star, diameter 2)', N1, E1, {}), graph('tree B (one edge, diameter 1)', N2, E2, {})], {});
+  r.step(ln(C_MERGE, 'int d1'), 'd1 = 2, d2 = 1. Crossing paths are (depth of A\'s endpoint) + 1 + (depth of B\'s endpoint). Minimise by attaching at each tree\'s <b>centre</b>, whose farthest node is ceil(d / 2) away.', [graph('A, centre 0 (radius 1)', N1, E1, { cls: C({ active: [0] }) }), graph('B, centre 0 or 1 (radius 1)', N2, E2, { cls: C({ active: [0] }) })], { d1: 2, d2: 1 });
+  r.step(ln(C_MERGE, 'return Math.max'), 'Answer = max(d1, d2, ceil(d1/2) + ceil(d2/2) + 1) = max(2, 1, 1 + 1 + 1) = <b>3</b>.', [graph('merged at the centres', { a0: [0.7, 0.7], a1: [0, 0], a2: [0, 1.4], a3: [1.5, 0.7], b0: [2.8, 0.7], b1: [3.8, 0.7] }, [['a0', 'a1'], ['a0', 'a2'], ['a0', 'a3'], ['a0', 'b0'], ['b0', 'b1']], { cls: C({ done: ['a0', 'b0'] }), ecls: EC({ hot: [['a0', 'b0']] }) })], { answer: 3 });
+  return r.steps;
+}
+
+const C_TGT1 = `
+int bestSecond = 0;
+if (k > 0) for (int j = 0; j < m; j++) bestSecond = Math.max(bestSecond, countWithin(b, j, k - 1));
+for (int i = 0; i < n; i++) result[i] = countWithin(a, i, k) + bestSecond;`;
+function target1() {
+  const E1 = [[0, 1], [0, 2], [2, 3], [2, 4]], N1 = { 0: [1, 1], 1: [0, 0], 2: [2, 1], 3: [3, 0], 4: [3, 2] }, E2 = [[0, 1], [0, 2], [0, 3], [2, 7], [1, 4], [4, 5], [4, 6]], N2 = { 0: [1.5, 1], 1: [0.5, 2], 2: [2.5, 1], 3: [1.5, 0], 4: [0, 3], 5: [-0.5, 4], 6: [0.5, 4], 7: [3.5, 1] }, k = 2, r = recorder();
+  const within = (n, E, s, dd) => { const adj = adjOf(n, E, false), d = Array(n).fill(-1); d[s] = 0; const q = [s]; let c = 0; while (q.length) { const u = q.shift(); if (d[u] > dd) continue; c++; adj[u].forEach(v => { if (d[v] < 0) { d[v] = d[u] + 1; q.push(v); } }); } return c; };
+  r.step(0, 'Two trees A (5 nodes) and B (8 nodes), k = 2. For each node i of A we add one edge from i to the best node of B. A node is a target if it is within distance k of i.', [graph('tree A', N1, E1, {}), graph('tree B', N2, E2, {})], {});
+  const cb = range(0, 7).map(j => within(8, E2, j, k - 1));
+  r.step(ln(C_TGT1, 'bestSecond'), `Across the new edge B starts at distance 1 from i, so only nodes within k − 1 = 1 of the attached node count. Counts per B node: [${cb.join(', ')}]. Best = <b>${Math.max(...cb)}</b>, and it does not depend on i.`, [graph('tree B (badge = nodes within 1)', N2, E2, { badge: Object.fromEntries(cb.map((x, i) => [i, x])), cls: C({ active: [cb.indexOf(Math.max(...cb))] }) })], { bestSecond: Math.max(...cb) });
+  const ca = range(0, 4).map(i => within(5, E1, i, k));
+  r.step(ln(C_TGT1, 'result[i]'), `Within 2 of each A node: [${ca.join(', ')}]. Add ${Math.max(...cb)}: answer = [${ca.map(x => x + Math.max(...cb)).join(', ')}].`, [graph('tree A (badge = within 2)', N1, E1, { badge: Object.fromEntries(ca.map((x, i) => [i, x])) }), A('answer', ca.map(x => x + Math.max(...cb)), { done: range(0, 4) })], {});
+  return r.steps;
+}
+const C_TGT2 = `
+int[] color1 = colour(edges1), color2 = colour(edges2);
+for (int c : color1) count1[c]++;
+for (int c : color2) count2[c]++;
+int bestSecond = Math.max(count2[0], count2[1]);
+for (int i = 0; i < result.length; i++) result[i] = count1[color1[i]] + bestSecond;`;
+function target2() {
+  const E1 = [[0, 1], [0, 2], [2, 3], [2, 4]], N1 = { 0: [1, 1], 1: [0, 0], 2: [2, 1], 3: [3, 0], 4: [3, 2] }, E2 = [[0, 1], [0, 2], [0, 3], [2, 7], [1, 4], [4, 5], [4, 6]], N2 = { 0: [1.5, 1], 1: [0.5, 2], 2: [2.5, 1], 3: [1.5, 0], 4: [0, 3], 5: [-0.5, 4], 6: [0.5, 4], 7: [3.5, 1] }, r = recorder();
+  const col = (n, E) => { const adj = adjOf(n, E, false), c = Array(n).fill(-1); c[0] = 0; const q = [0]; while (q.length) { const u = q.shift(); adj[u].forEach(v => { if (c[v] < 0) { c[v] = 1 - c[u]; q.push(v); } }); } return c; };
+  const c1 = col(5, E1), c2 = col(8, E2), cnt = c => [c.filter(x => x === 0).length, c.filter(x => x === 1).length];
+  r.step(0, 'Now a target is a node at <b>even</b> distance. Distance parity is exactly the two-colouring of a tree: same colour ⇒ even distance, different colour ⇒ odd.', [graph('tree A (blue = colour 0, amber = colour 1)', N1, E1, { cls: C({ active: range(0, 4).filter(i => c1[i] === 0), warn: range(0, 4).filter(i => c1[i] === 1) }) }), graph('tree B', N2, E2, { cls: C({ active: range(0, 7).filter(i => c2[i] === 0), warn: range(0, 7).filter(i => c2[i] === 1) }) })], {});
+  const a = cnt(c1), b = cnt(c2);
+  r.step(ln(C_TGT2, 'count2[c]++'), `Colour counts: A = ${a[0]} / ${a[1]}, B = ${b[0]} / ${b[1]}. Through the new edge, B's nodes at <i>odd</i> distance from the attached node are at even distance from i, so pick the attach point to get the bigger colour class: ${Math.max(...b)}.`, [A('A colour counts', a), A('B colour counts', b), A('best from B', [Math.max(...b)])], {});
+  const res = c1.map(c => a[c] + Math.max(...b));
+  r.step(ln(C_TGT2, 'result[i]'), `Answer for node i = (size of i's own colour class in A) + ${Math.max(...b)} = [${res.join(', ')}].`, [A('answer', res, { done: range(0, 4) })], {});
+  return r.steps;
+}
+
+const C_PROF = `
+bobWalk(adj, bob, -1, 0, bobTime);                // Bob's arrival time on his way to node 0
+return alice(adj, 0, -1, 0, 0, bobTime, amount);
+...
+if (time < bobTime[u]) income += amount[u];
+else if (time == bobTime[u]) income += amount[u] / 2;
+int best = Integer.MIN_VALUE;
+for (int v : adj.get(u)) if (v != parent) best = Math.max(best, alice(...));
+return best == Integer.MIN_VALUE ? income : best;`;
+function profit() {
+  const E = [[0, 1], [1, 2], [1, 3], [3, 4]], N = { 0: [0, 1], 1: [1, 1], 2: [2, 0], 3: [2, 2], 4: [3, 2] }, amt = [-2, 4, 2, -4, 6], bobT = { 3: 0, 1: 1, 0: 2 }, r = recorder();
+  const badge = Object.fromEntries(amt.map((a, i) => [i, 'gate ' + a]));
+  r.step(0, 'Bob starts at node 3 and walks to 0, one edge per second. Alice starts at 0 and heads for a leaf. Gates cost (negative) or pay (positive); if both arrive together they split the price.', [graph('tree (badge = gate amount)', N, E, { badge })], {});
+  r.step(ln(C_PROF, 'bobWalk'), 'Pass 1: Bob\'s arrival time at each node on his route: node 3 at t=0, node 1 at t=1, node 0 at t=2.', [graph('Bob\'s route', N, E, { cls: C({ warn: [3, 1, 0] }), badge: { 3: 't=0', 1: 't=1', 0: 't=2' }, ecls: EC({ hot: [[1, 3], [0, 1]] }) })], {});
+  const paths = [[0, 1, 2], [0, 1, 3, 4]]; let best = -1e9;
+  for (const p of paths) { let income = 0, log = []; p.forEach((u, t) => { const bt = bobT[u] ?? Infinity; const g = t < bt ? amt[u] : t === bt ? amt[u] / 2 : 0; income += g; log.push(`${u}@t${t}: ${g}`); }); best = Math.max(best, income);
+    r.step(ln(C_PROF, 'if (time < bobTime[u])'), `Alice's path ${p.join(' → ')}: ${log.join(', ')} = <b>${income}</b>. A node Bob already passed (Bob earlier) costs nothing; same time = half.`, [graph('Alice\'s path', N, E, { cls: C({ active: p }), ecls: EC({ hot: p.slice(1).map((v, i) => [p[i], v]) }) }), A('income', [income]), A('best', [best])], { income, best }); }
+  r.step(ln(C_PROF, 'return best'), `Best leaf: <b>${best}</b>. Alice's DFS carries her income along the path; she only compares totals at leaves.`, [graph('answer', N, E, { cls: C({ done: [0, 1, 3, 4] }) })], { best });
+  return r.steps;
+}
+
+const C_KDIV = `
+private long dfs(List<List<Integer>> adj, int u, int parent, int[] values, int k, int[] count) {
+    long sum = values[u];
+    for (int v : adj.get(u)) if (v != parent) sum += dfs(adj, v, u, values, k, count);
+    sum %= k;
+    if (sum == 0) count[0]++;      // this subtree can be cut off
+    return sum;
+}`;
+function kdiv() {
+  const par = { 0: null, 2: 0, 1: 2, 4: 2, 3: 1 }, vals = [1, 8, 1, 4, 4], k = 6, kids = { 0: [2], 2: [1, 4], 1: [3] }, r = recorder(), badge = {}; let count = 0; const done = [];
+  const T = (act) => [tree(`tree rooted at 0 (values 1,8,1,4,4; k = ${k}; badge = subtree sum mod k)`, par, { badge, cls: C({ active: act !== undefined ? [act] : [], done, bad: [] }) }), A('components cut', [count])];
+  r.step(0, 'Cut edges so every piece has a sum divisible by k, using as many pieces as possible. Total = 18 is divisible by 6, so the pieces are consistent. A subtree whose sum ≡ 0 can be cut off for free.', T(), {});
+  (function go(u) { let s = vals[u]; (kids[u] || []).forEach(v => { s += go(v); }); s %= k; badge[u] = s; if (s === 0) { count++; done.push(u); } r.step(ln(C_KDIV, 'sum %= k'), `Node ${u}: subtree sum mod ${k} = ${s}${s === 0 ? ' → <b>cut here</b>, one more component. It returns 0 to its parent, so its sum no longer affects the part above.' : '.'}`, T(u), { count }); return s; })(0);
+  r.step(0, `<b>${count}</b> components. The root always returns 0 because the total is divisible by k, so it counts as the last piece.`, T(), { count });
+  return r.steps;
+}
+
+const C_APPLE = `
+private int dfs(List<List<Integer>> adj, int u, int parent, List<Boolean> hasApple) {
+    int time = 0;
+    for (int v : adj.get(u)) {
+        if (v == parent) continue;
+        int child = dfs(adj, v, u, hasApple);
+        if (child > 0 || hasApple.get(v)) time += child + 2;
+    }
+    return time;
+}`;
+function apples() {
+  const par = { 0: null, 1: 0, 2: 0, 4: 1, 5: 1, 3: 2, 6: 2 }, apple = [false, false, true, false, true, true, false], kids = { 0: [1, 2], 1: [4, 5], 2: [3, 6] }, r = recorder(), badge = {}; const done = [];
+  const T = (act) => [tree('tree (🍎 nodes have apples; badge = time spent below + the edge to the parent)', par, { badge, cls: C({ active: act !== undefined ? [act] : [], warn: [2, 4, 5], done }), wide: false }), A('hasApple', bits(apple))];
+  r.step(0, 'Walk the tree from 0 and return to 0, collecting every apple (nodes 2, 4, 5). An edge to a child is walked twice (down and back) only if that subtree holds an apple.', T(), {});
+  (function go(u) { let t = 0; (kids[u] || []).forEach(v => { const c = go(v); if (c > 0 || apple[v]) t += c + 2; }); badge[u] = t; done.push(u); r.step(ln(C_APPLE, 'if (child > 0 || hasApple.get(v))'), `Node ${u}: time below = ${t}${t ? ' (each useful child edge costs 2 plus whatever the child needs)' : ' (nothing to fetch here)'}.`, T(u), {}); return t; })(0);
+  r.step(0, `Answer <b>${badge[0]}</b> = 2 × the number of edges that lie on a path from the root to an apple.`, T(), {});
+  return r.steps;
+}
+
+const C_LPATH = `
+private int chain(List<List<Integer>> children, int u, String s, int[] best) {
+    int top1 = 0, top2 = 0;
+    for (int v : children.get(u)) {
+        int len = chain(children, v, s, best);
+        if (s.charAt(v) == s.charAt(u)) continue;      // same letter: that chain cannot be joined
+        if (len > top1) { top2 = top1; top1 = len; }
+        else if (len > top2) top2 = len;
+    }
+    best[0] = Math.max(best[0], top1 + top2 + 1);
+    return top1 + 1;
+}`;
+function lpath() {
+  const labels = 'abacbe', par = { 0: null, 1: 0, 2: 0, 3: 1, 4: 1, 5: 2 }, kids = { 0: [1, 2], 1: [3, 4], 2: [5] }, r = recorder(), badge = {}; let best = 1; const done = [];
+  const lab = Object.fromEntries(labels.split('').map((c, i) => [i, `${i}:${c}`]));
+  const T = (act) => [tree('parent array tree (label shown as node:letter; badge = longest chain going down)', par, { labels: lab, wide: true, badge, cls: C({ active: act !== undefined ? [act] : [], done }) }), A('best path (nodes)', [best])];
+  r.step(0, 'Longest path where adjacent nodes have different letters. At each node, combine its two longest child chains whose first letter differs from this node\'s letter.', T(), {});
+  (function go(u) { const lens = []; (kids[u] || []).forEach(v => { const l = go(v); lens.push([v, l]); }); const ok = lens.filter(([v]) => labels[v] !== labels[u]).map(x => x[1]).sort((a, b) => b - a); const t1 = ok[0] || 0, t2 = ok[1] || 0; best = Math.max(best, t1 + t2 + 1); badge[u] = t1 + 1; done.push(u);
+    r.step(ln(C_LPATH, 'best[0] = Math.max'), `Node ${u} ('${labels[u]}'): usable child chains [${ok.join(', ') || 'none'}]${lens.some(([v]) => labels[v] === labels[u]) ? ` (a child with the same letter is skipped)` : ''}. Path bending here = ${t1} + ${t2} + 1 = ${t1 + t2 + 1}. Chain up = ${t1 + 1}. Best ${best}.`, T(u), { best }); return t1 + 1; })(0);
+  r.step(0, `Longest valid path: <b>${best}</b> nodes. The chain returned upward keeps only <i>one</i> side, because a path can bend only once.`, T(), { best });
+  return r.steps;
+}
+
+const C_SUMD = `
+private void down(List<List<Integer>> adj, int u, int parent, int[] size, int[] answer) {
+    size[u] = 1;
+    for (int v : adj.get(u)) {
+        if (v == parent) continue;
+        down(adj, v, u, size, answer);
+        size[u] += size[v];
+        answer[u] += answer[v] + size[v];
+    }
+}
+private void up(List<List<Integer>> adj, int u, int parent, int[] size, int[] answer, int n) {
+    for (int v : adj.get(u)) {
+        if (v == parent) continue;
+        answer[v] = answer[u] - size[v] + (n - size[v]);     // re-root from u to v
+        up(adj, v, u, size, answer, n);
+    }
+}`;
+function sumDist() {
+  const E = [[0, 1], [0, 2], [2, 3], [2, 4], [2, 5]], N = { 0: [1, 1], 1: [0, 0], 2: [2, 1], 3: [3, 0], 4: [3, 1], 5: [3, 2] }, n = 6, kids = { 0: [1, 2], 2: [3, 4, 5] }, r = recorder(), size = Array(n).fill(0), ans = Array(n).fill(0);
+  r.step(0, 'Computing a BFS from every node would be O(n²). <b>Re-rooting</b> does it in two passes: first the answer for root 0, then shift the root across each edge in O(1).', [graph('tree', N, E, {})], {});
+  (function go(u) { size[u] = 1; (kids[u] || []).forEach(v => { go(v); size[u] += size[v]; ans[u] += ans[v] + size[v]; }); r.step(ln(C_SUMD, 'answer[u] += answer[v] + size[v]'), `Node ${u}: subtree size ${size[u]}, sum of distances inside its subtree ${ans[u]}.`, [graph('pass 1 (badge = size / inside-sum)', N, E, { cls: C({ active: [u] }), badge: Object.fromEntries(range(0, 5).filter(i => size[i]).map(i => [i, `${size[i]}/${ans[i]}`])) }), A('answer', ans)], {}); })(0);
+  (function up(u) { (kids[u] || []).forEach(v => { ans[v] = ans[u] - size[v] + (n - size[v]); r.step(ln(C_SUMD, 'answer[v] = answer[u]'), `Move the root from ${u} to ${v}: the ${size[v]} nodes of v's subtree get 1 closer (−${size[v]}), the other ${n - size[v]} get 1 farther (+${n - size[v]}). answer[${v}] = ${ans[v]}.`, [graph('pass 2', N, E, { cls: C({ active: [v], done: [0] }), ecls: EC({ hot: [[u, v]] }) }), A('answer', ans)], {}); up(v); }); })(0);
+  r.step(0, `Result: [${ans.join(', ')}]. Total work O(n).`, [A('answer', ans, { done: range(0, 5) })], {});
+  return r.steps;
+}
+
+const C_LABEL = `
+private int[] dfs(List<List<Integer>> adj, int u, int parent, String labels, int[] result) {
+    int[] count = new int[26];
+    count[labels.charAt(u) - 'a']++;
+    for (int v : adj.get(u)) {
+        if (v == parent) continue;
+        int[] child = dfs(adj, v, u, labels, result);
+        for (int c = 0; c < 26; c++) count[c] += child[c];
+    }
+    result[u] = count[labels.charAt(u) - 'a'];
+    return count;
+}`;
+function subLabel() {
+  const labels = 'abaedcd', par = { 0: null, 1: 0, 2: 0, 4: 1, 5: 1, 3: 2, 6: 2 }, kids = { 0: [1, 2], 1: [4, 5], 2: [3, 6] }, r = recorder(), res = Array(7).fill(null), lab = Object.fromEntries(labels.split('').map((c, i) => [i, `${i}:${c}`]));
+  const T = (act, cnt) => [tree('tree (node:label; badge = answer)', par, { labels: lab, wide: true, badge: Object.fromEntries(res.map((x, i) => [i, x]).filter(([, x]) => x !== null)), cls: C({ active: act !== undefined ? [act] : [] }) }), A('letter counts of this subtree', cnt ? Object.entries(cnt).map(([k, v]) => `${k}:${v}`) : [], { showIdx: false })];
+  r.step(0, 'Each DFS call returns the 26-letter count of its subtree; the answer for a node is the count of its own letter.', T(), {});
+  (function go(u) { const cnt = {}; cnt[labels[u]] = 1; (kids[u] || []).forEach(v => { const c = go(v); for (const [k, x] of Object.entries(c)) cnt[k] = (cnt[k] || 0) + x; }); res[u] = cnt[labels[u]]; r.step(ln(C_LABEL, 'result[u] = count'), `Node ${u} ('${labels[u]}'): subtree has ${Object.entries(cnt).map(([k, v]) => k + '×' + v).join(', ')} → answer ${res[u]}.`, T(u, cnt), {}); return cnt; })(0);
+  r.step(0, `Answers: [${res.join(', ')}]. Counting in one bottom-up pass beats walking every subtree separately.`, T(), {});
+  return r.steps;
+}
+
+const C_XOR = `
+int total = xor[0], best = Integer.MAX_VALUE;
+for (int u = 1; u < n; u++) {
+    for (int v = u + 1; v < n; v++) {
+        int a, b, c;
+        if (isAncestor(u, v, tin, tout))      { a = xor[v]; b = xor[u] ^ xor[v]; c = total ^ xor[u]; }
+        else if (isAncestor(v, u, tin, tout)) { a = xor[u]; b = xor[v] ^ xor[u]; c = total ^ xor[v]; }
+        else                                  { a = xor[u]; b = xor[v]; c = total ^ xor[u] ^ xor[v]; }
+        best = Math.min(best, Math.max(a, Math.max(b, c)) - Math.min(a, Math.min(b, c)));
+    }
+}`;
+function xorScore() {
+  const nums = [1, 5, 5, 4, 11], par = { 0: null, 1: 0, 2: 1, 3: 1, 4: 3 }, xr = { 4: 11, 3: 4 ^ 11, 2: 5, 1: 5 ^ 5 ^ (4 ^ 11), 0: 1 ^ (5 ^ 5 ^ (4 ^ 11)) }, r = recorder();
+  const T = (cls, badge) => [tree('tree (node value; badge = subtree xor)', par, { cls: C(cls), badge: badge || Object.fromEntries(Object.entries(xr)), labels: Object.fromEntries(nums.map((v, i) => [i, `${i}: ${v}`])), wide: true })];
+  r.step(0, 'Delete any two edges: three components. Score = largest xor − smallest xor among them. Try every pair of non-root nodes (each node stands for the edge to its parent).', T({}), {});
+  r.step(0, `Precompute the xor of every subtree: ${Object.entries(xr).map(([k, v]) => k + ':' + v).join(', ')}. Total xor = ${xr[0]}. Euler tin/tout tell us whether one node is an ancestor of the other.`, T({ done: [0, 1, 2, 3, 4] }), {});
+  const cases = [[3, 4, 'v=4 is inside u=3'], [1, 2, 'siblings under 1'], [1, 3, 'siblings under 1'], [2, 4, 'different branches']];
+  for (const [u, v] of cases) {
+    const anc = (a, b) => { let x = b; while (x !== null) { if (x === a) return true; x = par[x]; } return false; }; let a, b, c, t = 'a';
+    if (anc(u, v)) { a = xr[v]; b = xr[u] ^ xr[v]; c = xr[0] ^ xr[u]; } else if (anc(v, u)) { a = xr[u]; b = xr[v] ^ xr[u]; c = xr[0] ^ xr[v]; } else { a = xr[u]; b = xr[v]; c = xr[0] ^ xr[u] ^ xr[v]; }
+    r.step(ln(C_XOR, 'best = Math.min'), `Cut above ${u} and above ${v}: parts ${a}, ${b}, ${c} → score ${Math.max(a, b, c) - Math.min(a, b, c)}.`, T({ active: [u, v] }), {});
+  }
+  r.step(0, 'The best pair is (1, 2): parts 1, 5 and 10 → 10 − 1 = <b>9</b>. n² pairs × O(1) each.', T({ active: [1, 2] }), { answer: 9 });
+  return r.steps;
+}
+
+const C_BRIDGE = `
+private void dfs(List<List<Integer>> adj, int u, int parent, int[] tin, int[] low, int[] timer, List<List<Integer>> bridges) {
+    tin[u] = low[u] = timer[0]++;
+    for (int v : adj.get(u)) {
+        if (v == parent) continue;
+        if (tin[v] != -1) {
+            low[u] = Math.min(low[u], tin[v]);          // back edge
+        } else {
+            dfs(adj, v, u, tin, low, timer, bridges);
+            low[u] = Math.min(low[u], low[v]);
+            if (low[v] > tin[u]) bridges.add(List.of(u, v));   // v cannot get back above u
+        }
+    }
+}`;
+function bridges() {
+  const E = [[0, 1], [1, 2], [2, 0], [1, 3]], N = { 0: [0, 0], 1: [1.5, 0.8], 2: [0, 1.6], 3: [3, 0.8] }, adj = adjOf(4, E, false), r = recorder(), tin = Array(4).fill(-1), low = Array(4).fill(-1), bad = []; let t = 0;
+  const V = (act, ecls) => [graph('network (badge = tin/low)', N, E, { cls: C({ active: act !== undefined ? [act] : [] }), ecls: { ...EC({ bad }), ...(ecls || {}) }, badge: Object.fromEntries(range(0, 3).filter(i => tin[i] >= 0).map(i => [i, `${tin[i]}/${low[i]}`])) })];
+  r.step(0, 'A <b>bridge</b> is an edge whose removal disconnects the graph. DFS stamps each node with tin (discovery) and low (earliest tin reachable from its subtree using one back edge). A tree edge u–v is a bridge iff low[v] > tin[u].', V(), {});
+  (function go(u, p) {
+    tin[u] = low[u] = t++;
+    r.step(ln(C_BRIDGE, 'tin[u] = low[u]'), `Discover ${u}: tin = low = ${tin[u]}.`, V(u), {});
+    for (const v of adj[u]) {
+      if (v === p) continue;
+      if (tin[v] >= 0) { low[u] = Math.min(low[u], tin[v]); r.step(ln(C_BRIDGE, 'low[u] = Math.min(low[u], tin[v])'), `${u} — ${v} is a <b>back edge</b> to an already discovered node: low[${u}] = ${low[u]}.`, V(u, EC({ done: [[u, v]] })), {}); }
+      else { go(v, u); low[u] = Math.min(low[u], low[v]); if (low[v] > tin[u]) { bad.push([u, v]); r.step(ln(C_BRIDGE, 'bridges.add'), `low[${v}] = ${low[v]} > tin[${u}] = ${tin[u]}: ${v}'s side cannot reach back above ${u}. Edge ${u}–${v} is a <b>bridge</b>.`, V(u), {}); } else r.step(ln(C_BRIDGE, 'low[u] = Math.min(low[u], low[v])'), `Back from ${v}: low[${u}] = ${low[u]}. ${v} can still get back to ${low[v]} ≤ tin[${u}], so ${u}–${v} sits on a cycle.`, V(u), {}); }
+    }
+  })(0, -1);
+  r.step(0, 'Critical connection: <b>1–3</b>. The triangle 0-1-2 has no bridge: each of its edges has an alternative route.', V(), {});
+  return r.steps;
+}
+
+const C_KOS = `
+for (int i = 0; i < n; i++) if (!visited[i]) finish(adj, i, visited, order);   // pass 1: finish order
+...reverse every edge...
+while (!order.isEmpty()) {                                                      // pass 2 on the reversed graph
+    int u = order.pop();
+    if (!visited[u]) {
+        count++;
+        mark(rev, u, visited);
+    }
+}`;
+function kosaraju() {
+  const E = [[0, 2], [2, 1], [1, 0], [0, 3], [3, 4]], N = { 0: [1, 0], 1: [0, 1.5], 2: [2, 1.5], 3: [3, 0], 4: [4, 0.8] }, adj = adjOf(5, E, true), rev = adjOf(5, E.map(([a, b]) => [b, a]), true), r = recorder(), vis = Array(5).fill(false), order = [];
+  const V = (cls, ecls, name) => graph(name || 'digraph', N, E, { directed: true, cls, ecls });
+  r.step(0, 'Strongly connected component: every node reaches every other in it. Kosaraju: DFS to get finish order, reverse all edges, then DFS in reverse finish order; each tree you grow is one SCC.', [V(C({}))], {});
+  (function fin(u) { vis[u] = true; adj[u].forEach(v => { if (!vis[v]) fin(v); }); order.push(u); r.step(ln(C_KOS, 'finish(adj'), `Node ${u} finishes (all reachable nodes done). Finish order so far: ${order.join(', ')}.`, [V(C({ active: [u], done: order.filter(x => x !== u) })), A('finish order', order, { showIdx: false })], {}); })(0);
+  const RE = E.map(([a, b]) => [b, a]), V2 = (cls) => graph('reversed graph', N, RE, { directed: true, cls });
+  r.step(ln(C_KOS, 'pass 2'), `Reverse every edge. SCCs stay the same, but now edges between components point backwards, so a DFS cannot leak out of the component. Process nodes in reverse finish order: ${order.slice().reverse().join(', ')}.`, [V2(C({}))], {});
+  const v2 = Array(5).fill(false); let count = 0;
+  for (const u of order.slice().reverse()) { if (v2[u]) continue; count++; const comp = []; (function m(x) { v2[x] = true; comp.push(x); rev[x].forEach(y => { if (!v2[y]) m(y); }); })(u); r.step(ln(C_KOS, 'count++'), `Start ${u}: reversed DFS reaches {${comp.join(', ')}} → SCC #${count}.`, [V2(C({ active: comp, done: range(0, 4).filter(i => v2[i] && !comp.includes(i)) })), A('SCC count', [count])], {}); }
+  r.step(0, `<b>${count}</b> strongly connected components: {0,1,2}, {3}, {4}.`, [V(C({ done: [0, 1, 2], warn: [3], active: [4] }))], {});
+  return r.steps;
+}
+
+const C_VC = `
+public int vertexCover(int n, int[][] edges) {
+    int low = 1, high = n, answer = n;
+    while (low <= high) {
+        int mid = (low + high) >> 1;
+        if (hasCover(n, mid, edges)) { answer = mid; high = mid - 1; }
+        else low = mid + 1;
+    }
+    return answer;
+}`;
+function vcover() {
+  const E = [[1, 2], [4, 3], [2, 3], [3, 5], [5, 6]], N = { 1: [0, 0], 2: [1.5, 0], 3: [3, 0], 4: [3, 1.5], 5: [4.5, 0], 6: [6, 0] }, r = recorder();
+  const covers = (set) => E.every(([a, b]) => set.includes(a) || set.includes(b));
+  const subsets = (k) => { const out = []; (function g(s, st) { if (s.length === k) { out.push(s.slice()); return; } for (let v = st; v <= 6; v++) { s.push(v); g(s, v + 1); s.pop(); } })([], 1); return out; };
+  r.step(0, 'A vertex cover touches every edge. If a cover of size k exists, adding any vertex gives size k + 1, so "has a cover of size k" is monotone and we can <b>binary search k</b>. Each test tries every k-subset (Gosper\'s hack walks them in order).', [graph('graph (6 vertices, 5 edges)', N, E, {})], {});
+  let low = 1, high = 6, ans = 6;
+  while (low <= high) {
+    const mid = (low + high) >> 1, subs = subsets(mid), good = subs.find(covers);
+    r.step(ln(C_VC, 'hasCover(n, mid, edges)'), good ? `k = ${mid}: ${subs.length} subsets tried; {${good.join(', ')}} covers every edge. Try smaller.` : `k = ${mid}: all ${subs.length} subsets leave some edge uncovered. Need bigger.`, [graph(`testing k = ${mid}`, N, E, { cls: C({ active: good || [] }) }), A('low, high, mid', [low, high, mid])], { low, high, mid });
+    if (good) { ans = mid; high = mid - 1; } else low = mid + 1;
+  }
+  r.step(0, `Minimum vertex cover size = <b>${ans}</b>. (It is NP-hard in general, so this exponential method is only for tiny n.)`, [graph('minimum cover {2, 3, 5}', N, E, { cls: C({ done: [2, 3, 5] }) })], { answer: ans });
+  return r.steps;
+}
+
+const C_DIV = `
+for (int i = 1; i <= n; i++) {
+    if (comp[i] != -1) continue;
+    if (!colour(adj, i, comps, comp, color)) return -1;      // an odd cycle: impossible
+    comps++;
+}
+for (int s = 1; s <= n; s++) best[comp[s]] = Math.max(best[comp[s]], depth(adj, s, n));
+return sum of best[]`;
+function divide() {
+  const E = [[1, 2], [1, 4], [1, 5], [2, 6], [2, 3], [4, 6]], N = { 1: [1, 1], 2: [2, 0], 3: [3, 0], 4: [2, 2], 5: [0, 1], 6: [3, 2] }, adj = adjOf(7, E, false), r = recorder();
+  r.step(0, 'Edge ends must sit in <b>neighbouring</b> groups, so groups form BFS layers. That needs the component to be bipartite; and the best number of groups is the deepest BFS you can get by choosing the right starting node.', [graph('graph', N, E, {})], {});
+  const col = Array(7).fill(-1); col[1] = 0; const q = [1]; while (q.length) { const u = q.shift(); adj[u].forEach(v => { if (col[v] < 0) { col[v] = 1 - col[u]; q.push(v); } }); }
+  r.step(ln(C_DIV, 'colour(adj'), 'Step 1: 2-colour the component. No conflict, so it can be layered (an odd cycle would make the answer −1).', [graph('2-colouring', N, E, { cls: C({ active: [1, 2, 3, 4, 5, 6].filter(i => col[i] === 0), warn: [1, 2, 3, 4, 5, 6].filter(i => col[i] === 1) }) })], {});
+  let best = 0;
+  for (let s = 1; s <= 6; s++) { const d = Array(7).fill(-1); d[s] = 0; const qq = [s]; let layers = 1; while (qq.length) { const u = qq.shift(); layers = Math.max(layers, d[u] + 1); adj[u].forEach(v => { if (d[v] < 0) { d[v] = d[u] + 1; qq.push(v); } }); } best = Math.max(best, layers);
+    r.step(ln(C_DIV, 'depth(adj, s, n)'), `BFS from ${s}: ${layers} layers (groups). Best so far ${best}.`, [graph(`BFS from ${s}`, N, E, { cls: C({ active: [s] }), badge: Object.fromEntries(d.map((x, i) => [i, x]).filter(([i]) => i > 0)) }), A('best', [best])], { best }); }
+  r.step(0, `The component can form <b>${best}</b> groups; with several components the answers add up because components are independent.`, [graph('answer', N, E, { cls: C({ done: [1, 2, 3, 4, 5, 6] }) })], { answer: best });
+  return r.steps;
+}
+
+const C_EMP = `
+for (int f : favorite) indegree[f]++;
+...Kahn: peel people nobody likes, remembering the longest incoming chain...
+    chain[v] = Math.max(chain[v], chain[u] + 1);
+...
+if (len == 2) pairs += 2 + chain[i] + chain[favorite[i]];
+else longestCycle = Math.max(longestCycle, len);
+return Math.max(longestCycle, pairs);`;
+function employees() {
+  const fav = [2, 2, 1, 2], E = fav.map((f, i) => [i, f]), N = { 0: [0, 0], 3: [0, 2], 2: [1.6, 1], 1: [3.2, 1] }, r = recorder(), ind = [0, 0, 0, 0]; fav.forEach(f => ind[f]++);
+  const chain = [0, 0, 0, 0], gone = [];
+  const V = (act) => [graph('i → favourite[i]', N, E, { directed: true, cls: C({ done: gone, active: act !== undefined ? [act] : [] }), badge: Object.fromEntries(chain.map((c, i) => [i, 'chain ' + c])) }), A('indegree', ind)];
+  r.step(0, 'Every person points at their favourite: a functional graph, so each component has exactly one cycle. At a round table a person needs their favourite beside them: a cycle of length ≥ 3 seats exactly that cycle; a 2-cycle (mutual favourites) can also seat everyone on chains leading into it.', V(), {});
+  const q = [0, 3]; while (q.length) { const u = q.shift(); gone.push(u); const v = fav[u]; chain[v] = Math.max(chain[v], chain[u] + 1); ind[v]--; if (ind[v] === 0) q.push(v); r.step(ln(C_EMP, 'chain[v] = Math.max'), `Peel ${u} (nobody likes them): the chain into ${v} is now ${chain[v]} long.`, V(u), {}); }
+  r.step(ln(C_EMP, 'if (len == 2)'), `What is left is the cycle 1 ↔ 2: a 2-cycle. Invite both (2) plus the chain into 2 (${chain[2]}) plus the chain into 1 (${chain[1]}): ${2 + chain[2] + chain[1]}.`, [graph('2-cycle with its chains', N, E, { directed: true, cls: C({ done: [0, 3, 1, 2] }) })], {});
+  r.step(ln(C_EMP, 'return Math.max'), 'No longer cycle exists (the only cycle has length 2), so the answer is <b>3</b>. Independent 2-cycles all add up; only one longer cycle can be chosen.', [graph('answer', N, E, { directed: true, cls: C({ done: [0, 1, 2] }) })], { answer: 3 });
+  return r.steps;
+}
+
+const C_EVAL = `
+private double dfs(Map<String, Map<String, Double>> graph, String u, String target, double acc, Set<String> seen) {
+    if (u.equals(target)) return acc;
+    seen.add(u);
+    for (Map.Entry<String, Double> e : graph.get(u).entrySet()) {
+        if (seen.contains(e.getKey())) continue;
+        double res = dfs(graph, e.getKey(), target, acc * e.getValue(), seen);
+        if (res != -1.0) return res;
+    }
+    return -1.0;
+}`;
+function evalDiv() {
+  const N = { a: [0, 0], b: [2, 0], c: [4, 0], e: [2, 1.6] }, E = [['a', 'b', 2], ['b', 'a', 0.5], ['b', 'c', 3], ['c', 'b', '1/3']], r = recorder();
+  r.step(0, 'a / b = 2 and b / c = 3. Make a graph: an edge a → b with weight 2 and the reverse b → a with weight 1/2. A query x / y is the product of the weights along any path from x to y.', [graph('ratios (weights on edges)', N, E, { directed: true })], {});
+  r.step(ln(C_EVAL, 'if (u.equals(target)) return acc'), 'Query a / c: start at a with acc = 1.', [graph('a / c', N, E, { directed: true, cls: C({ active: ['a'], warn: ['c'] }) })], { acc: 1 });
+  r.step(ln(C_EVAL, 'acc * e.getValue()'), 'Follow a → b: acc = 1 × 2 = 2.', [graph('a / c', N, E, { directed: true, cls: C({ active: ['b'], done: ['a'], warn: ['c'] }), ecls: EC({ hot: [['a', 'b']] }) })], { acc: 2 });
+  r.step(ln(C_EVAL, 'acc * e.getValue()'), 'Follow b → c: acc = 2 × 3 = 6. Reached the target: a / c = <b>6</b>.', [graph('a / c', N, E, { directed: true, cls: C({ done: ['a', 'b', 'c'] }), ecls: EC({ done: [['a', 'b'], ['b', 'c']] }) })], { acc: 6 });
+  r.step(ln(C_EVAL, 'return -1.0'), 'Query a / e: "e" is not in any equation, so the answer is <b>−1</b>. A query a / a is 1 when a exists, and x / x is −1 when x is unknown.', [graph('a / e', N, E, { directed: true, cls: C({ bad: ['e'], active: ['a'] }) })], {});
+  return r.steps;
+}
+
+const C_EQ = `
+int[] ops = new int[n + 1];
+Arrays.fill(ops, -1);
+Queue<Integer> que = new ArrayDeque<>(List.of(zeros));
+ops[zeros] = 0;
+while (!que.isEmpty()) {
+    int z = que.poll();
+    int minF = Math.max(0, k - n + z), maxF = Math.min(k, z);
+    for (int f = minF; f <= maxF; f++) {
+        int next = z + k - 2 * f;
+        if (ops[next] == -1) {
+            ops[next] = ops[z] + 1;
+            if (next == 0) return ops[next];
+            que.add(next);
+        }
+    }
+}`;
+function equalize() {
+  const n = 4, k = 3, zeros = 2, r = recorder(), ops = Array(n + 1).fill(-1); ops[zeros] = 0; let q = [zeros];
+  const V = (act, tag) => [A('operations to reach this many zeros', ops.map(v => (v < 0 ? '·' : v)), { showIdx: true, active: act !== undefined ? [act] : [], done: ops[0] >= 0 ? [0] : [], tag }), Q('queue of zero-counts', q)];
+  r.step(0, 'String "0101", k = 3. Each operation flips exactly 3 characters. The string is described by <b>one number: how many zeros it has</b>. Flipping f zeros and 3 − f ones turns z zeros into z − f + (3 − f) = z + 3 − 2f. Goal: z = 0.', V(zeros), {});
+  while (q.length) {
+    const z = q.shift(), minF = Math.max(0, k - n + z), maxF = Math.min(k, z), news = [];
+    for (let f = minF; f <= maxF; f++) { const nx = z + k - 2 * f; if (ops[nx] < 0) { ops[nx] = ops[z] + 1; news.push(nx); if (nx !== 0) q.push(nx); } }
+    r.step(ln(C_EQ, 'int next = z + k - 2 * f'), `From z = ${z}: f may be ${minF}..${maxF} (cannot flip more zeros than exist, nor more ones than exist). New states: ${news.join(', ') || 'none'} after ${ops[z] + 1} operation${ops[z] ? 's' : ''}.`, V(z), { z });
+    if (ops[0] >= 0) { r.step(ln(C_EQ, 'if (next == 0) return'), `Zero zeros reached after <b>${ops[0]}</b> operations. (The TreeSet version skips already-seen states by parity so it runs in O(n log n) instead of O(n²).)`, V(0), {}); break; }
+  }
+  return r.steps;
+}
+
+const C_RM = `
+boolean[] suspicious = new boolean[n];
+Queue<Integer> que = new ArrayDeque<>(List.of(k));
+suspicious[k] = true;
+while (!que.isEmpty()) {
+    int u = que.poll();
+    for (int v : adj.get(u)) {
+        indegree[v]--;
+        if (!suspicious[v]) { suspicious[v] = true; que.add(v); }
+    }
+}
+...if (suspicious[i] && indegree[i] > 0) return all methods;`;
+function removeMethods() {
+  const E = [[1, 2], [0, 1], [3, 2]], N = { 0: [0, 1], 1: [1.6, 1], 2: [3.2, 1], 3: [1.6, 2.2] }, adj = adjOf(4, E, true), ind = [0, 1, 2, 0], r = recorder(), sus = [false, true, false, false], q = [1];
+  const V = (cls, ecls) => [graph('who calls whom (method 1 is buggy)', N, E, { directed: true, cls, ecls, badge: Object.fromEntries(ind.map((d, i) => [i, 'in ' + d])) }), A('suspicious', bits(sus))];
+  r.step(0, 'Method 1 has a bug. We would like to delete it and everything it (transitively) calls, but only if <b>no other method</b> depends on any of those.', V(C({ bad: [1] })), {});
+  while (q.length) { const u = q.shift(); adj[u].forEach(v => { ind[v]--; if (!sus[v]) { sus[v] = true; q.push(v); } }); r.step(ln(C_RM, 'indegree[v]--'), `From ${u}: every method it calls becomes suspicious and loses one incoming call (that call is inside the doomed group). Method 2: indegree now ${ind[2]}.`, V(C({ bad: range(0, 3).filter(i => sus[i]) }), EC({ hot: adj[u].map(v => [u, v]) })), {}); }
+  r.step(ln(C_RM, 'indegree[i] > 0'), 'Method 2 is suspicious yet still has indegree 1: method 3 (not suspicious) calls it. Removing 2 would break 3, so <b>nothing</b> can be removed: return all methods [0, 1, 2, 3].', V(C({ bad: [1, 2], warn: [3] }), EC({ bad: [[3, 2]] })), {});
+  return r.steps;
+}
+
+const C_SECRET = `
+Arrays.sort(sorted, (a, b) -> a[2] - b[2]);
+knows[0] = knows[firstPerson] = true;
+while (i < sorted.length) {
+    ...build a small graph of the meetings at this one time...
+    for (int p : adj.keySet()) if (knows[p]) que.add(p);
+    while (!que.isEmpty()) {
+        int u = que.poll();
+        for (int v : adj.get(u)) if (!knows[v]) { knows[v] = true; que.add(v); }
+    }
+}`;
+function secret() {
+  const meet = [[1, 2, 5], [2, 3, 8], [1, 5, 10]], knows = [true, true, false, false, false, false], r = recorder(), N = { 0: [0, 1], 1: [1.5, 1], 2: [3, 0], 3: [4.5, 0], 4: [3, 2], 5: [3, 1] };
+  const V = (act, ecls) => [graph('meetings so far (person 0 and 1 know the secret)', N, meet.map(m => [m[0], m[1]]), { cls: C({ done: range(0, 5).filter(i => knows[i]), active: act || [] }), ecls }), A('knows the secret', bits(knows))];
+  r.step(0, 'Meetings [x, y, time]. The secret passes instantly <i>within</i> a meeting time, but never back in time. So process <b>time slots in order</b>; within one slot, spread from people who already know it.', V(), {});
+  for (const m of meet) { const [a, b, t] = m; const had = knows[a] || knows[b]; if (had) knows[a] = knows[b] = true; r.step(ln(C_SECRET, 'knows[v] = true'), `Time ${t}: meeting ${a} – ${b}. ${had ? 'One of them knows → both know now.' : 'Nobody knows it yet: nothing happens.'}`, V([a, b], EC({ hot: [[a, b]] })), {}); }
+  r.step(0, `People who know the secret at the end: <b>${range(0, 5).filter(i => knows[i]).join(', ')}</b>. Several meetings with the same time form one group: a BFS inside the slot (or Union-Find that is <i>reset</i> for people who did not get the secret) handles chains like 3 – 1 – 0 at time 3.`, V(), {});
+  return r.steps;
+}
+
+const C_CLOSE = `
+int[] d1 = distances(edges, node1), d2 = distances(edges, node2);
+int best = -1, bestDist = Integer.MAX_VALUE;
+for (int i = 0; i < n; i++) {
+    if (d1[i] == -1 || d2[i] == -1) continue;
+    int worst = Math.max(d1[i], d2[i]);
+    if (worst < bestDist) { bestDist = worst; best = i; }
+}`;
+function closest() {
+  const e = [2, 2, 3, -1], E = e.map((v, u) => [u, v]).filter(x => x[1] >= 0), N = { 0: [0, 0], 1: [0, 1.6], 2: [1.8, 0.8], 3: [3.6, 0.8] }, r = recorder();
+  const dist = s => { const d = [-1, -1, -1, -1]; let u = s, t = 0; while (u !== -1 && d[u] < 0) { d[u] = t++; u = e[u]; } return d; }, d1 = dist(0), d2 = dist(1);
+  r.step(0, 'Each node has at most one outgoing edge, so the "BFS" from a node is a single walk. Start nodes: 0 and 1. Find the node both can reach that minimises the larger of the two distances (ties: smaller index).', [graph('edges (0 → 2, 1 → 2, 2 → 3)', N, E, { directed: true, cls: C({ active: [0, 1] }) })], {});
+  r.step(ln(C_CLOSE, 'int[] d1'), `Walk from 0: distances ${d1.map((x, i) => i + ':' + (x < 0 ? '∞' : x)).join(', ')}. Walk from 1: ${d2.map((x, i) => i + ':' + (x < 0 ? '∞' : x)).join(', ')}.`, [A('dist from node 0', d1.map(x => (x < 0 ? '∞' : x))), A('dist from node 1', d2.map(x => (x < 0 ? '∞' : x)))], {});
+  let best = -1, bd = 1e9;
+  for (let i = 0; i < 4; i++) { if (d1[i] < 0 || d2[i] < 0) { r.step(ln(C_CLOSE, 'continue'), `Node ${i}: not reachable from both: skip.`, [A('worst of the two', range(0, 3).map(j => (d1[j] < 0 || d2[j] < 0 ? '–' : Math.max(d1[j], d2[j]))), { active: [i] })], {}); continue; } const w = Math.max(d1[i], d2[i]); if (w < bd) { bd = w; best = i; } r.step(ln(C_CLOSE, 'if (worst < bestDist)'), `Node ${i}: max(${d1[i]}, ${d2[i]}) = ${w}. Best so far: node ${best} (${bd}).`, [A('worst of the two', range(0, 3).map(j => (d1[j] < 0 || d2[j] < 0 ? '–' : Math.max(d1[j], d2[j]))), { active: [i] })], {}); }
+  r.step(0, `Meeting node: <b>${best}</b> (strict < keeps the smaller index on ties).`, [graph('answer', N, E, { directed: true, cls: C({ done: [0, 1], active: [best] }) })], {});
+  return r.steps;
+}
+
+const C_MMW = `
+public int minMaxWeight(int n, int[][] edges, int threshold) {
+    ...reverse every edge...
+    int low = 0, high = maxWeight, answer = -1;
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        if (reachesAll(rev, n, mid)) { answer = mid; high = mid - 1; }
+        else low = mid + 1;
+    }
+    return answer;
+}`;
+function minmax() {
+  const E = [[1, 0, 1], [2, 0, 2], [3, 0, 1], [4, 3, 1], [2, 1, 1]], N = { 0: [1.5, 1], 1: [0, 0], 2: [0, 2], 3: [3, 1], 4: [4.5, 1] }, r = recorder();
+  r.step(0, 'Every node must still reach node 0 after we delete edges, and we want the <b>heaviest kept edge</b> to be as light as possible. Reaching 0 is the same as 0 reaching everyone in the reversed graph, so for a limit w: BFS from 0 over reversed edges of weight ≤ w.', [graph('edges (weights shown)', N, E, { directed: true })], {});
+  let low = 0, high = 2, ans = -1;
+  while (low <= high) {
+    const mid = (low + high) >> 1, seen = new Set([0]), q = [0]; while (q.length) { const u = q.shift(); E.forEach(([a, b, w]) => { if (b === u && w <= mid && !seen.has(a)) { seen.add(a); q.push(a); } }); }
+    const ok = seen.size === 5;
+    r.step(ln(C_MMW, 'reachesAll(rev, n, mid)'), `limit ${mid}: reversed BFS from 0 reaches {${[...seen].sort().join(', ')}} — ${ok ? 'all 5 nodes, feasible. Try a smaller limit.' : 'not everyone, infeasible. Raise the limit.'}`, [graph(`limit = ${mid}`, N, E, { directed: true, cls: C({ done: [...seen] }), ecls: EC({ done: E.filter(([a, b, w]) => w <= mid).map(([a, b]) => [a, b]), ghost: E.filter(([a, b, w]) => w > mid).map(([a, b]) => [a, b]) }) }), A('low, high, mid', [low, high, mid])], { low, high, mid });
+    if (ok) { ans = mid; high = mid - 1; } else low = mid + 1;
+  }
+  r.step(0, `Answer <b>${ans}</b>. (Feasibility is monotone in the limit, so binary search works. Dijkstra with "cost = heaviest edge so far" finds the same value without searching.) The <code>threshold</code> parameter is irrelevant: a BFS tree needs only one outgoing edge per node.`, [graph('answer', N, E, { directed: true, cls: C({ done: range(0, 4) }) })], { answer: ans });
+  return r.steps;
+}
+
+mount({
+  title: "Trees and Advanced Graphs Animations",
+  sub: "A <b>tree is a graph with no cycle</b>, so one DFS from the root needs no visited array (skip the parent). Return something useful from each call (height, sum, counts) and combine children on the way up. When every node needs an answer from <i>all</i> directions, <b>re-root</b>. The second half covers DFS bookkeeping on general graphs: <b>tin/low</b> (bridges), <b>finish order</b> (SCC), <b>binary search + reachability</b>, and <b>functional graphs</b> (one outgoing edge per node).",
+  problems: [
+    { name: "Tree Diameter", hook: "Hold the tree by any leaf, pull the farthest leaf, and that pair spans the tree.", mantra: "FARTHEST FROM ANYWHERE, THEN FARTHEST FROM THAT", statement: "Return the number of edges on the longest path in an undirected tree.",
+      anims: [{ name: "Walkthrough", code: C_DIA, steps: diameter() }],
+      recall: [["Why does the two-BFS trick work?", "Any farthest node from any start is an endpoint of a longest path in a tree."], ["Does it work with negative weights or in general graphs?", "No, only trees with non-negative weights."]], links: [["Find Minimum Diameter After Merging Two Trees", 1], ["Longest Path With Different Adjacent Characters", 7]] },
+    { name: "Find Minimum Diameter After Merging Two Trees", hook: "Plug the two trees together at their middles so that the longest reach on each side is as short as possible.", mantra: "JOIN THE CENTRES: max(d1, d2, \u2308d1/2\u2309 + \u2308d2/2\u2309 + 1)", statement: "Connect one node of each of two trees with a new edge. Return the minimum possible diameter of the result.",
+      anims: [{ name: "Walkthrough", code: C_MERGE, steps: merge() }],
+      recall: [["Why join the centres?", "The centre has the smallest eccentricity, \u2308d / 2\u2309."], ["Why also compare with d1 and d2?", "The longest path may stay inside one tree."]], links: [["Tree Diameter", 0]] },
+    { name: "Maximize the Number of Target Nodes After Connecting Trees I", hook: "A bridge to the second island costs one step, so only k \u2212 1 steps remain over there; and the best landing spot is the same for every start.", mantra: "OWN TREE WITHIN k + BEST OF OTHER TREE WITHIN k \u2212 1", statement: "Two trees. For each node i of the first, connect it to one node of the second so that the most nodes lie within distance k of i. Return the count per i.",
+      anims: [{ name: "Walkthrough", code: C_TGT1, steps: target1() }],
+      recall: [["Why k \u2212 1 for the second tree?", "The connecting edge uses one step."], ["What if k = 0?", "Only i itself counts; the second tree adds nothing."]], links: [["Maximize the Number of Target Nodes After Connecting Trees II", 3]] },
+    { name: "Maximize the Number of Target Nodes After Connecting Trees II", hook: "In a tree, \"even distance\" is just \"same colour\": colour the tree like a chessboard and count.", mantra: "EVEN DISTANCE = SAME COLOUR; ATTACH FOR THE BIGGER OTHER CLASS", statement: "Same setup, but a target is a node at even distance from i (counting through the new edge).",
+      anims: [{ name: "Walkthrough", code: C_TGT2, steps: target2() }],
+      recall: [["Why does parity equal colour?", "Each edge flips the colour, and distance counts edges."], ["Why take the max of the two classes of tree 2?", "Choosing the attachment node decides which class lands at even distance."]], links: [["Maximize the Number of Target Nodes After Connecting Trees I", 2]] },
+    { name: "Most Profitable Path in a Tree", hook: "Bob races to the root first and has already looted the gates he passed; Alice picks the best leaf.", mantra: "BOB'S TIMES FIRST, THEN ALICE'S BEST ROOT-TO-LEAF", statement: "Alice starts at 0 and walks to a leaf; Bob starts at node bob and walks to 0, one edge per second. A gate's price is split if both arrive together and paid fully only by the first arrival. Maximise Alice's net income.",
+      anims: [{ name: "Walkthrough", code: C_PROF, steps: profit() }],
+      recall: [["Why is Bob's route unique?", "In a tree there is exactly one path to 0."], ["What if a gate is reached by Alice later?", "It is already open (Bob took it), so Alice pays or gains nothing."]], links: [["Tree Diameter", 0]] },
+    { name: "Maximum Number of K-Divisible Components", hook: "Snip off every branch whose weight is a multiple of k: each snip is a free extra piece.", mantra: "SUBTREE SUM % k == 0 \u21d2 CUT", statement: "Delete some edges so every component's value sum is divisible by k. Maximise the number of components.",
+      anims: [{ name: "Walkthrough", code: C_KDIV, steps: kdiv() }],
+      recall: [["Why does a divisible subtree always allow a cut?", "The remainder of the tree also sums to a multiple of k."], ["Why long?", "Sums reach n \u00b7 10\u2079 before the modulo."]], links: [["Minimum Time to Collect All Apples in a Tree", 6]] },
+    { name: "Minimum Time to Collect All Apples in a Tree", hook: "Only walk down a branch that has fruit, and pay for the road twice: there and back.", mantra: "EDGE COSTS 2 IF ITS SUBTREE HAS AN APPLE", statement: "Starting at 0, collect all apples in a tree and return to 0. Each edge takes one second. Return the minimum time.",
+      anims: [{ name: "Walkthrough", code: C_APPLE, steps: apples() }],
+      recall: [["Why times 2?", "You must come back to the parent."], ["How do you know a child needs a visit?", "It has an apple itself or its subtree time is non-zero."]], links: [["Maximum Number of K-Divisible Components", 5]] },
+    { name: "Longest Path With Different Adjacent Characters", hook: "A path bends at most once, so at each node join the two tallest chains that do not clash with the node's letter.", mantra: "TOP TWO VALID CHILD CHAINS + 1", statement: "A tree is given by parent[] and each node has a letter. Return the length (in nodes) of the longest path with no two adjacent equal letters.",
+      anims: [{ name: "Walkthrough", code: C_LPATH, steps: lpath() }],
+      recall: [["Why return only one chain upward?", "A path through the parent can use only one side of the child."], ["What if a child has the same letter?", "Skip its chain but still process its own subtree."]], links: [["Tree Diameter", 0]] },
+    { name: "Sum of Distances in Tree", hook: "Answer for the root, then shift the root along each edge: some nodes get one step closer, the rest one step farther.", mantra: "ANS[child] = ANS[parent] \u2212 size + (n \u2212 size)", statement: "Return, for every node, the sum of its distances to all other nodes.",
+      anims: [{ name: "Walkthrough", code: C_SUMD, steps: sumDist() }],
+      recall: [["Why n \u2212 size[v]?", "Every node outside v's subtree is one edge farther from v than from u."], ["Where else does re-rooting appear?", "Any \"answer for every node as root\" question: tree diameter per node, centroid, rerooting DP."]], links: [["Tree Diameter", 0]] },
+    { name: "Number of Nodes in the Sub-Tree With the Same Label", hook: "Every node reports a tally of letters to its parent; its own answer is the tally of its own letter.", mantra: "RETURN A 26-LETTER COUNT UPWARD", statement: "Each node has a lowercase label. For each node return how many nodes in its subtree have the same label.",
+      anims: [{ name: "Walkthrough", code: C_LABEL, steps: subLabel() }],
+      recall: [["What does each call return?", "An int[26] with the letter counts of its subtree."], ["Why not a global count array?", "The counts must be per subtree."]], links: [] },
+    { name: "Minimum Score After Removals on a Tree", hook: "Cutting two edges makes three pieces; each piece's xor follows from subtree xors and an ancestor test.", mantra: "TRY EVERY PAIR OF NODES; xor FROM ANCESTOR RELATION", statement: "Remove two edges, splitting the tree into three components. The score is (largest xor of node values) \u2212 (smallest xor). Return the minimum score.",
+      anims: [{ name: "Walkthrough", code: C_XOR, steps: xorScore() }],
+      recall: [["How do you test ancestry in O(1)?", "tin[u] \u2264 tin[v] and tout[v] \u2264 tout[u]."], ["Why only n\u00b2 pairs?", "Each removed edge is identified by its lower node."]], links: [["Sum of Distances in Tree", 8]] },
+    { name: "Critical Connections in a Network", hook: "If a subtree has no road leading back above its entry point, that entry road is a bridge.", mantra: "low[v] > tin[u] \u21d2 u\u2013v IS A BRIDGE", statement: "Find all edges whose removal disconnects the network.",
+      anims: [{ name: "Walkthrough", code: C_BRIDGE, steps: bridges() }],
+      recall: [["What is low[u]?", "The smallest discovery time reachable from u's subtree via one back edge."], ["Why skip the parent?", "The tree edge back to the parent is not an alternative route."]], links: [["Strongly Connected Components (Kosaraju's Algo)", 12]] },
+    { name: "Strongly Connected Components (Kosaraju's Algo)", hook: "Reverse every road: a DFS started in the last-finished node then stays inside its own district.", mantra: "FINISH ORDER, REVERSE EDGES, DFS IN REVERSE ORDER", statement: "Count the strongly connected components (maximal groups where every node reaches every other) of a directed graph.",
+      anims: [{ name: "Walkthrough", code: C_KOS, steps: kosaraju() }],
+      recall: [["Why reverse the edges?", "It turns the condensation DAG around so the DFS cannot escape to another component."], ["Does Kosaraju work for undirected graphs?", "It gives plain connected components, but a simple DFS or Union-Find is enough."]], links: [["Critical Connections in a Network", 11]] },
+    { name: "Vertex Cover", hook: "Guard enough junctions that every street has a guard at one end; try bigger and bigger guard teams.", mantra: "MONOTONE IN k \u21d2 BINARY SEARCH; TRY ALL k-SUBSETS", statement: "Given an undirected graph, find the size of the smallest vertex cover (a set of vertices touching every edge). n is small.",
+      anims: [{ name: "Walkthrough", code: C_VC, steps: vcover() }],
+      recall: [["Why is binary search valid?", "Adding any vertex to a cover keeps it a cover."], ["What does Gosper's hack do?", "Computes the next integer with the same number of set bits."]], links: [] },
+    { name: "Divide Nodes Into the Maximum Number of Groups", hook: "Groups form BFS layers: the deeper you can make the layering, the more groups, but only if there is no odd cycle.", mantra: "BIPARTITE CHECK + DEEPEST BFS PER COMPONENT, SUMMED", statement: "Place nodes into numbered groups so that every edge joins consecutive groups. Return the maximum number of groups, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_DIV, steps: divide() }],
+      recall: [["Why try every start node?", "The BFS depth depends on the start; the best layering comes from an end of a long path."], ["When is the answer \u22121?", "If some component contains an odd cycle."]], links: [] },
+    { name: "Maximum Employees to Be Invited to a Meeting", hook: "Everyone points at their favourite; the table is a cycle, or a mutual pair with queues of fans behind each.", mantra: "MAX(LONGEST CYCLE, SUM OF 2-CYCLES + THEIR CHAINS)", statement: "Each employee has one favourite. At a round table each person must sit next to their favourite. Return the maximum number of employees that can be invited.",
+      anims: [{ name: "Walkthrough", code: C_EMP, steps: employees() }],
+      recall: [["Why can 2-cycles be combined but long cycles cannot?", "A long cycle fills the whole table; independent 2-cycles with their chains can sit at different spots."], ["What do the chains hold?", "People who like someone in the pair, in a line."]], links: [["Find Closest Node to Given Two Nodes", 20]] },
+    { name: "Evaluate Division", hook: "Currency exchange: a path of rates multiplies into the final rate.", mantra: "a/b = w \u21d2 EDGES a\u2192b = w AND b\u2192a = 1/w; MULTIPLY ALONG THE PATH", statement: "Given equations a / b = value, answer queries x / y (or \u22121 when it cannot be determined).",
+      anims: [{ name: "Walkthrough", code: C_EVAL, steps: evalDiv() }],
+      recall: [["Why store 1 / value on the reverse edge?", "b / a is the reciprocal of a / b."], ["What if x is unknown?", "Return \u22121.0 (even for x / x)."]], links: [] },
+    { name: "Minimum Operations to Equalize Binary String", hook: "You only ever need to know how many zeros are left, not which positions.", mantra: "STATE = NUMBER OF ZEROS; NEXT = z + k \u2212 2f", statement: "Each operation flips exactly k characters of a binary string. Return the minimum operations to make every character 1, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_EQ, steps: equalize() }],
+      recall: [["Why parity sets?", "All next states from z have the same parity (z + k \u2212 2f), so they form a contiguous run of one parity."], ["Why can f only be in [max(0, k \u2212 n + z), min(k, z)]?", "You cannot flip more zeros than exist, nor more ones than exist."]], links: [] },
+    { name: "Remove Methods From Project", hook: "Deleting a buggy method is safe only if no healthy method calls anything in the doomed group.", mantra: "MARK DOOMED GROUP, THEN CHECK EXTERNAL CALLERS", statement: "Method k is buggy; remove it and every method only it can reach. If any remaining method calls a removed one, remove nothing. Return the remaining methods.",
+      anims: [{ name: "Walkthrough", code: C_RM, steps: removeMethods() }],
+      recall: [["What does leftover in-degree mean?", "An edge from a non-suspicious method into a suspicious one."], ["Why return everything in that case?", "Removing would leave a dangling call."]], links: [] },
+    { name: "Find All People With Secret", hook: "A rumour spreads instantly inside one hour, but never backwards in time.", mantra: "SORT BY TIME; SPREAD INSIDE EACH TIME SLOT", statement: "Persons 0 and firstPerson share a secret. Meetings (x, y, time) pass it on instantly. Return everyone who eventually knows it.",
+      anims: [{ name: "Walkthrough", code: C_SECRET, steps: secret() }],
+      recall: [["Why group by time?", "Meetings at the same time can chain; meetings at different times cannot go backwards."], ["What must the DSU do after a slot?", "Detach people not connected to person 0, so they do not carry a false link into later slots."]], links: [] },
+    { name: "Find Closest Node to Given Two Nodes", hook: "Two walkers follow one-way arrows; the best meeting place minimises whoever has to walk farther.", mantra: "MIN OF MAX(d1, d2); TIES \u2192 SMALLER INDEX", statement: "Each node has at most one outgoing edge. Return the node reachable from both node1 and node2 that minimises max(dist1, dist2), smallest index on ties, or \u22121.",
+      anims: [{ name: "Walkthrough", code: C_CLOSE, steps: closest() }],
+      recall: [["Why strict &lt; in the scan?", "It keeps the smallest index among equal answers."], ["What if a node is reachable from one source only?", "It is skipped."]], links: [["Maximum Employees to Be Invited to a Meeting", 15]] },
+    { name: "Minimize the Maximum Edge Weight of Graph", hook: "Lower the ceiling on road weights until some node can no longer find its way to the capital.", mantra: "BINARY SEARCH w; REVERSED BFS FROM 0 USING EDGES \u2264 w", statement: "Delete edges so that every node can still reach node 0 (and each node keeps at most <code>threshold</code> outgoing edges). Minimise the heaviest remaining edge.",
+      anims: [{ name: "Walkthrough", code: C_MMW, steps: minmax() }],
+      recall: [["Why reverse the edges?", "\"Everyone reaches 0\" becomes \"0 reaches everyone\"."], ["What is the minimax Dijkstra cost?", "The maximum edge weight along the path, using max instead of sum."]], links: [] }
+  ]
+});
+
+</script>
+</body>
+</html>

@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bit Magic Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, tree, recorder, mount, ln } = BrainAnim;
+const bin = (x, w) => (x >>> 0).toString(2).padStart(w, '0').slice(-w);
+// Bits of x as a lane, MSB on the left; hl = bit positions (0 = LSB) to highlight
+const B = (name, x, w, o = {}) => { const s = bin(x, w).split(''); const pos = p => w - 1 - p; const map = k => (o[k] || []).map(pos); return lane(`${name} = ${x}`, s, { active: map('active'), done: map('done'), bad: map('bad'), warn: map('warn') }); };
+const story = (list) => { const r = recorder(); for (const [line, say, lanes, vars] of list) r.step(line, say, lanes, vars); return r.steps; };
+
+const C_AND = `
+while (right > left) right &= right - 1;   // drop the lowest set bit
+return right;`;
+function and() { let l = 5, r = 7; const R = recorder(); R.step(0, `AND of 5..7. Any bit that changes inside the range becomes 0 — only the <b>common prefix</b> survives.`, [B('left', l, 4), B('right', r, 4)]); while (r > l) { const nr = r & (r - 1); R.step(ln(C_AND, 'lowest set bit'), `${r} & ${r - 1} = ${nr} (drop the lowest 1).`, [B('left', l, 4), B('right', nr, 4, { bad: [Math.log2(r & -r)] })], { right: nr }); r = nr; } R.step(ln(C_AND, 'return'), `right ≤ left → answer <b>${r}</b> (common prefix 1xx).`, [B('answer', r, 4, { done: [2] })]); return R.steps; }
+
+const C_XP = `
+if (nums2.length % 2 == 1) for (int x : nums1) res ^= x;   // each nums1[i] appears n2 times
+if (nums1.length % 2 == 1) for (int x : nums2) res ^= x;   // each nums2[j] appears n1 times`;
+function xp() { return story([[0, `[2,1,3] × [10,2,5,0]: every pair XOR. Each nums1 element appears <b>4</b> times (even → cancels), each nums2 element <b>3</b> times (odd → survives).`, [lane('nums1 (×4)', [2, 1, 3], { ghost: [0, 1, 2] }), lane('nums2 (×3)', [10, 2, 5, 0])]], [ln(C_XP, 'nums1.length % 2'), `Answer = 10 ^ 2 ^ 5 ^ 0 = <b>13</b>.`, [B('answer', 13, 4, { done: [0, 2, 3] })]]]); }
+
+const C_78 = `
+public static int sevenEighthsFloor(int n) { return ((n << 3) - n) >> 3; }     // C++ file: floor!
+public static int sevenEighthsCeil(int n)  { return (((n << 3) - n) + 7) >> 3; }  // what was asked`;
+function s78() { return story([[ln(C_78, 'sevenEighthsFloor'), `n = 9: n << 3 = 72, 72 − 9 = 63 = 7n. 63 >> 3 = 7 = ⌊63/8⌋. But the question asks for the <b>ceiling</b>.`, [B('7n', 63, 7), B('>> 3', 7, 7, { bad: [0, 1, 2] })]], [ln(C_78, 'sevenEighthsCeil'), `⌈a/8⌉ = ⌊(a + 7)/8⌋: (63 + 7) >> 3 = <b>8</b>. ⚠ The original C++ prints the floor.`, [B('7n + 7', 70, 7), B('>> 3', 8, 7, { done: [3] })]]]); }
+
+const C_ABC = `
+cur = ((cur << 1) & mask) | (s.charAt(i) - '0');     // rolling k-bit window
+if (i >= k - 1 && !seen[cur]) { seen[cur] = true; if (--need == 0) return true; }`;
+function abc() { const s = '00110110', k = 2; let cur = 0; const seen = new Set(); const R = recorder(); R.step(0, `Need all 2^k = 4 codes of length 2. Keep the last k bits as an <b>integer window</b>.`, [lane('s', s.split(''))]); for (let i = 0; i < s.length; i++) { cur = ((cur << 1) & 3) | +s[i]; if (i >= k - 1) seen.add(cur); R.step(ln(C_ABC, 'rolling'), i >= k - 1 ? `window "${bin(cur, 2)}" = ${cur} → seen {${[...seen].sort().join(', ')}}` : `filling the first window`, [lane('s', s.split(''), { active: i >= 1 ? [i - 1, i] : [i] }), lane('seen codes', [0, 1, 2, 3].map(c => bin(c, 2)), { done: [...seen] })]); if (seen.size === 4) { R.step(ln(C_ABC, 'return true'), `All 4 codes seen → <b>true</b>.`, [lane('seen codes', ['00', '01', '10', '11'], { done: [0, 1, 2, 3] })]); break; } } return R.steps; }
+
+const C_CCB = `
+if ((i & (i - 1)) == 0) bits++;          // i is a power of two → one more bit
+res = ((res << bits) | i) % MOD;`;
+function ccb() { let res = 0, bits = 0; const R = recorder(); R.step(0, `Concatenate binary 1, 10, 11 … Shift left by the length of i, then OR i in.`, [lane('res', ['']) ]); for (let i = 1; i <= 3; i++) { if ((i & (i - 1)) === 0) bits++; res = (res << bits) | i; R.step(ln(C_CCB, 'res ='), `i = ${i} (${bin(i, bits)}, ${bits} bits): res = ${bin(res, 5).replace(/^0+/, '')} = ${res}.`, [lane('res bits', bin(res, 5).replace(/^0+/, '').split(''), { done: [] })], { bits }); } R.step(0, `n = 3 → <b>27</b> ("11011"). Length grows exactly at powers of two.`, [lane('answer', [27], { done: [0] })]); return R.steps; }
+
+const C_MBA = `
+for (int j = 1; j < 32; j++) {
+    if ((num & (1 << j)) != 0) continue;     // still in the trailing run of 1s
+    res[i] = num ^ (1 << (j - 1));           // clear the LAST 1 of that run
+    break;
+}`;
+function mba() { return story([[0, `x | (x + 1) turns on x's lowest 0. Reverse it: num = 11 = 1011 ends with the run "11".`, [B('num', 11, 4, { active: [0, 1] })]], [ln(C_MBA, 'clear the LAST 1'), `First 0 is bit 2 → clear bit 1 → x = 1001 = 9. Check: 9 | 10 = 1011 ✓. (num = 2 is even → −1.)`, [B('x', 9, 4, { bad: [1] }), B('x + 1', 10, 4), B('x | (x+1)', 11, 4, { done: [0, 1, 3] })]]]); }
+
+const C_CB = `
+for (int i = 1; i <= n; i++) res[i] = res[i >> 1] + (i & 1);   // drop the last bit, add it back`;
+function cb() { const res = [0]; const R = recorder(); for (let i = 1; i <= 8; i++) { res[i] = res[i >> 1] + (i & 1); R.step(ln(C_CB, 'drop the last bit'), `${i} = ${bin(i, 4)}: res[${i >> 1}] + ${i & 1} = ${res[i]}`, [lane('res', [...res], { showIdx: true, active: [i], done: [i >> 1] })]); } return R.steps; }
+
+const C_CTE = `
+pre[i] = arr[0] ^ … ^ arr[i-1]
+if (pre[k] == pre[i]) triplets += k - i - 1;   // XOR(i..k-1) = 0 → any j in between works`;
+function cte() { return story([[0, `a == b ⇔ a ^ b == 0 ⇔ XOR of the whole block arr[i..k] is 0. Then <b>every</b> split point j inside works.`, [lane('arr', [2, 3, 1, 6, 7]), lane('prefix', [0, 2, 1, 0, 6, 1], { showIdx: true })]], [ln(C_CTE, 'k - i - 1'), `pre[0] = pre[3] = 0 → block [2,3,1], 2 splits. pre[2] = pre[5] = 1 → block [1,6,7], 2 splits. Total <b>4</b>.`, [lane('prefix', [0, 2, 1, 0, 6, 1], { showIdx: true, done: [0, 3], warn: [2, 5] })]]]); }
+
+const C_OAP = `
+arr[i] = pref[i] ^ pref[i - 1];      // XOR cancels the shared prefix`;
+function oap() { const p = [5, 2, 0, 3, 1]; const a = [5]; const R = recorder(); R.step(0, `pref[i] = arr[0] ^ … ^ arr[i]. XOR is its own inverse.`, [lane('pref', p)]); for (let i = 1; i < 5; i++) { a.push(p[i] ^ p[i - 1]); R.step(ln(C_OAP, 'cancels'), `arr[${i}] = ${p[i]} ^ ${p[i - 1]} = ${a[i]}`, [lane('pref', p, { active: [i - 1, i] }), lane('arr', [...a], { done: [i] })]); } return R.steps; }
+
+const C_GRAY = `
+for (int b = 0; b < n; b++)
+    for (int i = res.size() - 1; i >= 0; i--) res.add(res.get(i) | (1 << b));   // mirror + set bit b`;
+function gray() { let res = [0]; const R = recorder(); R.step(0, `Start with [0]. Each round <b>mirrors</b> the list and sets a new top bit on the mirrored half — neighbours still differ by one bit.`, [lane('codes', res.map(x => bin(x, 3)))]); for (let b = 0; b < 3; b++) { const add = []; for (let i = res.length - 1; i >= 0; i--) add.push(res[i] | (1 << b)); const old = res.length; res = res.concat(add); R.step(ln(C_GRAY, 'mirror'), `bit ${b}: mirrored half gets bit ${b} set.`, [lane('codes', res.map(x => bin(x, 3)), { done: [...Array(add.length).keys()].map(k => k + old) })]); } return R.steps; }
+
+const C_LC = `
+for (int b = 0; b < 24; b++) {
+    int c = 0;
+    for (int x : candidates) if ((x & (1 << b)) != 0) c++;   // numbers sharing bit b
+    best = Math.max(best, c);
+}`;
+function lc() { const a = [16, 17, 71, 62, 12, 24, 14]; return story([[0, `AND > 0 ⇔ all chosen numbers share <b>some</b> bit. So count, for every bit, how many numbers have it.`, a.map(x => B(String(x), x, 7))], [ln(C_LC, 'numbers sharing'), `Bit 4 (16) is set in 16, 17, 62, 24 → <b>4</b> — the best column.`, a.map(x => B(String(x), x, 7, { done: x & 16 ? [4] : [] }))]]); }
+
+const C_ADD = `
+int sum = carry;
+if (i >= 0) sum += a.charAt(i--) - '0';
+if (j >= 0) sum += b.charAt(j--) - '0';
+sb.append(sum % 2);  carry = sum / 2;`;
+function add() { const a = '1010', b = '1011'; let i = 3, j = 3, carry = 0, out = ''; const R = recorder(); while (i >= 0 || j >= 0 || carry) { let s = carry; if (i >= 0) s += +a[i]; if (j >= 0) s += +b[j]; out = (s % 2) + out; carry = s >> 1; R.step(ln(C_ADD, 'carry = sum / 2'), `column sum ${s} → write ${s % 2}, carry ${carry}.`, [lane('a', a.split(''), { active: i >= 0 ? [i] : [] }), lane('b', b.split(''), { active: j >= 0 ? [j] : [] }), lane('result', out.split(''))], { carry }); i--; j--; } R.step(0, `<b>${out}</b> = 10 + 11 = 21.`, [lane('result', out.split(''), { done: [...out].map((_, k) => k) })]); return R.steps; }
+
+const C_GAP = `
+if ((n >> i & 1) == 0) continue;
+if (prev != -1) best = Math.max(best, i - prev);    // distance between adjacent 1s
+prev = i;`;
+function gap() { return story([[0, `22 = 10110. Distance between <b>adjacent</b> 1 bits.`, [B('n', 22, 5)]], [ln(C_GAP, 'adjacent 1s'), `1s at positions 1, 2, 4 → gaps 1 and 2 → <b>2</b>.`, [B('n', 22, 5, { done: [2, 4] })]]]); }
+
+const C_ALT = `
+long x = n ^ (n >> 1);            // alternating ⇔ x is all ones
+return (x & (x + 1)) == 0;`;
+function alt() { return story([[ln(C_ALT, 'n >> 1'), `n = 5 = 101. n >> 1 = 010. XOR = 111 — all ones because every neighbour differs.`, [B('n', 5, 3), B('n >> 1', 2, 3), B('x', 7, 3, { done: [0, 1, 2] })]], [ln(C_ALT, 'x + 1'), `All ones + 1 = 1000 shares no bit with 0111 → <b>true</b>. n = 7 → x = 100 → false.`, [B('x', 7, 4), B('x + 1', 8, 4)]]]); }
+
+const C_P5 = `
+rem = (rem * 2 + b) % 5;      // appending a bit doubles the value and adds it
+res.add(rem == 0);`;
+function p5() { const a = [1, 0, 1, 0, 0, 1]; let rem = 0, v = 0; const R = recorder(); a.forEach((b, i) => { rem = (rem * 2 + b) % 5; v = v * 2 + b; R.step(ln(C_P5, 'doubles'), `prefix ${a.slice(0, i + 1).join('')} = ${v}, remainder ${rem} → ${rem === 0}`, [lane('bits', a, { active: [i], done: [] }), lane('rem', [rem], { done: rem === 0 ? [0] : [] })], { value: v }); }); return R.steps; }
+
+const C_WATCH = `
+for (int h = 0; h < 12; h++) for (int m = 0; m < 60; m++)
+    if (Integer.bitCount(h) + Integer.bitCount(m) == turnedOn) res.add(...)`;
+function watch() { return story([[ln(C_WATCH, 'bitCount'), `Only 720 times exist — <b>enumerate</b> them all. 3:05 → 11 (2 LEDs) + 000101 (2 LEDs) = 4 LEDs.`, [B('hour 3', 3, 4, { done: [0, 1] }), B('minute 5', 5, 6, { done: [0, 2] })]]]); }
+
+const C_CMP = `
+int bits = 32 - Integer.numberOfLeadingZeros(n);
+int mask = (1 << bits) - 1;            // all ones, as wide as n
+return n ^ mask;`;
+function cmp() { return story([[ln(C_CMP, 'as wide as n'), `n = 10 = 1010 (4 bits) → mask 1111.`, [B('n', 10, 4), B('mask', 15, 4)]], [ln(C_CMP, 'n ^ mask'), `1010 ^ 1111 = 0101 = <b>5</b>. Leading zeros are not flipped.`, [B('answer', 5, 4, { done: [0, 2] })]]]); }
+function cmp2() { return story([[ln(C_CMP, 'as wide as n'), `num = 5 = 101 → highestOneBit = 100 → mask = (100 << 1) − 1 = 111.`, [B('num', 5, 3), B('mask', 7, 3)]], [ln(C_CMP, 'n ^ mask'), `101 ^ 111 = 010 = <b>2</b>.`, [B('answer', 2, 3, { done: [1] })]]]); }
+
+const C_MBA1 = `
+for (int x = 0; x < nums[i]; x++) if ((x | (x + 1)) == nums[i]) { res[i] = x; break; }`;
+function mba1() { return story([[ln(C_MBA1, 'x | (x + 1)'), `Values ≤ 1000, so just try x = 0, 1, 2 …: num = 5 → x = 4 (100 | 101 = 101).`, [B('x', 4, 3), B('x+1', 5, 3), B('or', 5, 3, { done: [0, 2] })]]]); }
+
+const C_POW = `
+return n > 0 && (n & (n - 1)) == 0;    // a single 1 bit`;
+function pow() { return story([[ln(C_POW, 'single 1 bit'), `16 = 10000, 15 = 01111 → AND = 0 → <b>power of two</b>.`, [B('n', 16, 5, { done: [4] }), B('n − 1', 15, 5), B('AND', 0, 5)]], [ln(C_POW, 'single 1 bit'), `12 = 01100, 11 = 01011 → AND = 01000 ≠ 0 → not a power.`, [B('n', 12, 5), B('n − 1', 11, 5), B('AND', 8, 5, { bad: [3] })]]]); }
+
+const C_PSB = `
+int primes = (1<<2)|(1<<3)|(1<<5)|(1<<7)|(1<<11)|(1<<13)|(1<<17)|(1<<19);   // a prime lookup MASK
+if ((primes >> Integer.bitCount(x) & 1) == 1) cnt++;`;
+function psb() { return story([[ln(C_PSB, 'lookup MASK'), `Counts ≤ 20, so primes fit in one int: bit p is set iff p is prime.`, [B('primes', 2 + 4 + 8 + 32 + 128, 8, { done: [2, 3, 5, 7] })]], [ln(C_PSB, 'cnt++'), `6..10: 110(2✓) 111(3✓) 1000(1✗) 1001(2✓) 1010(2✓) → <b>4</b>.`, [lane('popcounts', ['6:2', '7:3', '8:1', '9:2', '10:2'], { done: [0, 1, 3, 4], bad: [2] })]]]); }
+
+const C_REV = `
+for (int i = 0; i < 32; i++) {
+    res = (res << 1) | (n & 1);    // take n's last bit, push it into res
+    n >>>= 1;
+}`;
+function rev() { let n = 0b1011, res = 0; const R = recorder(); R.step(0, `(8-bit demo) 00001011 reversed. Take bits from n's <b>right</b>, push them onto res's right.`, [B('n', n, 8), B('res', res, 8)]); for (let i = 0; i < 8; i++) { res = (res << 1) | (n & 1); n >>>= 1; R.step(ln(C_REV, 'push it'), `step ${i + 1}`, [B('n', n, 8), B('res', res, 8, { active: [0] })]); } R.step(0, `Result 11010000.`, [B('res', res, 8, { done: [4, 6, 7] })]); return R.steps; }
+
+const C_SAS = `
+int x = 1;
+while (x < n) x = (x << 1) | 1;     // 1, 3, 7, 15, …`;
+function sas() { return story([[ln(C_SAS, '1, 3, 7'), `n = 10: try 1, 11, 111, 1111 … first ≥ 10 is 1111 = <b>15</b>.`, [B('x', 15, 4, { done: [0, 1, 2, 3] })]]]); }
+
+const C_SXS = `
+int or = 0;
+for (int x : nums) or |= x;
+return or << (nums.length - 1);    // each present bit is set in exactly half the subsets`;
+function sxs() { return story([[0, `[5,1,6]: 8 subsets. A bit that appears in any number is ON in the XOR of exactly <b>half</b> the subsets.`, [B('5', 5, 3), B('1', 1, 3), B('6', 6, 3)]], [ln(C_SXS, 'exactly half'), `OR = 111 = 7; 7 × 2^(3−1) = <b>28</b>.`, [B('OR', 7, 3, { done: [0, 1, 2] })]]]); }
+
+const C_SNK = `
+xor of nums ^ 0 ^ 1 ^ … ^ (n−1)   → a ^ b      (everything else cancels)
+int low = xor & -xor;                          // a bit where a and b differ
+split by that bit → a in one group, b in the other`;
+function snk() { return story([[ln(C_SNK, 'a ^ b'), `[0,1,1,0] (n = 2): XOR with 0,1 → 0 ^ 1 = 1 = a ^ b.`, [lane('nums', [0, 1, 1, 0])]], [ln(C_SNK, 'split'), `Lowest bit of 1 → group "bit0 = 1": 1,1,1 → 1; group "bit0 = 0": 0,0,0 → 0 → <b>[1, 0]</b>. Same trick as Single Number III.`, [lane('answer', [1, 0], { done: [0, 1] })]]]); }
+
+const C_LSN = `
+if (allZero) return 0;
+return xor == 0 ? n - 1 : n;     // drop ONE non-zero element to break a zero XOR`;
+function lsn() { return story([[ln(C_LSN, 'drop ONE'), `[1,2,3]: XOR = 0. Removing one non-zero element x changes the XOR to x ≠ 0 → <b>2</b>.`, [lane('nums', [1, 2, 3], { ghost: [0] }), B('xor', 0, 2)]]]); }
+
+const C_MLC = `
+mask of each word (skip words with repeated letters)
+best = solve(i + 1, used);                                   // skip
+if ((used & masks[i]) == 0) best = max(best, solve(i + 1, used | masks[i]));   // take`;
+function mlc() { return story([[0, `["un","iq","ue"] → 26-bit masks. Overlap check is one AND.`, [lane('words', ['un', 'iq', 'ue'])]], [ln(C_MLC, '(used & masks[i]) == 0'), `"un" | "iq" ok (4 letters). "ue" shares u with "un" → AND ≠ 0. Answer <b>4</b>.`, [lane('choice', ['un ✓', 'iq ✓', 'ue ✗'], { done: [0, 1], bad: [2] })]]]); }
+
+const C_PRICE = `
+countBit(n, b) = (n + 1) / 2^(b+1) · 2^b + max(0, (n + 1) % 2^(b+1) − 2^b)
+binary search the largest num whose total price (bits b = x−1, 2x−1, …) ≤ k`;
+function price() { return story([[0, `Bit b of 0..n follows a pattern: 2^b zeros, 2^b ones, repeating. Counting it is a <b>formula</b>, not a loop.`, [lane('bit 1 of 0..7', [0, 0, 1, 1, 0, 0, 1, 1], { done: [2, 3, 6, 7] })]], [ln(C_PRICE, 'binary search'), `Total price grows with num → binary search. k = 7, x = 2 → <b>9</b>.`, [lane('answer', [9], { done: [0] })]]]); }
+
+const C_MPW = `
+for (char c : words[i]) mask[i] |= 1 << (c - 'a');
+if ((mask[i] & mask[j]) == 0) best = max(best, len[i] * len[j]);   // no shared letter`;
+function mpw() { return story([[ln(C_MPW, 'no shared letter'), `"abcw" and "xtfn" share no letter: their masks AND to 0 → 4 × 4 = <b>16</b>.`, [lane('abcw', ['a', 'b', 'c', 'w']), lane('xtfn', ['x', 't', 'f', 'n'])]]]); }
+
+const C_MXQ = `
+res[i] = xor ^ mask;            // k that flips xor to all ones
+xor ^= nums[n - 1 - i];         // remove the last element`;
+function mxq() { const a = [0, 1, 1, 3]; let x = 0 ^ 1 ^ 1 ^ 3; const R = recorder(); for (let i = 0; i < 4; i++) { R.step(ln(C_MXQ, 'all ones'), `prefix XOR ${bin(x, 2)} → best k = ${bin(x ^ 3, 2)} = ${x ^ 3} (makes 11).`, [lane('nums', a, { ghost: [...Array(i).keys()].map(k => 3 - k) }), B('k', x ^ 3, 2, { done: [0, 1] })]); x ^= a[3 - i]; } return R.steps; }
+
+const C_MXT = `
+want = (x >>> b & 1) ^ 1;                     // the OPPOSITE bit
+if (cur.kid[want] != null) { val |= 1 << b; cur = cur.kid[want]; }
+else cur = cur.kid[want ^ 1];`;
+function mxt() { return story([[0, `[3,10,5,25,2,8] in a bit trie. For 5 = 00101 we want 11010 — go <b>opposite</b> at every bit when possible.`, [B('5', 5, 5), B('25', 25, 5)]], [ln(C_MXT, 'OPPOSITE'), `5 → opposite path finds 25: 00101 ^ 11001 = 11100 = <b>28</b>.`, [B('5 ^ 25', 28, 5, { done: [4, 3, 2] })]]]); }
+
+const C_MXP = `
+bits ≥ n of x are 0 → copy a's and b's high bits
+for (i = n-1 .. 0) {
+    if (a_i == b_i) set bit i in both;                  // 1·1 beats 0·0
+    else give the 1 to the SMALLER of (xa, xb);         // balance → bigger product
+}`;
+function mxp() { return story([[0, `a = 12, b = 5, n = 4. Product of two numbers with a fixed sum is largest when they are <b>balanced</b>.`, [B('a', 12, 4), B('b', 5, 4)]], [ln(C_MXP, 'SMALLER'), `bit 3 differs, tie (0 vs 0) → xa = 8. bit 2 equal (1,1) → both: 12 / 4. bit 1 equal (0,0) → both: 14 / 6. bit 0 differs → the smaller (xb) gets it: 14 / 7. 14 × 7 = <b>98</b>.`, [B('a ^ x', 7, 4), B('b ^ x', 14, 4)]]]); }
+
+const C_MNX = `
+for (b = 31 .. 0) if num1 has bit b and need > 0: set it in x      // cancel num1's HIGH bits
+for (b = 0 .. 31) if x lacks bit b and need > 0: set it            // extra bits as LOW as possible`;
+function mnx() { return story([[0, `num1 = 1 (0001), num2 = 12 (2 set bits). x needs exactly 2 bits and x ^ num1 small.`, [B('num1', 1, 4)]], [ln(C_MNX, 'HIGH bits'), `Copy num1's bit 0. One bit left → lowest free bit 1 → x = 0011 = <b>3</b>.`, [B('x', 3, 4, { done: [0], warn: [1] })]]]); }
+
+const C_MAE = `
+for (int i = 1; i < n; i++) num = (num + 1) | x;     // next number that still contains x
+bonus: write the bits of n − 1 into x's ZERO positions`;
+function mae() { let num = 4; const R = recorder(); R.step(0, `n = 3, x = 4 (100). All elements must contain x's bits.`, [B('num', num, 4)]); for (let i = 1; i < 3; i++) { num = (num + 1) | 4; R.step(ln(C_MAE, 'still contains'), `(prev + 1) | 4 = ${num}`, [B('num', num, 4, { done: [2] })]); } R.step(ln(C_MAE, 'ZERO positions'), `Shortcut: n − 1 = 2 = 10 poured into the zero slots of 1_00 → 110 = <b>6</b>.`, [B('answer', 6, 4, { done: [2], warn: [1] })]); return R.steps; }
+
+const C_FLIP = `
+if (z == 1) flips += (x | y) == 1 ? 0 : 1;     // need at least one 1
+else        flips += x + y;                    // both must be 0`;
+function flip() { return story([[0, `a = 2, b = 6, c = 5. Compare bit by bit.`, [B('a', 2, 3), B('b', 6, 3), B('c', 5, 3)]], [ln(C_FLIP, 'both must be 0'), `bit 0: c=1, a=b=0 → 1 flip. bit 1: c=0, a=1, b=1 → 2 flips. bit 2: c=1, b=1 → 0. Total <b>3</b>.`, [B('a', 2, 3, { bad: [1] }), B('b', 6, 3, { bad: [1] }), B('c', 5, 3, { warn: [0] })]]]); }
+
+const C_MOK = `
+return Integer.bitCount(xor ^ k);    // each differing bit costs exactly one flip`;
+function mok() { return story([[ln(C_MOK, 'differing bit'), `[2,1,3,4]: XOR = 4 (100), k = 1 (001). Differences 101 → <b>2</b> flips.`, [B('xor', 4, 3), B('k', 1, 3), B('diff', 5, 3, { bad: [0, 2] })]]]); }
+
+const C_OBO = `
+f[i] = 2^(i+1) − 1                       // ops to clear a lone bit i
+for set bits from HIGH to LOW: res += f[i], −f[i], +f[i] …   (alternating)`;
+function obo() { return story([[0, `Clearing a lone bit i costs f(i) = 2^(i+1) − 1 (1, 3, 7, 15 …).`, [lane('f(i)', [1, 3, 7, 15, 31], { showIdx: true })]], [ln(C_OBO, 'alternating'), `n = 6 = 110: f(2) − f(1) = 7 − 3 = <b>4</b>. The lower bit is already "on the way", so it is subtracted. (This is the inverse Gray code.)`, [B('n', 6, 3, { done: [2], warn: [1] })]]]); }
+
+const C_NBX = `
+int x = 0;
+for (int d : derived) x ^= d;      // each original bit appears exactly twice
+return x == 0;`;
+function nbx() { return story([[ln(C_NBX, 'twice'), `derived[i] = o[i] ^ o[i+1] (wrapping). XOR of all derived = every o[i] twice = 0. [1,1,0] → 0 → <b>true</b>; [1,0] → 1 → false.`, [lane('derived', [1, 1, 0]), lane('original', [0, 1, 0], { done: [0, 1, 2] })]]]); }
+
+const C_ONE = `
+while (n != 0) { n &= n - 1; c++; }    // each step removes the lowest 1`;
+function one() { let n = 11, c = 0; const R = recorder(); R.step(0, `n = 11 = 1011.`, [B('n', n, 4)]); while (n) { const lo = Math.log2(n & -n); n &= n - 1; c++; R.step(ln(C_ONE, 'lowest 1'), `remove bit ${lo} → ${bin(n, 4)}`, [B('n', n, 4, { bad: [lo] })], { count: c }); } return R.steps; }
+
+const C_STEP = `
+for (int i = s.length() - 1; i > 0; i--) {
+    if ((bit + carry) % 2 == 1) { steps += 2; carry = 1; }   // odd: +1 then /2
+    else steps += 1;                                         // even: /2
+}
+return steps + carry;`;
+function step() { const s = '1101'; let st = 0, c = 0; const R = recorder(); for (let i = 3; i > 0; i--) { const odd = (+s[i] + c) % 2 === 1; if (odd) { st += 2; c = 1; } else st += 1; R.step(ln(C_STEP, odd ? 'odd' : 'even'), `bit ${s[i]} + carry → ${odd ? 'odd: +1 and halve (2 steps)' : 'even: halve (1 step)'}`, [lane('s', s.split(''), { active: [i] })], { steps: st, carry: c }); } R.step(ln(C_STEP, 'steps + carry'), `Leading 1 + carry 1 = 10 → one more halving → <b>${st + c}</b>.`, [lane('answer', [st + c], { done: [0] })]); return R.steps; }
+
+const C_UX1 = `
+if (n <= 2) return n;
+int ans = 1; while (ans <= n) ans <<= 1;     // next power of two above n`;
+function ux1() { return story([[ln(C_UX1, 'next power'), `Permutation of 1..n (n ≥ 3): triplet XORs reach <b>every</b> value below the next power of two. n = 5 → 8 values (0..7).`, [lane('reachable', [0, 1, 2, 3, 4, 5, 6, 7], { done: [0, 1, 2, 3, 4, 5, 6, 7] })]]]); }
+
+const C_UX2 = `
+pair[nums[i] ^ nums[j]] = true;                          // all pair XORs (i ≤ j)
+for (v with pair[v]) for (int x : nums) trip[v ^ x] = true;
+boolean arrays of size T = next power of two above max (HashSet is too slow in Java)`;
+function ux2() { return story([[ln(C_UX2, 'pair XORs'), `[6,7,8,9]: pair XORs {0,1,14,15,…}. XORs never exceed T − 1, so a boolean array of size T replaces a set.`, [lane('pairs', [0, 1, 14, 15])]], [ln(C_UX2, 'trip['), `XOR each pair value with each number → {6,7,8,9} → <b>4</b>.`, [lane('triplets', [6, 7, 8, 9], { done: [0, 1, 2, 3] })]]]); }
+
+const C_WS = `
+mask ^= 1 << (c - 'a');                           // parity of each letter a..j
+res += cnt[mask];                                 // all even
+for (b = 0..9) res += cnt[mask ^ (1 << b)];       // exactly one odd letter
+cnt[mask]++;`;
+function ws() { const s = 'aba'; let m = 0, res = 0; const cnt = new Map([[0, 1]]); const R = recorder(); R.step(0, `A substring's letter parities = XOR of two prefix masks. Wonderful ⇔ the masks are equal or differ in <b>one</b> bit.`, [lane('word', s.split(''))]); for (let i = 0; i < 3; i++) { m ^= 1 << (s.charCodeAt(i) - 97); let add = cnt.get(m) || 0; for (let b = 0; b < 10; b++) add += cnt.get(m ^ (1 << b)) || 0; res += add; cnt.set(m, (cnt.get(m) || 0) + 1); R.step(ln(C_WS, 'exactly one odd'), `'${s[i]}' → mask ${bin(m, 2)} (b a): +${add}.`, [lane('word', s.split(''), { active: [i] }), lane('mask counts', [...cnt].map(([k, v]) => `${bin(k, 2)}:${v}`))], { total: res }); } R.step(0, `Total <b>${res}</b>: a, b, a, aba.`, [lane('word', s.split(''))]); return R.steps; }
+
+const C_PART = `
+masks over each half → left[size] and right[size] = subset sums
+for size s from the left, binary-search right[N − s] for b ≈ (total − 2a) / 2
+diff = |total − 2(a + b)|`;
+function part() { return story([[0, `[3,9,7,3]: halves [3,9] and [7,3]. Enumerate subsets of each half <b>by size</b> with bitmasks.`, [lane('left sums by size', ['0: 0', '1: 3, 9', '2: 12']), lane('right sums by size', ['0: 0', '1: 3, 7', '2: 10'])]], [ln(C_PART, 'binary-search'), `size 1 + size 1: a = 3, target b = (22 − 6)/2 = 8 → lower_bound 7? no, 7 &lt; 8 → finds nothing; a = 9 → target 2 → b = 3 → |22 − 24| = <b>2</b>.`, [lane('best', [2], { done: [0] })]]]); }
+
+const C_SAF = `
+score = m << (n - 1);                               // every row's first bit made 1
+for each column j: ones = cells equal to their row's first cell
+score += max(ones, m - ones) << (n - 1 - j);        // flip the column if that gives more 1s`;
+function saf() { return story([[0, `Leading bit is worth more than all later bits together → first make <b>every row start with 1</b>.`, [grid('grid', [[0, 0, 1, 1], [1, 0, 1, 0], [1, 1, 0, 0]])]], [ln(C_SAF, 'first bit made 1'), `Flip row 0 → [1,1,0,0].`, [grid('grid', [[1, 1, 0, 0], [1, 0, 1, 0], [1, 1, 0, 0]], { cls: (i) => (i === 0 ? 'warn' : '') })]], [ln(C_SAF, 'flip the column'), `Columns with more 0s get flipped: column 2 (1 one) and column 3 (0 ones). 1111 + 1001 + 1111 = 15 + 9 + 15 = <b>39</b>.`, [grid('grid', [[1, 1, 1, 1], [1, 0, 0, 1], [1, 1, 1, 1]], { cls: (i, j) => (j >= 2 ? 'done' : '') })]]]); }
+
+const C_SSO = `
+update(bits, nums[j], +1);
+while (i <= j && value(bits) >= k) { best = min(best, j - i + 1); update(bits, nums[i++], -1); }`;
+function sso() { return story([[0, `OR cannot be undone by removing an element — unless you keep a <b>count per bit</b>.`, [lane('nums', [2, 1, 8]), lane('k', [10])]], [ln(C_SSO, 'value(bits) >= k'), `Window [2,1,8]: OR 11 ≥ 10 → length 3. Removing 2 → OR 9 &lt; 10 → stop. Answer <b>3</b>.`, [lane('bit counts', ['b0:1', 'b1:1', 'b3:1'])]]]); }
+
+const C_SN2 = `
+for (int b = 0; b < 32; b++) {
+    int ones = 0; for (int x : nums) if ((x & (1 << b)) != 0) ones++;
+    if (ones % 3 == 1) res |= 1 << b;        // triples contribute multiples of 3
+}`;
+function sn2() { return story([[ln(C_SN2, 'multiples of 3'), `[2,2,3,2]: bit 0 is set once (3) → 1 % 3 = 1 ✓; bit 1 is set four times → 4 % 3 = 1 ✓ → <b>3</b>.`, [B('2', 2, 2), B('2', 2, 2), B('3', 3, 2, { done: [0, 1] }), B('2', 2, 2)]]]); }
+
+const C_SN3 = `
+int low = xor & -xor;          // a bit where the two singles differ
+for (int x : nums) if ((x & low) != 0) a ^= x; else b ^= x;`;
+function sn3() { return story([[0, `[1,2,1,3,2,5]: XOR all → 3 ^ 5 = 110.`, [B('xor', 6, 3)]], [ln(C_SN3, 'differ'), `Lowest set bit 010 splits: {2,3,2} → 3 and {1,1,5} → 5 → <b>[3, 5]</b>.`, [B('low', 2, 3, { warn: [1] }), lane('answer', [3, 5], { done: [0, 1] })]]]); }
+
+const C_SSM = `
+right to left: nearest[b] = closest index ≥ i with bit b
+end = max over bits missing in nums[i] of nearest[b]
+res[i] = end - i + 1`;
+function ssm() { return story([[0, `[1,0,2,1,3]. From i, the max OR includes every bit that appears to the right; the subarray must reach the <b>nearest carrier</b> of each bit.`, [lane('nums', [1, 0, 2, 1, 3], { showIdx: true })]], [ln(C_SSM, 'end = max'), `i = 0: bit 0 here, bit 1 nearest at 2 → length 3. Answers <b>[3,3,2,2,1]</b>.`, [lane('res', [3, 3, 2, 2, 1], { done: [0, 1, 2, 3, 4] })]]]); }
+
+const C_SRT = `
+key[i] = Integer.bitCount(arr[i]) * 100_000 + arr[i];   // sort by (popcount, value) as one int`;
+function srt() { return story([[ln(C_SRT, 'as one int'), `[0..8] → popcounts 0,1,1,2,1,2,2,3,1 → <b>[0,1,2,4,8,3,5,6,7]</b>.`, [lane('sorted', ['0|0', '1|1', '1|2', '1|4', '1|8', '2|3', '2|5', '2|6', '3|7'])]]]); }
+
+const C_SUB = `
+for (int mask = 0; mask < (1 << n); mask++)
+    for (int i = 0; i < n; i++) if ((mask >> i & 1) == 1) cur.add(nums[i]);`;
+function subb() { const a = [1, 2, 3]; const R = recorder(); for (let m = 0; m < 8; m++) R.step(ln(C_SUB, 'cur.add'), `mask ${bin(m, 3)} → [${a.filter((_, i) => m >> i & 1).join(',')}]`, [B('mask', m, 3, { done: [0, 1, 2].filter(i => m >> i & 1) })]); return R.steps; }
+
+const C_XQ = `
+pre[i + 1] = pre[i] ^ arr[i];
+XOR(l..r) = pre[r + 1] ^ pre[l];     // shared prefix cancels`;
+function xq() { return story([[0, `arr [1,3,4,8] → prefix XOR [0,1,2,6,14].`, [lane('pre', [0, 1, 2, 6, 14], { showIdx: true })]], [ln(C_XQ, 'cancels'), `Query [1,2]: pre[3] ^ pre[1] = 6 ^ 1 = <b>7</b> (= 3 ^ 4).`, [lane('pre', [0, 1, 2, 6, 14], { showIdx: true, done: [1, 3] })]]]); }
+
+const T = (name, hook, mantra, statement, code, steps, recall) => ({ name, hook, mantra, statement, anims: [{ name: 'Walkthrough', code, steps }], recall, links: [] });
+mount({
+  title: 'Bit Magic Animations',
+  sub: 'Five tricks power almost everything: <b>x & (x−1)</b> drops the lowest 1, <b>x & −x</b> isolates it, <b>x ^ x = 0</b> cancels pairs, <b>prefix XOR</b> gives range XOR, and <b>think one bit at a time</b>.',
+  problems: [
+    T('Bitwise AND of Range (201)', 'Any bit that flips inside the range dies — only the <b>common prefix</b> lives.', 'COMMON PREFIX: right &= right − 1 WHILE right > left', 'AND of all numbers in [left, right].', C_AND, and(), [['Shift version?', 'Shift both right until equal, then shift back.']]),
+    T('XOR of All Pairings (2425)', 'Count how often each element appears: <b>even times cancels</b>.', 'XOR nums1 IF |nums2| ODD, nums2 IF |nums1| ODD', 'XOR of nums1[i] ^ nums2[j] over all pairs.', C_XP, xp(), [['Why?', 'x ^ x = 0.']]),
+    T('7n/8 Without * or /', 'Shift = multiply/divide by 8.', '(n << 3) − n, THEN >> 3 (+7 FOR CEIL)', 'Compute ⌈7n/8⌉ with shifts only.', C_78, s78(), [['Bug in the original?', 'It returns the floor, not the ceiling.']]),
+    T('All Binary Codes of Size K (1461)', 'A sliding <b>k-bit integer</b> instead of substrings.', 'ROLLING MASK, COUNT 2^k DISTINCT', 'Does s contain every binary code of length k?', C_ABC, abc(), [['Set version?', 'HashSet of substrings, size == 2^k.']]),
+    T('Concatenation of Binary Numbers (1680)', 'Bit length grows exactly at <b>powers of two</b>.', 'res = (res << bits) | i, bits++ WHEN i & (i−1) == 0', 'Value of "1" + "10" + "11" + … mod 1e9+7.', C_CCB, ccb(), [['Log version?', 'bits = floor(log2 i) + 1.']]),
+    T('Min Bitwise Array II (3315)', 'x | (x+1) lights the lowest 0; undo it by <b>dimming the last 1 of the trailing run</b>.', 'CLEAR THE BIT JUST BELOW THE FIRST 0', 'Smallest x with x | (x+1) = nums[i], else −1.', C_MBA, mba(), [['When −1?', 'num = 2 (even prime).']]),
+    T('Counting Bits (338)', 'A number = its half + its last bit.', 'dp[i] = dp[i >> 1] + (i & 1)', 'Popcount of every number 0..n in O(n).', C_CB, cb(), [['Other DP?', 'dp[i] = dp[i & (i−1)] + 1.']]),
+    T('Count Triplets Equal XOR (1442)', 'a == b ⇔ the whole block XORs to <b>0</b>.', 'EQUAL PREFIX XOR, ADD k − i − 1', 'Count (i, j, k) with XOR(i..j−1) == XOR(j..k).', C_CTE, cte(), [['O(n) version?', 'Map of prefix → count and sum of indices.']]),
+    T('Original Array of Prefix XOR (2433)', 'XOR is its own <b>undo button</b>.', 'arr[i] = pref[i] ^ pref[i−1]', 'Recover arr from its prefix XOR.', C_OAP, oap(), [['In place?', 'Walk from the back.']]),
+    T('Gray Code (89)', '<b>Mirror</b> the list, light a new bit on the mirror.', 'REFLECT + SET TOP BIT', 'A 2^n sequence where neighbours differ by one bit.', C_GRAY, gray(), [['Formula?', 'i ^ (i >> 1).']]),
+    T('Largest Combination AND > 0 (2275)', 'Pick a <b>column</b> (bit) and take everyone who has it.', 'MAX OVER BITS OF COUNT', 'Largest subset with AND > 0.', C_LC, lc(), [['Why one bit?', 'AND > 0 needs one common bit.']]),
+    T('Add Binary (67)', 'School addition in base 2.', 'SUM % 2 WRITE, SUM / 2 CARRY', 'Add two binary strings.', C_ADD, add(), [['Loop condition?', 'i ≥ 0 || j ≥ 0 || carry.']]),
+    T('Binary Gap (868)', 'Distance between <b>neighbouring lamps</b>.', 'REMEMBER PREVIOUS 1', 'Longest distance between adjacent 1 bits.', C_GAP, gap(), [['No two 1s?', '0.']]),
+    T('Alternating Bits (693)', 'Shift by one and XOR: alternating becomes <b>all ones</b>.', 'x = n ^ (n >> 1), x & (x+1) == 0', 'Do adjacent bits always differ?', C_ALT, alt(), [['All-ones test?', 'x & (x + 1) == 0.']]),
+    T('Prefix Divisible By 5 (1018)', 'Keep only the <b>remainder</b>.', 'rem = (2·rem + bit) % 5', 'Which binary prefixes are divisible by 5?', C_P5, p5(), [['Why not the value?', 'It overflows.']]),
+    T('Binary Watch (401)', 'Only 720 times: <b>enumerate</b>.', 'bitCount(h) + bitCount(m) == k', 'All times with k LEDs on.', C_WATCH, watch(), [['Format?', 'h:mm.']]),
+    T('Complement of Base 10 (1009)', 'XOR with an all-ones <b>mask as wide as n</b>.', 'n ^ ((1 << bits) − 1)', 'Flip every bit of n (no leading zeros).', C_CMP, cmp(), [['n = 0?', '1.']]),
+    T('Min Bitwise Array I (3314)', 'Small values: just <b>try every x</b>.', 'FIRST x WITH x | (x+1) == num', 'Smallest x with x | (x+1) = num.', C_MBA1, mba1(), [['Large values?', 'Part II bit trick.']]),
+    T('Number Complement (476)', 'Same as 1009: a mask from <b>highestOneBit</b>.', 'num ^ ((highestOneBit << 1) − 1)', 'Flip the bits of num.', C_CMP, cmp2(), [['Overflow at 2^31−1?', 'Shift as long or use the XOR-each loop.']]),
+    T('Power of Two (231)', 'A power of two has a <b>single lamp</b> lit.', 'n > 0 && (n & (n−1)) == 0', 'Is n a power of two?', C_POW, pow(), [['Negative?', 'false.']]),
+    T('Prime Set Bits (762)', 'A <b>mask of primes</b> as a lookup table.', 'primes >> bitCount(x) & 1', 'Count numbers in [L, R] with a prime popcount.', C_PSB, psb(), [['Why ≤ 20?', 'R ≤ 1e6 < 2^20.']]),
+    T('Reverse Bits (190)', 'Pour bits from one <b>pipe</b> into another.', 'res = (res << 1) | (n & 1), n >>>= 1', 'Reverse the 32 bits of n.', C_REV, rev(), [['Why >>>?', 'Unsigned shift for negatives.']]),
+    T('Smallest All Set Bits (3370)', '1, 3, 7, 15 …: <b>grow a row of lamps</b>.', 'x = (x << 1) | 1 WHILE x < n', 'Smallest x ≥ n with all bits set.', C_SAS, sas(), [['O(1)?', '(1 << bitLength(n)) − 1.']]),
+    T('Sum of Subset XOR Totals (1863)', 'Each present bit is on in <b>half</b> the subsets.', 'OR << (n − 1)', 'Sum of XOR over all subsets.', C_SXS, sxs(), [['Backtracking version?', 'Carry the running XOR.']]),
+    T('Two Sneaky Numbers (3289)', 'Everything cancels except the <b>two extras</b>; split them by a differing bit.', 'XOR WITH 0..n−1, SPLIT BY LOWEST BIT', 'Find the two numbers that appear twice.', C_SNK, snk(), [['Simple version?', 'Count array.']]),
+    T('Longest Subsequence Non-Zero XOR (3702)', 'If the total XOR is 0, <b>drop one</b> non-zero element.', 'n, n − 1, OR 0', 'Longest subsequence with XOR ≠ 0.', C_LSN, lsn(), [['All zeros?', '0.']]),
+    T('Max Length Concatenation (Bit Magic)', 'Letters as <b>bit masks</b>: overlap = AND.', 'MASK PER WORD, TAKE IF used & mask == 0', 'Longest concatenation with unique letters.', C_MLC, mlc(), [['Words with repeated letters?', 'Skip them.']]),
+    T('Sum of Prices ≤ K (3007)', 'Bits repeat in <b>blocks</b>: count with a formula, then binary-search.', 'COUNT BIT b UP TO n BY FORMULA, BINARY SEARCH num', 'Largest num whose cumulative price ≤ k.', C_PRICE, price(), [['Monotone?', 'Prices are ≥ 0.']]),
+    T('Max Product of Word Lengths (318)', 'Disjoint letters ⇔ masks <b>AND to 0</b>.', 'MASK PER WORD, O(1) OVERLAP CHECK', 'Max len(a)·len(b) with no common letter.', C_MPW, mpw(), [['Without masks?', 'Boolean arrays per pair.']]),
+    T('Max XOR for Each Query (1829)', 'k flips the prefix XOR into <b>all ones</b>.', 'k = xor ^ (2^maxBit − 1), REMOVE LAST', 'Best k for each shrinking prefix.', C_MXQ, mxq(), [['Removing an element?', 'XOR it again.']]),
+    T('Max XOR of Two Numbers (421)', 'In a bit trie, always walk the <b>opposite</b> road.', 'TRIE, GREEDY OPPOSITE BIT FROM THE TOP', 'Maximum a ^ b in an array.', C_MXT, mxt(), [['Why from the top bit?', 'A higher bit beats all lower bits.']]),
+    T('Max Xor Product (2939)', 'Equal bits → 1 in both; different bits → <b>balance</b> the two numbers.', 'EQUAL → BOTH 1, DIFFERENT → GIVE TO SMALLER', 'Max (a ^ x)(b ^ x) for x < 2^n.', C_MXP, mxp(), [['Bits ≥ n?', 'Fixed by a and b.']]),
+    T('Minimize XOR (2429)', 'Cancel num1\'s <b>high</b> bits, spend extras on <b>low</b> bits.', 'COPY HIGH BITS, FILL LOWEST FREE BITS', 'x with popcount(num2) minimising x ^ num1.', C_MNX, mnx(), [['From num1 version?', 'Clear lowest set bits or set lowest unset bits.']]),
+    T('Minimum Array End (3133)', 'x\'s bits are <b>fixed</b>; count in the free slots.', '(num + 1) | x, OR DEPOSIT n − 1 INTO x\'s ZEROS', 'Smallest last element of an increasing array with AND = x.', C_MAE, mae(), [['Fast version?', 'Write the bits of n − 1 into the zero positions of x.']]),
+    T('Min Flips a OR b = c (1318)', 'Per bit: c says 1 → need one 1; c says 0 → kill <b>every</b> 1.', 'BIT BY BIT, OR POPCOUNT FORMULA', 'Minimum bit flips so that a | b == c.', C_FLIP, flip(), [['Formula?', 'bitCount((a|b)^c) + bitCount(a & b & ~c).']]),
+    T('Array XOR Equal to K (2997)', 'Every wrong bit costs <b>one</b> flip.', 'bitCount(XOR ^ k)', 'Minimum bit flips to make the array XOR equal k.', C_MOK, mok(), [['Which element to flip?', 'Any.']]),
+    T('Min One Bit Operations (1611)', 'Clearing bit i costs 2^(i+1) − 1; lower set bits <b>alternate</b> sign.', '+f(high) − f(next) + f(next) …', 'Minimum operations to turn n into 0.', C_OBO, obo(), [['Closed form?', 'Inverse Gray code of n.']]),
+    T('Neighboring Bitwise XOR (2683)', 'Every original bit is used <b>twice</b>.', 'XOR OF derived == 0', 'Does an original binary array exist?', C_NBX, nbx(), [['Simulation?', 'Try original[0] = 0 and 1.']]),
+    T('Number of 1 Bits (191)', 'Pop the <b>lowest lamp</b> until dark.', 'n &= n − 1, COUNT', 'Count the set bits.', C_ONE, one(), [['Negative input?', 'Use >>> or the n & (n−1) loop.']]),
+    T('Steps to Reduce Binary to One (1404)', 'Walk right to left carrying the <b>+1</b>.', 'ODD → 2 STEPS, CARRY 1; EVEN → 1 STEP', 'Steps to reduce a binary string to 1.', C_STEP, step(), [['Final carry?', 'Adds one more step.']]),
+    T('Unique XOR Triplets I (3513)', 'A permutation of 1..n reaches <b>everything</b> below the next power of two.', 'n ≤ 2 → n, ELSE NEXT POWER OF TWO', 'Distinct XORs of triplets of a permutation.', C_UX1, ux1(), [['Small n?', 'n = 1 → 1, n = 2 → 2.']]),
+    T('Unique XOR Triplets II (3514)', 'Pairs first, then add a third — in <b>boolean arrays</b>.', 'PAIR XORS → TRIPLET XORS, SIZE T', 'Distinct XORs of nums[i]^nums[j]^nums[k].', C_UX2, ux2(), [['Why arrays?', 'HashSet TLEs in Java.']]),
+    T('Wonderful Substrings (1915)', 'Parity masks: equal or <b>one bit apart</b>.', 'PREFIX MASK, COUNT SAME + 10 NEIGHBOURS', 'Substrings with at most one odd letter.', C_WS, ws(), [['Why 10 neighbours?', 'Letters a..j.']]),
+    T('Partition Min Sum Difference (Bit Magic)', 'Split the array in two halves, <b>meet in the middle</b>.', 'SUBSET SUMS BY SIZE, BINARY SEARCH THE OTHER HALF', 'Split into two equal-size halves with minimum sum difference.', C_PART, part(), [['Why only lower_bound?', 'The complement split covers the "just below" case.']]),
+    T('Score After Flipping Matrix (861)', 'The leading bit beats all later bits: <b>rows first</b>, then columns.', 'ROWS START WITH 1, COLUMNS MAJORITY 1', 'Maximise the sum of rows read as binary.', C_SAF, saf(), [['Without modifying?', 'Count cells equal to their row\'s first cell.']]),
+    T('Shortest Subarray OR ≥ K II (3097)', 'OR cannot be undone — <b>bit counts</b> can.', 'SLIDING WINDOW, COUNT PER BIT', 'Shortest subarray with OR ≥ k.', C_SSO, sso(), [['k = 0?', 'Any single element → 1.']]),
+    T('Single Number II (137)', 'Count each bit <b>mod 3</b>.', 'PER BIT: ones % 3', 'Every element appears three times except one.', C_SN2, sn2(), [['Other ways?', 'Map, sort and step by 3.']]),
+    T('Single Number III (260)', 'XOR gives a ^ b; any set bit <b>separates</b> them.', 'xor & −xor SPLITS INTO TWO GROUPS', 'Two elements appear once, others twice.', C_SN3, sn3(), [['Isolate lowest bit?', 'x & −x.']]),
+    T('Smallest Subarrays Max OR (2411)', 'Reach the <b>nearest carrier</b> of every bit.', 'RIGHT TO LEFT, nearest[b], MAX END', 'For each i, the shortest subarray from i with maximum OR.', C_SSM, ssm(), [['Bits?', '32 per index.']]),
+    T('Sort by Number of 1 Bits (1356)', 'Pack (popcount, value) into <b>one int</b>.', 'bitCount · 100000 + value', 'Sort by popcount, then value.', C_SRT, srt(), [['Comparator version?', 'Compare popcounts, then values.']]),
+    T('Subsets (Bit Magic)', 'Every mask from 0 to 2^n − 1 <b>is</b> a subset.', 'BIT i SET ⇒ TAKE nums[i]', 'All subsets of distinct numbers.', C_SUB, subb(), [['Backtracking?', 'See Backtracking.']]),
+    T('XOR Queries of a Subarray (1310)', 'Prefix XOR: the shared part <b>cancels</b>.', 'pre[r+1] ^ pre[l]', 'XOR of arr[l..r] per query.', C_XQ, xq(), [['Like?', 'Prefix sums.']])
+  ]
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recursion Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, tree, recorder, mount, ln } = BrainAnim;
+
+// Recursion tree + call stack recorder
+class RT {
+  constructor() { this.P = {}; this.L = {}; this.B = {}; this.n = 0; this.stack = []; this.doneSet = new Set(); }
+  call(label) { const id = 'c' + this.n++; this.P[id] = this.stack.length ? this.stack.at(-1) : -1; this.L[id] = label; this.stack.push(id); return id; }
+  ret(v) { const id = this.stack.pop(); const t = v === undefined ? undefined : String(v); this.B[id] = t === undefined ? undefined : '→ ' + (t.length > 14 ? t.slice(0, 12) + '…' : t); this.doneSet.add(id); return id; }
+  view(name = 'Recursion tree', extra = {}) {
+    const cls = {}; for (const id in this.P) cls[id] = this.doneSet.has(id) ? 'done' : this.stack.includes(id) ? 'warn' : '';
+    if (this.stack.length) cls[this.stack.at(-1)] = 'active';
+    return tree(name, this.P, { labels: this.L, badge: this.B, cls: { ...cls, ...extra }, wide: true });
+  }
+  stackLane() { return lane('call stack (top = current)', this.stack.map(id => this.L[id]), { vertical: true, active: this.stack.length ? [this.stack.length - 1] : [] }); }
+}
+
+// ---------- Tower of Hanoi ----------
+const C_TOH = `
+long toh(int n, int from, int to, int aux) {
+    if (n == 0) return 0;
+    long count = toh(n - 1, from, aux, to);
+    moves.add("move disk " + n + " from rod " + from + " to rod " + to);
+    count++;
+    count += toh(n - 1, aux, to, from);
+    return count;
+}`;
+function hanoi() {
+  const r = recorder(), t = new RT(), rods = [[3, 2, 1], [], []];
+  const V = () => [t.view(), lane('rod 1', [...rods[0]]), lane('rod 2', [...rods[1]]), lane('rod 3', [...rods[2]])];
+  r.step(0, `Move 3 disks from rod 1 to rod 3. <b>Trust recursion</b>: "someone" moves the top n−1 out of the way; you move the biggest disk; "someone" moves the n−1 back on top.`, V());
+  const go = (n, f, to, aux) => {
+    if (n === 0) return;
+    t.call(`h(${n},${f}→${to})`);
+    r.step(ln(C_TOH, 'toh(n - 1, from, aux, to)'), `h(${n}, ${f}→${to}): first park ${n - 1} disk${n - 1 === 1 ? '' : 's'} on rod ${aux}.`, V());
+    go(n - 1, f, aux, to);
+    rods[to - 1].push(rods[f - 1].pop());
+    r.step(ln(C_TOH, 'moves.add'), `Move disk <b>${n}</b> from rod ${f} to rod ${to}.`, V());
+    go(n - 1, aux, to, f);
+    t.ret();
+    r.step(ln(C_TOH, 'return count'), `h(${n}) done: ${(1 << n) - 1} moves.`, V());
+  };
+  go(3, 1, 3, 2);
+  r.step(ln(C_TOH, 'return count'), `Total = 2^3 − 1 = <b>7</b> moves. T(n) = 2T(n−1) + 1.`, V());
+  return r.steps;
+}
+
+// ---------- Reverse a Stack ----------
+const C_REV = `
+static void insertAtBottom(Deque<Integer> st, int element) {
+    if (st.isEmpty()) { st.push(element); return; }
+    int top = st.pop();
+    insertAtBottom(st, element);
+    st.push(top);
+}
+
+static void reverse(Deque<Integer> st) {
+    if (st.isEmpty()) return;
+    int top = st.pop();
+    reverse(st);
+    insertAtBottom(st, top);
+}`;
+function revStack() {
+  const r = recorder(), t = new RT(), st = [1, 2, 3];
+  const V = (say) => [lane('stack (top on the right)', [...st]), t.stackLane()];
+  r.step(0, `Reverse [1,2,3] (3 on top) with <b>no loops and no extra stack</b>: only the call stack holds values.`, V());
+  const iab = (el) => { t.call(`insBottom(${el})`); if (!st.length) { st.push(el); r.step(ln(C_REV, 'st.push(element); return;'), `Empty → put ${el} down. It is now at the <b>bottom</b>.`, V()); t.ret(); return; } const top = st.pop(); r.step(ln(C_REV, 'int top = st.pop();'), `Hold ${top} in this call and go deeper.`, V()); iab(el); st.push(top); r.step(ln(C_REV, 'st.push(top);'), `Unwinding: put ${top} back on top.`, V()); t.ret(); };
+  const rev = () => { t.call('reverse()'); if (!st.length) { r.step(ln(C_REV, 'if (st.isEmpty()) return;'), `Empty → nothing to reverse.`, V()); t.ret(); return; } const top = st.pop(); r.step(ln(C_REV, 'int top = st.pop();', 2), `reverse(): hold ${top}, trust reverse() for the rest.`, V()); rev(); r.step(ln(C_REV, 'insertAtBottom(st, top);'), `Rest is reversed. Now slide ${top} to the <b>bottom</b>.`, V()); iab(top); t.ret(); };
+  rev();
+  r.step(0, `Stack is now <b>[${st}]</b> (1 on top). Two "trust" recursions: reverse the rest, then insert at the bottom.`, V());
+  return r.steps;
+}
+
+// ---------- Subsets ----------
+const C_SUB = `
+private void solve(int[] nums, int idx, List<Integer> temp) {
+    if (idx == nums.length) {
+        result.add(new ArrayList<>(temp));
+        return;
+    }
+    temp.add(nums[idx]);
+    solve(nums, idx + 1, temp);
+    temp.remove(temp.size() - 1);
+    solve(nums, idx + 1, temp);
+}`;
+function subsets() {
+  const r = recorder(), t = new RT(), nums = [1, 2, 3], temp = [], res = [];
+  const go = (i) => {
+    t.call(`[${temp}]`);
+    if (i === nums.length) { res.push(`[${temp}]`); t.ret('✓'); r.step(ln(C_SUB, 'result.add'), `Leaf: record <b>[${temp}]</b>.`, [t.view('Decision tree (left = take, right = skip)'), lane('result', [...res])]); return; }
+    temp.push(nums[i]); r.step(ln(C_SUB, 'temp.add'), `Take ${nums[i]} → [${temp}].`, [t.view('Decision tree (left = take, right = skip)'), lane('result', [...res])]); go(i + 1);
+    temp.pop(); r.step(ln(C_SUB, 'temp.remove'), `Undo (backtrack): remove ${nums[i]}, then try skipping it.`, [t.view('Decision tree (left = take, right = skip)'), lane('result', [...res])]); go(i + 1);
+    t.ret();
+  };
+  go(0);
+  r.step(0, `2 choices per element → 2^3 = <b>8</b> subsets.`, [t.view('Decision tree'), lane('result', res, { done: res.map((_, i) => i) })]);
+  return r.steps;
+}
+
+// ---------- Power Set ----------
+const C_PS = `
+static void forLoop(String s, int idx, StringBuilder cur, List<String> out) {
+    if (cur.length() > 0) out.add(cur.toString());
+    for (int i = idx; i < s.length(); i++) {
+        cur.append(s.charAt(i));
+        forLoop(s, i + 1, cur, out);
+        cur.deleteCharAt(cur.length() - 1);
+    }
+}`;
+function powerSet() {
+  const r = recorder(), t = new RT(), s = 'abc', out = []; let cur = '';
+  const go = (idx) => {
+    t.call(cur || '""'); if (cur) out.push(cur);
+    r.step(ln(C_PS, 'out.add'), cur ? `Every node is an answer: record "<b>${cur}</b>".` : `Root (empty string, not recorded).`, [t.view('For-loop tree (each node = one subsequence)'), lane('out', [...out])]);
+    for (let i = idx; i < s.length; i++) { cur += s[i]; go(i + 1); cur = cur.slice(0, -1); }
+    t.ret();
+  };
+  go(0);
+  r.step(0, `Sort → <b>[${[...out].sort()}]</b>. Take/skip records at the leaves; the for-loop version records at <b>every node</b>.`, [t.view('For-loop tree'), lane('sorted', [...out].sort())]);
+  return r.steps;
+}
+
+// ---------- Merge Sort ----------
+const C_MS = `
+static void mergeSort(int[] arr, int l, int r) {
+    if (l >= r) return;
+    int mid = l + (r - l) / 2;
+    mergeSort(arr, l, mid);
+    mergeSort(arr, mid + 1, r);
+    merge(arr, l, mid, r);
+}
+// merge: two pointers over sorted halves, take the smaller each time`;
+function mergeSort() {
+  const r = recorder(), t = new RT(), a = [5, 2, 4, 1, 3];
+  const go = (l, rr) => {
+    t.call(`[${l}..${rr}]`);
+    if (l >= rr) { t.ret(); r.step(ln(C_MS, 'if (l >= r) return;'), `One element [${a[l]}] is already sorted.`, [t.view('Split tree'), lane('array', a, { showIdx: true, active: [l] })]); return; }
+    const m = (l + rr) >> 1;
+    r.step(ln(C_MS, 'int mid'), `Split [${l}..${rr}] at ${m}.`, [t.view('Split tree'), lane('array', a, { showIdx: true, warn: [...Array(rr - l + 1).keys()].map(k => k + l) })]);
+    go(l, m); go(m + 1, rr);
+    const merged = a.slice(l, rr + 1).sort((x, y) => x - y); merged.forEach((v, k) => a[l + k] = v);
+    t.ret(`[${merged}]`);
+    r.step(ln(C_MS, 'merge(arr, l, mid, r)'), `Merge the sorted halves → <b>[${merged}]</b>.`, [t.view('Split tree'), lane('array', a, { showIdx: true, done: [...Array(rr - l + 1).keys()].map(k => k + l) })]);
+  };
+  go(0, a.length - 1);
+  return r.steps;
+}
+
+// ---------- Quick Sort ----------
+const C_QS = `
+static int partition(int[] arr, int low, int high) {
+    int pivot = arr[high], p = low;
+    for (int i = low; i < high; i++) {
+        if (arr[i] <= pivot) {
+            int t = arr[i]; arr[i] = arr[p]; arr[p] = t;
+            p++;
+        }
+    }
+    int t = arr[p]; arr[p] = arr[high]; arr[high] = t;
+    return p;
+}
+
+static void quickSort(int[] arr, int low, int high) {
+    if (low >= high) return;
+    int p = partition(arr, low, high);
+    quickSort(arr, low, p - 1);
+    quickSort(arr, p + 1, high);
+}`;
+function quickSort() {
+  const r = recorder(), a = [4, 7, 2, 6, 3], fixed = new Set();
+  const A = (o) => lane('array', a, { showIdx: true, done: [...fixed], ...o });
+  const qs = (lo, hi) => {
+    if (lo >= hi) { if (lo === hi) fixed.add(lo); return; }
+    const pivot = a[hi]; let p = lo;
+    r.step(ln(C_QS, 'int pivot'), `Partition [${lo}..${hi}] around pivot <b>${pivot}</b> (last element).`, [A({ warn: [hi], active: [] })], { pivot, p });
+    for (let i = lo; i < hi; i++) {
+      if (a[i] <= pivot) { [a[i], a[p]] = [a[p], a[i]]; r.step(ln(C_QS, 'int t = arr[i]'), `${a[p]} ≤ ${pivot} → swap into the "small" zone at ${p}.`, [A({ warn: [hi], active: [p], ptr: { [p]: 'p', [i]: 'i' } })], { p: p + 1 }); p++; }
+      else r.step(ln(C_QS, 'if (arr[i] <= pivot)'), `${a[i]} > ${pivot} → leave it.`, [A({ warn: [hi], ptr: { [p]: 'p', [i]: 'i' } })], { p });
+    }
+    [a[p], a[hi]] = [a[hi], a[p]]; fixed.add(p);
+    r.step(ln(C_QS, 'return p;'), `Put the pivot at ${p}: everything left is ≤ ${pivot}, everything right is &gt; ${pivot}. Pivot is <b>final</b>.`, [A({})]);
+    qs(lo, p - 1); qs(p + 1, hi);
+  };
+  qs(0, a.length - 1);
+  r.step(ln(C_QS, 'quickSort(arr, p + 1, high);'), `Sorted: <b>[${a}]</b>. Merge sort does its work on the way <b>up</b> (merge); quick sort does it on the way <b>down</b> (partition).`, [A({ done: a.map((_, i) => i) })]);
+  return r.steps;
+}
+
+// ---------- K-th Symbol ----------
+const C_KS = `
+public int kthGrammar(int n, int k) {
+    if (n == 1) return 0;
+    int mid = 1 << (n - 2);
+    if (k <= mid) return kthGrammar(n - 1, k);
+    return 1 - kthGrammar(n - 1, k - mid);
+}`;
+function kthSymbol() {
+  const r = recorder(), t = new RT();
+  const rows = ['0']; for (let i = 1; i < 4; i++) rows.push([...rows[i - 1]].map(c => (c === '0' ? '01' : '10')).join(''));
+  const R = (hl) => rows.map((row, i) => lane(`row ${i + 1}`, [...row], { active: hl[i] !== undefined ? [hl[i] - 1] : [] }));
+  r.step(0, `Row n = row n−1 followed by its <b>complement</b>. So the second half of a row mirrors the first half, flipped.`, R({}));
+  const go = (n, k) => {
+    t.call(`f(${n},${k})`);
+    if (n === 1) { t.ret(0); r.step(ln(C_KS, 'return 0'), `Row 1 is "0".`, [t.view(), ...R({ 0: 1 })]); return 0; }
+    const mid = 1 << (n - 2);
+    r.step(ln(C_KS, k <= mid ? 'return kthGrammar(n - 1, k)' : 'return 1 - kthGrammar'), k <= mid ? `k=${k} ≤ half ${mid} → same symbol as row ${n - 1}, position ${k}.` : `k=${k} &gt; half ${mid} → <b>flip</b> of row ${n - 1}, position ${k - mid}.`, [t.view(), ...R({ [n - 1]: k })]);
+    const v = k <= mid ? go(n - 1, k) : 1 - go(n - 1, k - mid);
+    t.ret(v); r.step(ln(C_KS, k <= mid ? 'return kthGrammar(n - 1, k)' : 'return 1 - kthGrammar'), `f(${n},${k}) = <b>${v}</b>.`, [t.view(), ...R({ [n - 1]: k })]);
+    return v;
+  };
+  go(4, 6);
+  return r.steps;
+}
+
+// ---------- Josephus ----------
+const C_JO = `
+static int winnerIdx(int n, int k) {
+    if (n == 1) return 0;
+    return (winnerIdx(n - 1, k) + k) % n;
+}
+
+public int findTheWinner(int n, int k) {
+    return winnerIdx(n, k) + 1;
+}`;
+function josephus() {
+  const r = recorder(), t = new RT(), n = 5, k = 2;
+  r.step(0, `n=5, k=2. After the first elimination, the game is the same game with n−1 players, just <b>renumbered</b> starting after the eliminated one.`, [lane('circle', [1, 2, 3, 4, 5])]);
+  const sim = [1, 2, 3, 4, 5]; let i = 0;
+  const go = (m) => {
+    t.call(`w(${m})`);
+    if (m === 1) { t.ret(0); r.step(ln(C_JO, 'return 0'), `One player left → winner index 0.`, [t.view('Recursion chain (badge = winner index)'), t.stackLane()]); return 0; }
+    r.step(ln(C_JO, 'winnerIdx(n - 1, k) + k'), `w(${m}) asks w(${m - 1}): "who wins with one fewer?"`, [t.view('Recursion chain (badge = winner index)'), t.stackLane()]);
+    const sub = go(m - 1), v = (sub + k) % m;
+    t.ret(v); r.step(ln(C_JO, 'winnerIdx(n - 1, k) + k'), `Shift back by k: (${sub} + ${k}) % ${m} = <b>${v}</b>.`, [t.view('Recursion chain (badge = winner index)'), t.stackLane()]);
+    return v;
+  };
+  const idx = go(n);
+  while (sim.length > 1) { i = (i + k - 1) % sim.length; sim.splice(i, 1); }
+  r.step(ln(C_JO, 'return winnerIdx(n, k) + 1;'), `Winner = index ${idx} + 1 = <b>${idx + 1}</b> (a direct simulation agrees: ${sim[0]}).`, [t.view('Recursion chain'), lane('circle', [1, 2, 3, 4, 5], { done: [idx] })]);
+  return r.steps;
+}
+
+// ---------- Kth bit ----------
+const C_KB = `
+public char findKthBit(int n, int k) {
+    if (n == 1) return '0';
+    int len = (1 << n) - 1, mid = (len + 1) / 2;
+    if (k < mid) return findKthBit(n - 1, k);
+    if (k == mid) return '1';
+    char c = findKthBit(n - 1, len - k + 1);
+    return c == '0' ? '1' : '0';
+}`;
+function kthBit() {
+  const r = recorder(), t = new RT(), S = ['0']; for (let i = 1; i < 4; i++) S.push(S[i - 1] + '1' + [...S[i - 1]].map(c => (c === '0' ? '1' : '0')).reverse().join(''));
+  const R = (hl) => S.map((s, i) => lane(`S${i + 1}`, [...s], { active: hl[i] ? [hl[i] - 1] : [] }));
+  r.step(0, `S_n = S_{n−1} + "1" + reverse(invert(S_{n−1})). Three zones: left copy, middle '1', mirrored flip.`, R({}));
+  const go = (n, k) => {
+    t.call(`f(${n},${k})`);
+    if (n === 1) { t.ret("'0'"); r.step(ln(C_KB, "return '0'"), `S1 = "0".`, [t.view(), ...R({ 0: 1 })]); return '0'; }
+    const len = (1 << n) - 1, mid = (len + 1) / 2;
+    if (k === mid) { t.ret("'1'"); r.step(ln(C_KB, "return '1'"), `k is the middle → '1'.`, [t.view(), ...R({ [n - 1]: k })]); return '1'; }
+    if (k < mid) { r.step(ln(C_KB, 'if (k < mid)'), `k=${k} in the left zone → same as S${n - 1}[${k}].`, [t.view(), ...R({ [n - 1]: k })]); const v = go(n - 1, k); t.ret(`'${v}'`); return v; }
+    r.step(ln(C_KB, 'len - k + 1'), `k=${k} in the right zone → mirror to ${len - k + 1} in S${n - 1}, then flip.`, [t.view(), ...R({ [n - 1]: k })]);
+    const c = go(n - 1, len - k + 1), v = c === '0' ? '1' : '0';
+    t.ret(`'${v}'`); r.step(ln(C_KB, "return c == '0'"), `Flip '${c}' → <b>'${v}'</b>.`, [t.view(), ...R({ [n - 1]: k })]);
+    return v;
+  };
+  go(4, 11);
+  return r.steps;
+}
+
+// ---------- tree2str ----------
+const C_T2S = `
+public String tree2str(TreeNode root) {
+    if (root == null) return "";
+    String s = String.valueOf(root.val);
+    if (root.left == null && root.right == null) return s;
+    String l = "(" + tree2str(root.left) + ")";
+    if (root.right == null) return s + l;
+    return s + l + "(" + tree2str(root.right) + ")";
+}`;
+function tree2str() {
+  const r = recorder(), P = { 1: -1, 2: 1, 3: 1, 4: 2 }, kids = { 1: [2, 3], 2: [null, 4], 3: [null, null], 4: [null, null] }, out = {};
+  const V = (cls) => tree('Tree [1,2,3,null,4] (badge = returned string)', P, { cls, badge: out });
+  const go = (v) => {
+    if (v === null) return '';
+    const [L, R] = kids[v];
+    if (L === null && R === null) { out[v] = String(v); r.step(ln(C_T2S, 'return s;'), `Leaf ${v} → "${v}".`, [V({ [v]: 'done' })]); return String(v); }
+    const l = '(' + go(L) + ')';
+    if (R === null) { out[v] = v + l; r.step(ln(C_T2S, 'return s + l;'), `${v} has no right child → drop the right "()" → "${out[v]}".`, [V({ [v]: 'done' })]); return out[v]; }
+    const res = v + l + '(' + go(R) + ')'; out[v] = res;
+    r.step(ln(C_T2S, 'return s + l + "("'), `${v}: ${L === null ? 'the left is missing but the right exists → keep <b>"()"</b> so the right stays in position' : 'both children'} → "${res}".`, [V({ [v]: 'done' })]);
+    return res;
+  };
+  const s = go(1);
+  r.step(0, `Answer <b>${s}</b>. Rule to remember: an empty left "()" stays only when a right child exists.`, [V({})]);
+  return r.steps;
+}
+
+// ---------- Lexicographical numbers ----------
+const C_LEX = `
+private void dfs(int curr, int n, List<Integer> out) {
+    if (curr > n) return;
+    out.add(curr);
+    for (int d = 0; d <= 9; d++) {
+        int next = curr * 10 + d;
+        if (next > n) return;
+        dfs(next, n, out);
+    }
+}`;
+function lex() {
+  const r = recorder(), n = 13, P = {}, out = [];
+  const V = (cls) => tree('Digit tree (pre-order = dictionary order)', P, { cls, wide: true });
+  const go = (c, p) => { P[c] = p; out.push(c); r.step(ln(C_LEX, 'out.add'), `Visit <b>${c}</b>, then try ${c}0…${c}9 (only those ≤ ${n}).`, [V({ [c]: 'active' }), lane('out', [...out])]); for (let d = 0; d <= 9; d++) { const nx = c * 10 + d; if (nx > n) return; go(nx, c); } };
+  for (let d = 1; d <= 9; d++) go(d, -1);
+  r.step(0, `Pre-order of the 10-ary digit tree = lexicographic order. O(n) time, O(log n) stack.`, [V({}), lane('out', out, { done: out.map((_, i) => i) })]);
+  return r.steps;
+}
+
+// ---------- Max length concatenated ----------
+const C_ML = `
+private int dfs(int[] masks, int[] lens, int idx, int mask, int len) {
+    int best = len;
+    for (int i = idx; i < masks.length; i++)
+        if (masks[i] != -1 && (mask & masks[i]) == 0)
+            best = Math.max(best, dfs(masks, lens, i + 1, mask | masks[i], len + lens[i]));
+    return best;
+}`;
+function maxLen() {
+  const r = recorder(), t = new RT(), arr = ['un', 'iq', 'ue'];
+  const mk = s => [...s].reduce((m, c) => m | (1 << (c.charCodeAt(0) - 97)), 0), masks = arr.map(mk);
+  const go = (idx, mask, str) => {
+    t.call(str || '""'); let best = str.length;
+    r.step(ln(C_ML, 'int best = len'), `At "${str}" (length ${str.length}). Try adding each later word that shares no letter.`, [t.view('Choice tree'), lane('words', arr)]);
+    for (let i = idx; i < arr.length; i++) {
+      if (mask & masks[i]) { r.step(ln(C_ML, '(mask & masks[i]) == 0'), `"${arr[i]}" overlaps "${str}" (shared letter) → prune.`, [t.view('Choice tree'), lane('words', arr, { bad: [i] })]); continue; }
+      best = Math.max(best, go(i + 1, mask | masks[i], str + arr[i]));
+    }
+    t.ret(best); return best;
+  };
+  const b = go(0, 0, '');
+  r.step(ln(C_ML, 'return best'), `Answer <b>${b}</b> ("uniq" or "ique"). Bitmask: overlap test = one AND.`, [t.view('Choice tree')]);
+  return r.steps;
+}
+
+// ---------- Special binary string ----------
+const C_SB = `
+public String makeLargestSpecial(String s) {
+    List<String> blocks = new ArrayList<>();
+    int start = 0, bal = 0;
+    for (int i = 0; i < s.length(); i++) {
+        bal += s.charAt(i) == '1' ? 1 : -1;
+        if (bal == 0) {
+            blocks.add("1" + makeLargestSpecial(s.substring(start + 1, i)) + "0");
+            start = i + 1;
+        }
+    }
+    blocks.sort(Comparator.reverseOrder());
+    return String.join("", blocks);
+}`;
+function special() {
+  const r = recorder(), s = '11011000';
+  r.step(0, `A special string is like balanced parentheses: 1 = "(", 0 = ")". A swap of two adjacent special substrings = <b>reordering sibling blocks</b>.`, [lane('s', [...s])]);
+  let bal = 0, start = 0; const blocks = [];
+  [...s].forEach((c, i) => { bal += c === '1' ? 1 : -1; if (bal === 0) { blocks.push(s.slice(start, i + 1)); start = i + 1; } });
+  r.step(ln(C_SB, 'if (bal == 0)'), `Balance hits 0 → one top-level block: <b>${blocks.join(' | ')}</b>. Its inside "${s.slice(1, -1)}" is solved recursively.`, [lane('s', [...s], { done: [0, 7] })]);
+  r.step(ln(C_SB, 'blocks.add'), `Inner "101100" splits into blocks "10" | "1100" → sorted descending → "1100" + "10" → "110010".`, [lane('inner blocks', ['10', '1100']), lane('sorted desc', ['1100', '10'], { done: [0, 1] })]);
+  r.step(ln(C_SB, 'return String.join'), `Wrap: "1" + "110010" + "0" = <b>11100100</b>. Mantra: make each block's inside largest, then put the biggest blocks first.`, [lane('result', [...'11100100'], { done: [...Array(8).keys()] })]);
+  return r.steps;
+}
+
+// ---------- Different ways ----------
+const C_DW = `
+public List<Integer> diffWaysToCompute(String s) {
+    List<Integer> res = new ArrayList<>();
+    for (int i = 0; i < s.length(); i++) {
+        char op = s.charAt(i);
+        if (op != '+' && op != '-' && op != '*') continue;
+        List<Integer> left = diffWaysToCompute(s.substring(0, i)), right = diffWaysToCompute(s.substring(i + 1));
+        for (int x : left)
+            for (int y : right) res.add(op == '+' ? x + y : op == '-' ? x - y : x * y);
+    }
+    if (res.isEmpty()) res.add(Integer.parseInt(s));
+    return res;
+}`;
+function diffWays() {
+  const r = recorder(), t = new RT();
+  const go = (s) => {
+    t.call(s); const res = [];
+    for (let i = 0; i < s.length; i++) {
+      const op = s[i]; if (!'+-*'.includes(op)) continue;
+      r.step(ln(C_DW, 'List<Integer> left'), `"${s}": let '${op}' at ${i} be the <b>last</b> operation → solve "${s.slice(0, i)}" and "${s.slice(i + 1)}".`, [t.view('Split tree (badge = list of results)'), t.stackLane()]);
+      const L = go(s.slice(0, i)), R = go(s.slice(i + 1));
+      for (const x of L) for (const y of R) res.push(op === '+' ? x + y : op === '-' ? x - y : x * y);
+    }
+    if (!res.length) res.push(+s);
+    t.ret(`[${res}]`); r.step(ln(C_DW, res.length === 1 && !/[+\-*]/.test(s) ? 'Integer.parseInt' : 'res.add(op'), `"${s}" → <b>[${res}]</b>.`, [t.view('Split tree (badge = list of results)'), t.stackLane()]);
+    return res;
+  };
+  go('2-1-1');
+  return r.steps;
+}
+
+// ---------- Rat in a maze ----------
+const C_RAT = `
+private void solve(int[][] m, int i, int j, StringBuilder path) {
+    int n = m.length;
+    if (i < 0 || j < 0 || i >= n || j >= n || m[i][j] == 0) return;
+    if (i == n - 1 && j == n - 1) { result.add(path.toString()); return; }
+    m[i][j] = 0;
+    for (int d = 0; d < 4; d++) {
+        path.append(NAMES[d]);
+        solve(m, i + DIRS[d][0], j + DIRS[d][1], path);
+        path.deleteCharAt(path.length() - 1);
+    }
+    m[i][j] = 1;
+}`;
+function rat() {
+  const r = recorder(), M = [[1, 0, 0, 0], [1, 1, 0, 1], [1, 1, 0, 0], [0, 1, 1, 1]], vis = M.map(row => row.map(() => false)), found = [];
+  const D = [[1, 0, 'D'], [0, -1, 'L'], [0, 1, 'R'], [-1, 0, 'U']];
+  const G = (i, j, cls) => grid('maze (1 = open)', M, { cls: (a, b) => (a === i && b === j) ? cls : vis[a][b] ? 'warn' : M[a][b] === 0 ? 'ghost' : '' });
+  const go = (i, j, path) => {
+    if (i < 0 || j < 0 || i > 3 || j > 3 || M[i][j] === 0 || vis[i][j]) return;
+    if (i === 3 && j === 3) { found.push(path); r.step(ln(C_RAT, 'result.add'), `Reached the exit via <b>${path}</b>.`, [G(i, j, 'done'), lane('paths', [...found])]); return; }
+    vis[i][j] = true;
+    r.step(ln(C_RAT, 'm[i][j] = 0;'), `At (${i},${j}) path "${path}". Block this cell so we don't loop, then try D, L, R, U.`, [G(i, j, 'active'), lane('paths', [...found])]);
+    for (const [di, dj, c] of D) go(i + di, j + dj, path + c);
+    vis[i][j] = false;
+    r.step(ln(C_RAT, 'm[i][j] = 1;', 1), `Dead end or done at (${i},${j}) → <b>unblock</b> it (backtrack) for other paths.`, [G(i, j, 'bad'), lane('paths', [...found])]);
+  };
+  go(0, 0, '');
+  return r.steps;
+}
+
+// ---------- Integer to English ----------
+const C_EN = `
+private String solve(int num) {
+    if (num < 20) return ONES[num];
+    if (num < 100) return TENS[num / 10] + (num % 10 != 0 ? " " + ONES[num % 10] : "");
+    if (num < 1000) return chunk(num, 100, " Hundred");
+    if (num < 1_000_000) return chunk(num, 1000, " Thousand");
+    if (num < 1_000_000_000) return chunk(num, 1_000_000, " Million");
+    return chunk(num, 1_000_000_000, " Billion");
+}
+
+private String chunk(int num, int unit, String name) {
+    return solve(num / unit) + name + (num % unit != 0 ? " " + solve(num % unit) : "");
+}`;
+function english() {
+  const r = recorder(), t = new RT();
+  const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'], TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const units = [[1e9, 'Billion'], [1e6, 'Million'], [1e3, 'Thousand'], [100, 'Hundred']];
+  const go = (n) => {
+    t.call(String(n)); let s;
+    if (n < 20) s = ONES[n]; else if (n < 100) s = TENS[Math.floor(n / 10)] + (n % 10 ? ' ' + ONES[n % 10] : '');
+    else { const [u, name] = units.find(([u]) => n >= u); r.step(ln(C_EN, 'return solve(num / unit)'), `${n} ≥ ${u} → name "${Math.floor(n / u)}", say "${name}", then name the rest ${n % u}.`, [t.view('Recursion tree (badge = words)')]); s = go(Math.floor(n / u)) + ' ' + name + (n % u ? ' ' + go(n % u) : ''); }
+    t.ret(`"${s}"`); r.step(ln(C_EN, n < 20 ? 'if (num < 20)' : n < 100 ? 'if (num < 100)' : 'return solve(num / unit)'), `${n} → "<b>${s}</b>".`, [t.view('Recursion tree (badge = words)')]);
+    return s;
+  };
+  go(1234567);
+  return r.steps;
+}
+
+// ---------- Flatten BST ----------
+const C_FB = `
+Node flattenBST(Node root) {
+    if (root == null) return null;
+    Node head = flattenBST(root.left);
+    root.left = null;
+    if (prev != null) prev.right = root;
+    prev = root;
+    root.right = flattenBST(root.right);
+    return head == null ? root : head;
+}`;
+function flatten() {
+  const r = recorder(), P = { 5: -1, 3: 5, 7: 5, 2: 3, 4: 3, 8: 7 }, kids = { 5: [3, 7], 3: [2, 4], 7: [null, 8], 2: [null, null], 4: [null, null], 8: [null, null] }, list = [];
+  const V = (cls) => tree('BST', P, { cls: { ...Object.fromEntries(list.map(x => [x, 'done'])), ...cls } });
+  const go = (v) => { if (v === null) return; go(kids[v][0]); list.push(v); r.step(ln(C_FB, 'prev.right = root'), `In-order visit ${v}: link prev${list.length > 1 ? ` (${list.at(-2)})` : ''} → ${v}, set ${v}.left = null, prev = ${v}.`, [V({ [v]: 'active' }), lane('list via right pointers', [...list])]); go(kids[v][1]); };
+  go(5);
+  r.step(ln(C_FB, 'return head == null'), `In-order of a BST is sorted → linked list <b>${list.join(' → ')}</b>. The prev pointer makes each link O(1), O(n) total.`, [lane('list', list, { done: list.map((_, i) => i) })]);
+  return r.steps;
+}
+
+// ---------- Regex ----------
+const C_RE = `
+private boolean solve(int i, int j, String s, String p) {
+    if (j == p.length()) return i == s.length();
+    if (memo[i][j] != null) return memo[i][j];
+    boolean first = i < s.length() && (p.charAt(j) == s.charAt(i) || p.charAt(j) == '.');
+    boolean ans;
+    if (j + 1 < p.length() && p.charAt(j + 1) == '*') ans = solve(i, j + 2, s, p) || (first && solve(i + 1, j, s, p));
+    else ans = first && solve(i + 1, j + 1, s, p);
+    return memo[i][j] = ans;
+}`;
+function regex() {
+  const r = recorder(), s = 'aab', p = 'c*a*b', memo = [...Array(s.length + 1)].map(() => Array(p.length + 1).fill(null));
+  const G = (hi, hj) => grid('memo[i][j] (does s[i..] match p[j..]?)', memo.map(row => row.map(v => (v === null ? '·' : v ? 'T' : 'F'))), { rowLabels: [...s, '∅'].map((c, i) => `${i}:${c}`), colLabels: [...p, '∅'].map((c, j) => `${j}:${c}`), cls: (i, j) => (i === hi && j === hj ? 'active' : memo[i][j] === true ? 'done' : memo[i][j] === false ? 'bad' : '') });
+  r.step(0, `s = "${s}", p = "${p}". State = (i, j). <b>x*</b> means: skip "x*" entirely, OR use one x and stay on "x*".`, [G(-1, -1)]);
+  const go = (i, j) => {
+    if (j === p.length) return i === s.length;
+    if (memo[i][j] !== null) return memo[i][j];
+    const first = i < s.length && (p[j] === s[i] || p[j] === '.'); let ans;
+    if (j + 1 < p.length && p[j + 1] === '*') { r.step(ln(C_RE, "p.charAt(j + 1) == '*'"), `(${i},${j}) "${p[j]}*": try skipping it, or (if s[${i}] matches) eat one char.`, [G(i, j)]); ans = go(i, j + 2) || (first && go(i + 1, j)); }
+    else ans = first && go(i + 1, j + 1);
+    memo[i][j] = ans;
+    r.step(ln(C_RE, 'return memo[i][j] = ans'), `memo[${i}][${j}] = <b>${ans}</b>.`, [G(i, j)]);
+    return ans;
+  };
+  const a = go(0, 0);
+  r.step(0, `Answer <b>${a}</b>. Each (i, j) is solved once → O(|s|·|p|).`, [G(0, 0)]);
+  return r.steps;
+}
+
+// ---------- Punishment number ----------
+const C_PN = `
+static boolean canSplit(int num, int sum, int target) {
+    if (num == 0) return sum == target;
+    if (sum > target) return false;
+    return canSplit(num / 10, sum + num % 10, target) || canSplit(num / 100, sum + num % 100, target)
+        || canSplit(num / 1000, sum + num % 1000, target) || canSplit(num / 10000, sum + num % 10000, target);
+}`;
+function punish() {
+  const r = recorder(), t = new RT(), target = 36;
+  r.step(0, `36² = 1296. Can "1296" be cut into pieces that add up to 36? Peel the last 1, 2, 3 or 4 digits with % and /.`, [lane('digits', [...'1296'])]);
+  const go = (num, sum) => {
+    t.call(`${num}|${sum}`);
+    if (num === 0) { const ok = sum === target; t.ret(ok ? 'T' : 'F'); r.step(ln(C_PN, 'return sum == target'), `Nothing left: sum ${sum} ${ok ? '= 36 ✓' : '≠ 36'}.`, [t.view('Cut tree (node = remaining | sum)')]); return ok; }
+    if (sum > target) { t.ret('F'); r.step(ln(C_PN, 'sum > target'), `sum ${sum} &gt; 36 → prune.`, [t.view('Cut tree (node = remaining | sum)')]); return false; }
+    for (const d of [10, 100, 1000, 10000]) { if (go(Math.floor(num / d), sum + num % d)) { t.ret('T'); return true; } if (num < d) break; }
+    t.ret('F'); return false;
+  };
+  go(1296, 0);
+  r.step(0, `1 + 29 + 6 = 36 ✓, so 1296 counts toward the punishment number.`, [t.view('Cut tree')]);
+  return r.steps;
+}
+
+// ---------- Brace Expansion ----------
+const C_BR = `
+private TreeSet<String> unit() {          // letter | '{' union '}'
+    ...
+}
+private TreeSet<String> concat() {        // unit unit ...  → cartesian product
+    TreeSet<String> res = new TreeSet<>(List.of(""));
+    while (idx < s.length() && (s.charAt(idx) == '{' || Character.isLetter(s.charAt(idx)))) {
+        TreeSet<String> next = unit(), combined = new TreeSet<>();
+        for (String a : res) for (String b : next) combined.add(a + b);
+        res = combined;
+    }
+    return res;
+}
+private TreeSet<String> union() {         // concat (',' concat)*
+    TreeSet<String> res = new TreeSet<>();
+    while (true) {
+        res.addAll(concat());
+        if (idx < s.length() && s.charAt(idx) == ',') idx++;
+        else return res;
+    }
+}`;
+function brace() {
+  const r = recorder(), e = '{a,b}{c,{d,e}}';
+  r.step(0, `Grammar thinking: <b>union</b> = parts separated by commas; <b>concat</b> = units side by side (cartesian product); <b>unit</b> = a letter or a braced union. Each method owns one job.`, [lane('expression', [...e])]);
+  r.step(ln(C_BR, 'res.addAll(concat())'), `First unit "{a,b}" = union of "a" and "b" → {a, b}.`, [lane('expression', [...e], { active: [0, 1, 2, 3, 4] }), lane('unit 1', ['a', 'b'])]);
+  r.step(ln(C_BR, 'res.addAll(concat())'), `Second unit "{c,{d,e}}" = union of "c" and the nested union {d, e} → {c, d, e}.`, [lane('expression', [...e], { active: [...Array(9).keys()].map(k => k + 5) }), lane('unit 2', ['c', 'd', 'e'])]);
+  r.step(ln(C_BR, 'combined.add(a + b)'), `Side by side → concat = every a + b: <b>ac ad ae bc bd be</b>. The TreeSet keeps them sorted and distinct.`, [lane('result', ['ac', 'ad', 'ae', 'bc', 'bd', 'be'], { done: [0, 1, 2, 3, 4, 5] })]);
+  return r.steps;
+}
+
+// ---------- K-th lexicographical ----------
+const C_KL = `
+static long countUnder(long curr, long n) {
+    long next = curr + 1, cnt = 0;
+    while (curr <= n) {
+        cnt += Math.min(n + 1, next) - curr;
+        curr *= 10;
+        next *= 10;
+    }
+    return cnt;
+}
+
+public int findKthNumber(int n, int k) {
+    long curr = 1;
+    k--;
+    while (k > 0) {
+        long cnt = countUnder(curr, n);
+        if (cnt <= k) { k -= cnt; curr++; }
+        else { k--; curr *= 10; }
+    }
+    return (int) curr;
+}`;
+function kthLex() {
+  const r = recorder(), n = 130; let k = 25, curr = 1;
+  const cu = (c) => { let nx = c + 1, cnt = 0; while (c <= n) { cnt += Math.min(n + 1, nx) - c; c *= 10; nx *= 10; } return cnt; };
+  r.step(ln(C_KL, 'k--;'), `n = ${n}, k = 25. Walking the digit tree one number at a time is O(n). Instead, <b>count a whole subtree</b> and skip it if k is beyond it.`, [], { curr, k: k - 1 });
+  k--;
+  while (k > 0) {
+    const c = cu(curr);
+    if (c <= k) { r.step(ln(C_KL, 'k -= cnt; curr++;'), `Subtree of prefix ${curr} holds ${c} numbers ≤ k=${k} → <b>skip it</b>, move to sibling ${curr + 1}.`, [], { curr, cnt: c, k }); k -= c; curr++; }
+    else { r.step(ln(C_KL, 'k--; curr *= 10;'), `Subtree of ${curr} holds ${c} &gt; k=${k} → the answer is inside: <b>go down</b> to ${curr * 10}.`, [], { curr, cnt: c, k }); k--; curr *= 10; }
+  }
+  const all = [...Array(n).keys()].map(i => i + 1).sort((a, b) => String(a).localeCompare(String(b)));
+  r.step(ln(C_KL, 'return (int) curr'), `Answer <b>${curr}</b> (sorting the strings agrees: ${all[24]}). O(log² n).`, [], { curr });
+  return r.steps;
+}
+
+// ---------- Kth char game II ----------
+const C_KC = `
+public char kthCharacter(long k, int[] operations) {
+    if (k == 1) return 'a';
+    long len = 1;
+    int op = 0;
+    long newK = k;
+    for (int i = 0; i < operations.length; i++) {
+        len *= 2;
+        if (len >= k) { op = operations[i]; newK = k - len / 2; break; }
+    }
+    char c = kthCharacter(newK, operations);
+    return op == 0 ? c : (char) ('a' + (c - 'a' + 1) % 26);
+}`;
+function kthChar() {
+  const r = recorder(), t = new RT(), ops = [0, 1, 0, 1];
+  let w = 'a'; const words = ['a']; for (const op of ops) { w = w + [...w].map(c => (op ? String.fromCharCode(97 + (c.charCodeAt(0) - 97 + 1) % 26) : c)).join(''); words.push(w); }
+  r.step(0, `Each operation doubles the word: op 0 appends a copy, op 1 appends a copy <b>shifted by +1</b>.`, words.slice(0, 4).map((x, i) => lane(`after ${i} ops`, [...x])));
+  const go = (k) => {
+    t.call(`k=${k}`);
+    if (k === 1) { t.ret("'a'"); r.step(ln(C_KC, "return 'a'"), `k = 1 → 'a'.`, [t.view()]); return 'a'; }
+    let len = 1, op = 0, nk = k; for (let i = 0; i < ops.length; i++) { len *= 2; if (len >= k) { op = ops[i]; nk = k - len / 2; break; } }
+    r.step(ln(C_KC, 'newK = k - len / 2'), `k=${k} first fits after a doubling to length ${len}. It sits in the second half → it came from position ${nk}, op = ${op}.`, [t.view()]);
+    const c = go(nk), v = op ? String.fromCharCode(97 + (c.charCodeAt(0) - 97 + 1) % 26) : c;
+    t.ret(`'${v}'`); r.step(ln(C_KC, 'return op == 0'), `${op ? `shift '${c}' → '${v}'` : `copy '${c}'`}.`, [t.view()]);
+    return v;
+  };
+  const ans = go(10);
+  r.step(0, `Answer <b>'${ans}'</b> (word[10] = '${words[4][9]}'). O(log k), even for k up to 1e14.`, [lane('final word', [...words[4]], { active: [9] })]);
+  return r.steps;
+}
+
+// ---------- Earliest / Latest ----------
+const C_EL = `
+if (left == n - right + 1) return new int[]{1, 1};      // they face each other now
+// mirror so that 'left' is the one closer to the front
+int next = (n + 1) / 2;
+if (right <= next) {                                     // both in the first half
+    for (int sl = 0; sl < left; sl++)                    // survivors left of P1
+        for (int sm = 0; sm < right - left; sm++)        // survivors between them
+            take earliestAndLatest(next, sl + 1, sl + sm + 2) + 1
+} else {                                                 // P2 in the second half
+    // players between P2's mirror and P2 all survive in fixed halves
+    ...
+}`;
+function earliest() {
+  const r = recorder(), n = 11, a = 2, b = 4, P = [...Array(n).keys()].map(i => i + 1);
+  r.step(0, `Round 1 pairs player i with player n+1−i. P1 = ${a}, P2 = ${b}. They meet when ${a} = n+1−${b}.`, [lane('players', P, { active: [a - 1, b - 1] })]);
+  r.step(ln(C_EL, 'face each other'), `Pairs: ${[...Array(5).keys()].map(i => `${i + 1}v${n - i}`).join(', ')}; 6 is in the middle. ${a} faces ${n + 1 - a}, not ${b}.`, [lane('players', P, { active: [a - 1, b - 1], warn: [n - a, n - b] })]);
+  r.step(ln(C_EL, 'survivors left of P1'), `We control who wins the other matches. All that matters next round is <b>how many survive left of P1</b> and <b>between P1 and P2</b> → recurse on (next = ${(n + 1) / 2}, new positions).`, [lane('players', P, { active: [a - 1, b - 1], ghost: [] })]);
+  r.step(0, `Try all survivor counts, take the min and max of (result + 1). For n=11, (2,4) → <b>[3, 4]</b>. Memoising on (n, left, right) keeps it fast.`, [lane('answer', ['earliest 3', 'latest 4'], { done: [0, 1] })]);
+  return r.steps;
+}
+
+const T = (name, hook, mantra, statement, code, steps, recall, links = []) => ({ name, hook, mantra, statement, anims: [{ name: 'Walkthrough', code, steps }], recall, links });
+mount({
+  title: 'Recursion Animations',
+  sub: 'Recursion = <b>a story with a trusted helper</b>. Define what f(input) returns, handle the smallest case, and trust f on a smaller input. The tree shows every call; the stack shows where you are.',
+  problems: [
+    T('Tower of Hanoi', 'Moving house with a <b>tall wardrobe</b> at the bottom: get everything above it out of the way, move the wardrobe, put everything back on top.', 'n−1 AWAY, BIG ONE OVER, n−1 BACK', 'Move n disks from rod 1 to rod 3 using rod 2; return the number of moves.', C_TOH, hanoi(),
+      [['Recurrence?', 'T(n) = 2T(n−1) + 1 → 2^n − 1.'], ['Which rod is the helper in each call?', 'First call: (from → aux using to); second: (aux → to using from).']], [['Reverse a Stack', 1]]),
+    T('Reverse a Stack (GFG)', 'Hand the plates to a friend (the call stack), let them <b>reverse the rest</b>, then slide your plate under the pile.', 'POP, REVERSE REST, INSERT AT BOTTOM', 'Reverse a stack using only recursion (no loops, no extra data structure).', C_REV, revStack(),
+      [['Two helper recursions?', 'reverse(st) and insertAtBottom(st, x).'], ['Time?', 'O(n²): each insertAtBottom is O(n).']], [['Tower of Hanoi', 0]]),
+    T('Subsets (78)', 'A <b>buffet line</b>: at each dish you either take it or skip it. Every path to the end is one plate.', 'TAKE → RECURSE → UNDO → SKIP → RECURSE', 'Return all subsets of distinct integers.', C_SUB, subsets(),
+      [['Why remove after the recursive call?', 'Backtracking: restore temp before exploring the skip branch.'], ['Why copy temp into the result?', 'temp keeps changing; store a snapshot.']], [['Power Set', 3]]),
+    T('Power Set (GFG)', 'A <b>family tree of words</b>: each node adds one later letter. Every node (not only leaves) is an answer.', 'RECORD NODE, FOR i ≥ idx: ADD, RECURSE, REMOVE', 'All non-empty subsequences of s, sorted.', C_PS, powerSet(),
+      [['Take/skip vs for-loop?', 'Take/skip records at leaves (depth n); for-loop records at every node.'], ['Sorting?', 'Collections.sort at the end.']], [['Subsets', 2]]),
+    T('Merge Sort', '<b>Divide the class</b> into halves until everyone stands alone, then merge sorted pairs back like zippers.', 'SPLIT, SORT LEFT, SORT RIGHT, MERGE', 'Sort with merge sort.', C_MS, mergeSort(),
+      [['When is the work done?', 'On the way up (merge).'], ['Complexity?', 'O(n log n) always; O(n) extra space.']], [['Quick Sort', 5]]),
+    T('Quick Sort', 'A <b>height line-up</b>: pick the last kid as the pivot; shorter kids go left. The pivot\'s spot is now final.', 'PARTITION (≤ PIVOT LEFT), PIVOT FINAL, RECURSE BOTH SIDES', 'Sort with quick sort (Lomuto partition).', C_QS, quickSort(),
+      [['When is the work done?', 'On the way down (partition).'], ['Worst case?', 'O(n²) on sorted input with a last-element pivot; randomise the pivot to avoid it.']], [['Merge Sort', 4]]),
+    T('K-th Symbol (779)', 'A <b>photocopy machine</b>: each row is the last row plus an inverted copy. The second half is just the first half flipped.', 'k ≤ HALF → SAME, ELSE FLIP OF k−HALF', 'Return the k-th symbol of row n (0 → 01, 1 → 10).', C_KS, kthSymbol(),
+      [['half for row n?', '2^(n−2).'], ['Bit trick answer?', 'Integer.bitCount(k − 1) % 2.']], [['Kth Bit in Nth Binary String', 8]]),
+    T('Josephus / Circular Game (1823)', 'After each elimination it is the <b>same game with fewer players</b>, just with name tags shifted by k.', 'w(1) = 0; w(n) = (w(n−1) + k) % n', 'n friends in a circle, every k-th is out; who wins?', C_JO, josephus(),
+      [['Why + k?', 'The smaller game starts k seats after the old start.'], ['O(1) space?', 'Iterate idx = (idx + k) % m for m = 2..n.']], [['Reverse a Stack', 1]]),
+    T('Kth Bit in Nth String (1545)', 'A <b>mirror with a tint</b>: left side, a bright middle 1, then the mirror image of the left side with inverted colours.', 'LEFT → RECURSE, MID → 1, RIGHT → MIRROR + FLIP', 'Return the k-th bit of S_n.', C_KB, kthBit(),
+      [['Mirror index?', 'len − k + 1.'], ['Similar problem?', 'K-th Symbol in Grammar.']], [['K-th Symbol', 6]]),
+    T('Construct String from Tree (606)', 'Write the <b>family register</b>: name, then (left family), then (right family). An empty left family is written "()" only if a right family exists.', 'LEAF → v; NO RIGHT → v(L); ELSE v(L)(R)', 'Preorder string with parentheses, omitting unnecessary empty pairs.', C_T2S, tree2str(),
+      [['When must "()" stay?', 'Left is missing but right exists.'], ['Faster Java?', 'Pass one StringBuilder down instead of concatenating strings.']], []),
+    T('Lexicographical Numbers (386)', 'A <b>dictionary of numbers</b>: 1, 10, 100, 101, … Go as deep as possible before moving to the next sibling.', 'PRE-ORDER DIGIT TREE, ROOTS 1..9', 'Return 1..n in lexicographical order in O(n).', C_LEX, lex(),
+      [['Why stop the loop at next > n?', 'Larger digits give even larger numbers.'], ['Related?', 'K-th Smallest in Lexicographical Order.']], [['K-th Smallest Lexicographical', 20]]),
+    T('Max Length Unique Concat (1239)', 'Packing a <b>suitcase of letters</b>: add a word only if none of its letters are already packed.', 'BITMASK PER WORD, ADD IF mask & m == 0', 'Maximum length of a concatenation of a subsequence of arr with all-unique characters.', C_ML, maxLen(),
+      [['Self-duplicate words (e.g. "aa")?', 'Mark them invalid (mask −1).'], ['Why bitmask?', 'The overlap test is one AND instead of building sets.']], [['Subsets (same take/skip shape)', 2]]),
+    T('Special Binary String (761)', 'Treat 1/0 as <b>( and )</b>. Special substrings are balanced blocks; swapping adjacent blocks = reordering siblings. Biggest first.', 'SPLIT TOP BLOCKS, RECURSE INSIDE, SORT DESC', 'Return the lexicographically largest string reachable by swapping adjacent special substrings.', C_SB, special(),
+      [['Where do you recurse?', 'On the inside of each top-level block (strip the outer 1…0).'], ['Why descending sort works?', 'Blocks can be freely reordered among siblings.']], []),
+    T('Different Ways Parentheses (241)', 'Each operator takes a turn as the <b>last operation</b>; both sides independently list their possible values.', 'SPLIT AT EACH OP, COMBINE ALL L × R', 'All results of computing the expression with different parenthesisations.', C_DW, diffWays(),
+      [['Base case?', 'No operator → the number itself.'], ['Speed-up?', 'Memoise on the substring (HashMap<String, List<Integer>>).']], []),
+    T('Rat in a Maze (GFG)', 'A mouse with <b>chalk</b>: mark the floor where you stand, try every direction, and wipe the chalk when you leave.', 'BLOCK, TRY D L R U, UNBLOCK', 'All paths from (0,0) to (n−1,n−1) through open cells, sorted.', C_RAT, rat(),
+      [['Why unblock at the end?', 'Other paths may need that cell.'], ['Sorted output for free?', 'Explore in alphabetical order D, L, R, U.']], [['Subsets (backtracking)', 2]]),
+    T('Integer to English (273)', 'A <b>bank cashier</b> reading a cheque: Billions, Millions, Thousands, Hundreds. Each chunk is read the same way.', 'BIGGEST UNIT: solve(n / u) + NAME + solve(n % u)', 'Convert a non-negative int to English words.', C_EN, english(),
+      [['Special case?', '0 → "Zero" (handled outside solve).'], ['Below 20 / below 100?', 'Lookup tables ONES and TENS.']], []),
+    T('Flatten BST (GFG)', 'Read the BST <b>left to right like a bookshelf</b> (in-order) and chain each book to the previous one.', 'IN-ORDER + prev POINTER', 'Convert a BST into a sorted list using right pointers (left = null).', C_FB, flatten(),
+      [['Why is the result sorted?', 'The in-order traversal of a BST is ascending.'], ['Approach 1 cost?', 'O(n²): it walks to the tail of the left list each time.']], []),
+    T('Regex Matching (10)', 'A <b>game of choices</b> at every "x*": skip it, or eat one matching char and stay. A memo table stops replaying the same game.', 'x* → SKIP OR (MATCH AND STAY); MEMO (i, j)', 'Does s fully match p with . and *?', C_RE, regex(),
+      [['Base case?', 'j == p.length → i == s.length.'], ['State count?', '(|s|+1)·(|p|+1).']], [['Punishment Number (memo)', 18]]),
+    T('Punishment Number (2698)', 'A <b>chocolate bar of digits</b>: snap off 1–4 digits from the end and see if the pieces can add up to i.', 'PEEL 1–4 DIGITS (%, /), PRUNE sum > i', 'Sum of i² for 1 ≤ i ≤ n whose square splits into parts summing to i.', C_PN, punish(),
+      [['Why %10^d and /10^d?', 'They split off the last d digits without strings.'], ['Prune?', 'Stop when sum > target.']], [['Regex Matching', 17]]),
+    T('Brace Expansion II (1096)', 'A <b>restaurant menu grammar</b>: commas = "or", side by side = "and then". Three cooks: union, concat, unit.', 'UNION OF CONCATS OF UNITS', 'Return the sorted set of words represented by the expression.', C_BR, brace(),
+      [['Which method handles "{"?', 'unit(): it calls union(), then skips "}".'], ['Why TreeSet?', 'Sorted and distinct for free.']], []),
+    T('K-th Smallest Lexicographical (440)', 'A <b>library catalogue</b>: count how many books are under shelf label "1". If k is past them, skip the whole shelf; otherwise open it.', 'COUNT SUBTREE → SKIP SIBLING OR GO DOWN', 'Find the k-th number in lexicographic order among 1..n (n up to 1e9).', C_KL, kthLex(),
+      [['countUnder level rule?', 'Add min(n+1, next) − curr, then multiply both by 10.'], ['Why long?', 'curr·10 can exceed int.']], [['Lexicographical Numbers', 10]]),
+    T('K-th Char Game II (3307)', 'A word that <b>doubles every day</b>: the second half is a copy (or shifted copy) of the first. Walk back to where your letter came from.', 'FIND DOUBLING, k − len/2, SHIFT IF op = 1', 'Find the k-th character after applying the operations.', C_KC, kthChar(),
+      [['Wrap-around?', "'z' + 1 → 'a': use (c − 'a' + 1) % 26."], ['Complexity?', 'O(log k).']], [['Kth Bit in Nth String', 8]]),
+    T('Earliest & Latest Rounds (1900)', 'A <b>tournament director</b> who decides every other match. Only the counts left of and between the two stars matter.', 'MIRROR, ENUMERATE SURVIVOR COUNTS, MIN/MAX + 1, MEMO', 'Earliest and latest round where the two best players meet.', C_EL, earliest(),
+      [['Base case?', 'left == n − right + 1 → they meet now: [1, 1].'], ['Why memo?', 'Different choices lead to the same (n, left, right).']], [])
+  ]
+});
+</script>
+</body>
+</html>

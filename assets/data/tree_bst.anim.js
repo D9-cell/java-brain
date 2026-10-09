@@ -1,0 +1,415 @@
+const W = (name, code, steps) => [{ name, code, steps }];
+const vals = (t, ids) => ids.map(u => t.val(u));
+const idOf = (t, v) => t.ids.find(u => t.val(u) === v);
+
+const C_VAL = `
+private boolean check(TreeNode n, long lo, long hi) {
+    if (n == null) return true;
+    if (n.val <= lo || n.val >= hi) return false;
+    return check(n.left, lo, n.val) && check(n.right, n.val, hi);
+}`;
+{
+  const t = make([5, 1, 4, null, null, 3, 6]), r = recorder(), win = { 0: ['−∞', '∞'] }, badge = {};
+  r.step(0, 'Each node must fit the window (lo, hi) given by <b>all</b> its ancestors.', [t.snap('tree')]);
+  const lo = u => win[u][0], hi = u => win[u][1];
+  const visit = (u) => { const [l, h] = win[u]; badge[u] = `(${l},${h})`; const v = t.val(u), bad = (l !== '−∞' && v <= l) || (h !== '∞' && v >= h);
+    r.step(bad ? ln(C_VAL, 'return false') : ln(C_VAL, 'check(n.left'), bad ? `Node ${v} must be in (${l}, ${h}) → violated → <b>false</b>.` : `Node ${v} fits (${l}, ${h}). Left child gets (${l}, ${v}), right child gets (${v}, ${h}).`, [t.snap('tree', { active: bad ? [] : [u], bad: bad ? [u] : [], badge: { ...badge } })]); return !bad; };
+  win[1] = ['−∞', 5]; win[2] = [5, '∞']; win[5] = [5, 4]; win[6] = [4, '∞'];
+  [0, 1, 2, 5].forEach(u => { if (visit(u) === false) return; });
+  ANIM['Validate Binary Search Tree'] = W('Windows shrink downward', C_VAL, r.steps);
+}
+
+const C_REC = `
+private void inorder(TreeNode n, TreeNode[] x) {
+    if (n == null) return;
+    inorder(n.left, x);
+    if (x[2] != null && x[2].val > n.val) {
+        if (x[0] == null) x[0] = x[2];
+        x[1] = n;
+    }
+    x[2] = n;
+    inorder(n.right, x);
+}`;
+{
+  const t = make([1, 3, null, null, 2]), r = recorder(), ino = t.ino(), seq = vals(t, ino);
+  r.step(0, 'Tree 1 ← 3 → 2 where two values were swapped. Its inorder should be sorted but reads 3, 2, 1.', [t.snap('tree'), A('inorder', seq)]);
+  let first = null, second = null;
+  for (let i = 1; i < ino.length; i++) { const p = ino[i - 1], c = ino[i], dip = t.val(p) > t.val(c); if (dip) { if (first === null) first = p; second = c; }
+    r.step(dip ? ln(C_REC, 'x[1] = n') : ln(C_REC, 'x[2] = n'), dip ? `${t.val(p)} > ${t.val(c)} is a dip. first = ${t.val(first)}, second = ${t.val(second)}.` : `${t.val(p)} < ${t.val(c)} fine.`, [t.snap('tree', { warn: [p, c], bad: dip ? [first, second] : [] }), A('inorder', seq, { active: [i - 1, i] })]); }
+  r.step(ln(C_REC, 'x[0] = x[2]'), `Swap the values of first (${t.val(first)}) and second (${t.val(second)}): inorder becomes 1, 2, 3.`, [t.snap('tree', { bad: [first, second] }), A('inorder after swap', [1, 2, 3], { done: [0, 1, 2] })]);
+  ANIM['Recover Binary Search Tree'] = W('Find the dips', C_REC, r.steps);
+}
+
+const C_SUC = `
+public TreeNode inorderSuccessor(TreeNode root, TreeNode p) {
+    TreeNode succ = null;
+    while (root != null) {
+        if (p.val < root.val) { succ = root; root = root.left; }
+        else root = root.right;
+    }
+    return succ;
+}`;
+{
+  const t = make([6, 2, 8, 0, 4, 7, 9, null, null, 3, 5]), r = recorder(), p = 3;
+  r.step(0, 'Successor of 3. Descend as if searching for 3; every <b>left turn</b> records a candidate.', [t.snap('tree', { active: [idOf(t, p)] })]);
+  let succ = null; [[0, true], [1, false], [4, true], [9, false]].forEach(([u, left]) => { if (left) succ = u;
+    r.step(left ? ln(C_SUC, 'succ = root') : ln(C_SUC, 'else root = root.right'), left ? `3 < ${t.val(u)} → candidate ${t.val(u)}, go left.` : u === 9 ? `Reached 3 itself: it is not smaller than itself → go right (empty). Loop ends.` : `3 > ${t.val(u)} → go right, candidate unchanged.`, [t.snap('tree', { active: [u], done: succ !== null ? [succ] : [] }), A('succ', [t.val(succ)], { done: [0] })]); });
+  r.step(ln(C_SUC, 'return succ'), `Successor = <b>${t.val(succ)}</b>.`, [t.snap('tree', { done: [succ] }), A('succ', [t.val(succ)], { done: [0] })]);
+  ANIM['Inorder Successor in BST'] = W('Remember left turns', C_SUC, r.steps);
+}
+
+const C_CLO = `
+for (TreeNode cur = root; cur != null; ) {
+    best = Math.min(best, Math.abs(k - cur.val));
+    if (k == cur.val) return 0;
+    cur = k > cur.val ? cur.right : cur.left;
+}`;
+{
+  const t = make([10, 2, 11, 1, 5, null, null, null, null, 3, 6]), r = recorder(); let best = Infinity;
+  r.step(0, 'Closest key to k = 4: follow the search path for 4 and keep the best difference.', [t.snap('tree')]);
+  [0, 1, 4, 9].forEach(u => { const d = Math.abs(4 - t.val(u)); best = Math.min(best, d); r.step(ln(C_CLO, 'best = Math.min'), `Node ${t.val(u)}: |4 − ${t.val(u)}| = ${d}. Best ${best}.`, [t.snap('tree', { active: [u] }), A('best', [best], { done: [0] })]); });
+  r.step(ln(C_CLO, 'cur = k >'), `Path ends below 3 (empty). Answer: <b>${best}</b> (key 3 or 5).`, [t.snap('tree', { done: [0, 1, 4, 9] }), A('best', [best], { done: [0] })]);
+  ANIM['Find the Closest Element in BST'] = W('Search path', C_CLO, r.steps);
+}
+
+const C_INC = `
+private void walk(TreeNode n, TreeNode[] tail) {
+    if (n == null) return;
+    walk(n.left, tail);
+    n.left = null;
+    tail[0].right = n;
+    tail[0] = n;
+    walk(n.right, tail);
+}`;
+{
+  const t = make([5, 3, 6, 2, 4, null, 8]), r = recorder(), chain = [];
+  r.step(0, 'Visit in sorted order; each node is appended to the right of the previous one and loses its left child.', [t.snap('tree')]);
+  t.ino().forEach(u => { chain.push(t.val(u)); r.step(ln(C_INC, 'tail[0].right = n'), `Visit ${t.val(u)}: left = null, previous.right = ${t.val(u)}.`, [t.snap('tree', { active: [u], done: t.ino().slice(0, chain.length - 1) }), TK.R('chain', chain)]); });
+  r.step(ln(C_INC, 'walk(n.right'), `Chain: ${chain.join(' → ')}.`, [t.snap('tree', { done: t.ids }), TK.R('chain', chain, { done: chain.map((_, i) => i) })]);
+  ANIM['Increasing Order Search Tree'] = W('Relink inorder', C_INC, r.steps);
+}
+
+const C_GT = `
+private void walk(TreeNode n, int[] sum) {
+    if (n == null) return;
+    walk(n.right, sum);
+    sum[0] += n.val;
+    n.val = sum[0];
+    walk(n.left, sum);
+}`;
+{
+  const t = make([4, 1, 6, 0, 2, 5, 7, null, null, null, 3, null, null, null, 8]), r = recorder(), order = t.ino().reverse(); let sum = 0; const badge = {};
+  r.step(0, 'Reverse inorder visits keys from largest to smallest; a running sum is the sum of all larger keys.', [t.snap('tree')]);
+  order.forEach((u, k) => { const old = t.val(u); sum += old; badge[u] = sum; r.step(ln(C_GT, 'n.val = sum[0]'), `Visit ${old}: sum = ${sum} → new value <b>${sum}</b>.`, [t.snap('tree', { active: [u], done: order.slice(0, k), badge: { ...badge } }), A('running sum', [sum], { done: [0] })]); });
+  ANIM['Convert BST to Greater Tree'] = W('Reverse inorder', C_GT, r.steps);
+}
+
+const C_AE = `
+while (!s1.isEmpty() || !s2.isEmpty()) {
+    Deque<TreeNode> from = s2.isEmpty() || (!s1.isEmpty() && s1.peek().val <= s2.peek().val) ? s1 : s2;
+    TreeNode n = from.pop();
+    res.add(n.val);
+    push(from, n.right);
+}`;
+{
+  const a = make([2, 1, 4]), b = make([1, 0, 3]), r = recorder();
+  r.step(0, 'Two BSTs: [2, 1, 4] and [1, 0, 3]. Each stack holds the left spine; the smaller top is taken next.', [a.snap('A'), b.snap('B'), TK.R('result', [])]);
+  const ia = a.ino().map(u => a.val(u)), ib = b.ino().map(u => b.val(u)); let i = 0, j = 0; const res = [];
+  while (i < ia.length || j < ib.length) { const takeA = j === ib.length || (i < ia.length && ia[i] <= ib[j]); const v = takeA ? ia[i++] : ib[j++]; res.push(v);
+    r.step(ln(C_AE, 'res.add(n.val)'), `Compare tops: ${i - (takeA ? 1 : 0) < ia.length ? ia[i - (takeA ? 1 : 0)] : '∅'} vs ${j - (takeA ? 0 : 1) < ib.length ? ib[j - (takeA ? 0 : 1)] : '∅'} → take ${v} from ${takeA ? 'A' : 'B'}.`, [a.snap('A'), b.snap('B'), TK.R('result', res)]); }
+  ANIM['All Elements in Two Binary Search Trees'] = W('Lazy merge with stacks', C_AE, r.steps);
+}
+
+const C_IT = `
+BSTIterator(TreeNode root) { pushLeft(root); }
+int next() {
+    TreeNode n = st.pop();
+    pushLeft(n.right);
+    return n.val;
+}
+private void pushLeft(TreeNode n) { for (; n != null; n = n.left) st.push(n); }`;
+{
+  const t = make([7, 3, 15, null, null, 9, 20]), r = recorder(), st = [], out = [];
+  const pushLeft = u => { for (; u !== undefined; u = t.L[u]) st.push(u); };
+  pushLeft(0); r.step(ln(C_IT, 'pushLeft(root)'), 'Constructor pushes the left spine: 7, 3 (top).', [t.snap('tree', { warn: [...st] }), S('stack', vals(t, st))]);
+  for (let k = 0; k < 5; k++) { const n = st.pop(); pushLeft(t.R[n]); out.push(t.val(n));
+    r.step(ln(C_IT, 'pushLeft(n.right)'), `next() pops ${t.val(n)} and pushes the left spine of its right child. Returned ${t.val(n)}.`, [t.snap('tree', { active: [n], warn: [...st] }), S('stack', vals(t, st)), TK.R('returned', out)]); }
+  ANIM['Binary Search Tree Iterator'] = W('Stack of the left spine', C_IT, r.steps);
+}
+
+const C_SER = `
+public String serialize(TreeNode root) { ... preorder values joined by commas ... }
+private TreeNode build(Deque<Integer> q, long lo, long hi) {
+    if (q.isEmpty() || q.peek() <= lo || q.peek() >= hi) return null;
+    int v = q.poll();
+    TreeNode n = new TreeNode(v);
+    n.left = build(q, lo, v);
+    n.right = build(q, v, hi);
+    return n;
+}`;
+{
+  const t = make([5, 3, 7, 2, 4, 6, 8]), r = recorder(), pre = t.pre(), text = vals(t, pre);
+  r.step(0, 'Serialize = preorder values only: ' + text.join(','), [t.snap('tree', { warn: pre }), A('preorder', text)]);
+  const win = { 0: ['−∞', '∞'] }; t.pre().forEach(u => { const [l, h] = win[u]; if (t.L[u] !== undefined) win[t.L[u]] = [l, t.val(u)]; if (t.R[u] !== undefined) win[t.R[u]] = [t.val(u), h]; });
+  pre.forEach((u, k) => r.step(ln(C_SER, 'int v = q.poll()'), `Read ${t.val(u)}: window (${win[u][0]}, ${win[u][1]}) accepts it. Left subtree gets (${win[u][0]}, ${t.val(u)}), right gets (${t.val(u)}, ${win[u][1]}).`, [t.snap('tree', { active: [u], done: pre.slice(0, k) }), A('preorder', text, { active: [k], done: text.map((_, i) => i).filter(i => i < k) })]));
+  r.step(ln(C_SER, 'return null'), 'When the next value does not fit the window, that child is null. The ordering replaces null markers.', [t.snap('tree', { done: t.ids })]);
+  ANIM['Serialize and Deserialize BST'] = W('Preorder + bounds', C_SER, r.steps);
+}
+
+const C_BAL = `
+private TreeNode build(List<Integer> v, int lo, int hi) {
+    if (lo > hi) return null;
+    int mid = (lo + hi) >>> 1;
+    return new TreeNode(v.get(mid), build(v, lo, mid - 1), build(v, mid + 1, hi));
+}`;
+{
+  const before = make([1, null, 2, null, 3, null, 4, null, 5]), after = make([3, 1, 4, null, 2, null, 5]), r = recorder(), v = [1, 2, 3, 4, 5];
+  r.step(0, 'A skewed BST (a linked list). Flatten it to the sorted list and rebuild with the middle as root.', [before.snap('skewed'), A('sorted', v)]);
+  r.step(ln(C_BAL, 'int mid'), 'Range [0..4]: mid = 2 → root 3.', [A('sorted', v, { active: [2] }), after.snap('result', { active: [0] })]);
+  r.step(ln(C_BAL, 'build(v, lo, mid - 1)'), 'Left range [0..1]: mid = 0 → 1, whose right range [1..1] gives 2.', [A('sorted', v, { active: [0], done: [2] }), after.snap('result', { done: [0], active: [1, 4] })]);
+  r.step(ln(C_BAL, 'build(v, mid + 1, hi)'), 'Right range [3..4]: mid = 3 → 4 with right child 5. Height 3 instead of 5.', [A('sorted', v, { done: [0, 1, 2, 3, 4] }), after.snap('result', { done: after.ids })]);
+  ANIM['Balance a Binary Search Tree'] = W('Middle as root', C_BAL, r.steps);
+}
+
+const C_MODE = `
+private void walk(TreeNode n, int[] st, List<Integer> modes) {
+    if (n == null) return;
+    walk(n.left, st, modes);
+    st[1] = st[3] == 1 && n.val == st[0] ? st[1] + 1 : 1;
+    st[0] = n.val;
+    st[3] = 1;
+    if (st[1] > st[2]) { st[2] = st[1]; modes.clear(); }
+    if (st[1] == st[2]) modes.add(n.val);
+    walk(n.right, st, modes);
+}`;
+{
+  const t = make([2, 1, 3, null, null, 2, 3, null, null, null, null, 2]), r = recorder(); let prev = null, run = 0, best = 0, modes = [];
+  r.step(0, 'Equal keys are neighbours in inorder. Count runs.', [t.snap('tree'), A('inorder', vals(t, t.ino()))]);
+  t.ino().forEach((u, k) => { const v = t.val(u); run = prev === v ? run + 1 : 1; prev = v; if (run > best) { best = run; modes = []; } if (run === best) modes.push(v);
+    r.step(ln(C_MODE, 'if (st[1] > st[2])'), `Key ${v}: run ${run}, best ${best}. Modes so far ${JSON.stringify(modes)}.`, [t.snap('tree', { active: [u] }), A('inorder', vals(t, t.ino()), { active: [k] }), A('run / best', [run, best])]); });
+  ANIM['Find Mode in Binary Search Tree'] = W('Runs in inorder', C_MODE, r.steps);
+}
+
+const C_MIN = `
+private void walk(TreeNode n, int[] st) {
+    if (n == null) return;
+    walk(n.left, st);
+    if (st[1] != Integer.MIN_VALUE) st[0] = Math.min(st[0], n.val - st[1]);
+    st[1] = n.val;
+    walk(n.right, st);
+}`;
+{
+  const t = make([4, 2, 6, 1, 3]), r = recorder(); let prev = null, best = Infinity;
+  r.step(0, 'Inorder is sorted; the smallest gap is always between neighbours.', [t.snap('tree'), A('inorder', vals(t, t.ino()))]);
+  t.ino().forEach((u, k) => { const v = t.val(u); if (prev !== null) best = Math.min(best, v - prev);
+    r.step(ln(C_MIN, 'st[0] = Math.min'), prev === null ? `First key ${v}: nothing to compare.` : `${v} − ${prev} = ${v - prev}. Best ${best}.`, [t.snap('tree', { active: [u] }), A('inorder', vals(t, t.ino()), { active: [k] }), A('best', [best === Infinity ? '∞' : best], { done: [0] })]); prev = v; });
+  ANIM['Minimum Absolute Difference in BST'] = W('Inorder neighbours', C_MIN, r.steps);
+}
+
+const C_RS = `
+public int rangeSumBST(TreeNode root, int low, int high) {
+    if (root == null) return 0;
+    if (root.val < low) return rangeSumBST(root.right, low, high);
+    if (root.val > high) return rangeSumBST(root.left, low, high);
+    return root.val + rangeSumBST(root.left, low, high) + rangeSumBST(root.right, low, high);
+}`;
+{
+  const t = make([10, 5, 15, 3, 7, null, 18]), r = recorder(), skipped = []; let sum = 0, done = [];
+  r.step(0, 'Range [7, 15]. Subtrees that cannot hold keys in the range are skipped.', [t.snap('tree')]);
+  const rec = u => { if (u === undefined) return; const v = t.val(u);
+    if (v < 7) { r.step(ln(C_RS, 'root.val < low'), `${v} < 7 → everything in its left subtree is smaller too; only the right side can matter.`, [t.snap('tree', { bad: [u], done }), A('sum', [sum], { done: [0] })]); rec(t.R[u]); }
+    else if (v > 15) { r.step(ln(C_RS, 'root.val > high'), `${v} > 15 → skip the right subtree.`, [t.snap('tree', { bad: [u], done }), A('sum', [sum], { done: [0] })]); rec(t.L[u]); }
+    else { sum += v; done = [...done, u]; r.step(ln(C_RS, 'return root.val +'), `${v} is inside [7, 15] → add. Sum ${sum}. Visit both children.`, [t.snap('tree', { active: [u], done }), A('sum', [sum], { done: [0] })]); rec(t.L[u]); rec(t.R[u]); } };
+  rec(0);
+  ANIM['Range Sum of BST'] = W('Prune subtrees', C_RS, r.steps);
+}
+
+const C_TRIM = `
+public TreeNode trimBST(TreeNode root, int low, int high) {
+    if (root == null) return null;
+    if (root.val < low) return trimBST(root.right, low, high);
+    if (root.val > high) return trimBST(root.left, low, high);
+    root.left = trimBST(root.left, low, high);
+    root.right = trimBST(root.right, low, high);
+    return root;
+}`;
+{
+  const a = make([3, 0, 4, null, 2, null, null, 1]), res = make([3, 2, null, 1]), r = recorder();
+  r.step(0, 'Trim to [1, 3]. A node outside the range is replaced by one of its subtrees.', [a.snap('tree')]);
+  r.step(ln(C_TRIM, 'root.val < low'), '0 < 1: node 0 and its (empty) left subtree vanish; return the trimmed right subtree, i.e. node 2.', [a.snap('tree', { bad: [1], active: [3] })]);
+  r.step(ln(C_TRIM, 'root.val > high'), '4 > 3: node 4 and its right side vanish; its left subtree is empty → null.', [a.snap('tree', { bad: [2] })]);
+  r.step(ln(C_TRIM, 'return root'), 'Result: 3 with left child 2 (which keeps its child 1).', [res.snap('trimmed', { done: res.ids })]);
+  ANIM['Trim a Binary Search Tree'] = W('Replace by a subtree', C_TRIM, r.steps);
+}
+
+function buildSteps(code, kind) {
+  const r = recorder(), pre = [3, 9, 20, 15, 7], ino = [9, 3, 15, 20, 7], post = [9, 15, 7, 20, 3], t = make([3, 9, 20, null, null, 15, 7]);
+  const first = kind === 'pre' ? pre : post;
+  r.step(0, kind === 'pre' ? 'Preorder gives the root first; inorder tells how many nodes are on its left.' : 'Postorder gives the root last; inorder tells how many nodes are on its left.', [A('preorder / postorder', first), A('inorder', ino), t.snap('result (to build)', { ghost: t.ids })]);
+  const root = kind === 'pre' ? 0 : 4;
+  r.step(ln(code, 'int mid = pos.get'), `Root = ${first[root]}. In inorder it sits at index 1, so 1 node (9) is on the left and 3 nodes (15, 20, 7) on the right.`, [A('preorder / postorder', first, { active: [root] }), A('inorder', ino, { active: [1], done: [0] }), t.snap('result', { active: [0] })]);
+  r.step(ln(code, kind === 'pre' ? 'n.left = build' : 'n.right = build'), kind === 'pre' ? 'Left subtree = inorder[0..0] → next preorder value 9. Then the right subtree = inorder[2..4].' : 'Right subtree first (postorder is read from the end): inorder[2..4] → next value from the end is 20.', [A('preorder / postorder', first, { active: [kind === 'pre' ? 1 : 3] }), A('inorder', ino, { active: kind === 'pre' ? [0] : [3] }), t.snap('result', { done: [0], active: [kind === 'pre' ? 1 : 2] })]);
+  r.step(ln(code, 'return n'), kind === 'pre' ? 'Right subtree root 20 splits [15, 20, 7] into left 15 and right 7. Finished: [3, 9, 20, null, null, 15, 7].' : 'Root 20 splits [15, 20, 7]: right 7 is taken first from the end, then left 15. Finished: [3, 9, 20, null, null, 15, 7].', [t.snap('result', { done: t.ids })]);
+  return r.steps;
+}
+const C_PI = `
+private TreeNode build(int[] preorder, int[] next, int lo, int hi, Map<Integer, Integer> pos) {
+    if (lo > hi) return null;
+    TreeNode n = new TreeNode(preorder[next[0]++]);
+    int mid = pos.get(n.val);
+    n.left = build(preorder, next, lo, mid - 1, pos);
+    n.right = build(preorder, next, mid + 1, hi, pos);
+    return n;
+}`;
+ANIM['Construct Binary Tree from Preorder and Inorder Traversal'] = W('Root, then split', C_PI, buildSteps(C_PI, 'pre'));
+const C_IP = `
+private TreeNode build(int[] post, int[] next, int lo, int hi, Map<Integer, Integer> pos) {
+    if (lo > hi) return null;
+    TreeNode n = new TreeNode(post[next[0]--]);
+    int mid = pos.get(n.val);
+    n.right = build(post, next, mid + 1, hi, pos);
+    n.left = build(post, next, lo, mid - 1, pos);
+    return n;
+}`;
+ANIM['Construct Binary Tree from Inorder and Postorder Traversal'] = W('Root from the end', C_IP, buildSteps(C_IP, 'post'));
+
+const C_PP = `
+private TreeNode build(int[] pre, int pl, int pr, int qs, Map<Integer, Integer> pos) {
+    if (pl > pr) return null;
+    TreeNode n = new TreeNode(pre[pl]);
+    if (pl == pr) return n;
+    int leftSize = pos.get(pre[pl + 1]) - qs + 1;
+    n.left = build(pre, pl + 1, pl + leftSize, qs, pos);
+    n.right = build(pre, pl + leftSize + 1, pr, qs + leftSize, pos);
+    return n;
+}`;
+{
+  const pre = [1, 2, 4, 5, 3, 6, 7], post = [4, 5, 2, 6, 7, 3, 1], t = make([1, 2, 3, 4, 5, 6, 7]), r = recorder();
+  r.step(0, 'No inorder is available. The next preorder value after the root is the <b>left child</b>; where it appears in postorder tells the left subtree size.', [A('preorder', pre), A('postorder', post), t.snap('result', { ghost: t.ids })]);
+  r.step(ln(C_PP, 'int leftSize'), 'Root 1, left child = pre[1] = 2. Value 2 sits at postorder index 2, and the range starts at 0 → leftSize = 3 (nodes 2, 4, 5).', [A('preorder', pre, { active: [0, 1] }), A('postorder', post, { active: [2], done: [0, 1] }), t.snap('result', { active: [0, 1] })]);
+  r.step(ln(C_PP, 'n.left = build'), 'Left range pre[1..3] = 2, 4, 5 → root 2 with leftSize 1 (4) and the rest 5.', [A('preorder', pre, { done: [0], active: [1, 2, 3] }), A('postorder', post, { active: [0, 1, 2] }), t.snap('result', { done: [0], active: [1, 3, 4] })]);
+  r.step(ln(C_PP, 'n.right = build'), 'Right range pre[4..6] = 3, 6, 7 → root 3 with left 6 and right 7.', [A('preorder', pre, { done: [0, 1, 2, 3], active: [4, 5, 6] }), A('postorder', post, { active: [3, 4, 5] }), t.snap('result', { done: t.ids })]);
+  ANIM['Construct Binary Tree from Preorder and Postorder Traversal'] = W('Left size from postorder', C_PP, r.steps);
+}
+
+const C_STR = `
+private TreeNode parse(String s, int[] i) {
+    int start = i[0];
+    if (s.charAt(i[0]) == '-') i[0]++;
+    while (i[0] < s.length() && Character.isDigit(s.charAt(i[0]))) i[0]++;
+    TreeNode n = new TreeNode(Integer.parseInt(s.substring(start, i[0])));
+    if (i[0] < s.length() && s.charAt(i[0]) == '(') { i[0]++; n.left = parse(s, i); i[0]++; }
+    if (i[0] < s.length() && s.charAt(i[0]) == '(') { i[0]++; n.right = parse(s, i); i[0]++; }
+    return n;
+}`;
+{
+  const s = '4(2(3)(1))(6(5))', t = make([4, 2, 6, 3, 1, 5]), r = recorder();
+  const chars = [...s];
+  r.step(0, 'Parse "' + s + '": a number, then up to two bracketed subtrees (left first).', [A('string', chars), t.snap('result', { ghost: t.ids })]);
+  [[0, 'Read 4 → root. Next char is "(" → parse the left subtree.', [0]], [2, 'Read 2. "(" follows → left child.', [0, 1]], [4, 'Read 3: no brackets → leaf. Back in 2, the next "(" starts its right child.', [0, 1, 3]], [7, 'Read 1: leaf. Subtree of 2 is closed by ")".', [0, 1, 3, 4]], [12, 'After the first group of 4, another "(" starts the right child 6.', [0, 1, 3, 4, 2]], [14, 'Read 5 as the left child of 6. Done.', t.ids]].forEach(([i, say, done]) =>
+    r.step(ln(C_STR, 'TreeNode n = new TreeNode'), say, [A('string', chars, { active: [i] }), t.snap('result', { done, ghost: t.ids.filter(x => !done.includes(x)) })]));
+  ANIM['Construct Binary Tree from String'] = W('Recursive descent', C_STR, r.steps);
+}
+
+const C_RPT = `
+for (int i = 0; i < s.length(); ) {
+    int depth = 0;
+    while (s.charAt(i) == '-') { depth++; i++; }
+    ... read the number n ...
+    while (st.size() > depth) st.pop();
+    if (!st.isEmpty()) { if (st.peek().left == null) st.peek().left = n; else st.peek().right = n; }
+    st.push(n);
+}`;
+{
+  const toks = [[1, 0], [2, 1], [3, 2], [4, 2], [5, 1], [6, 2], [7, 2]], final = make([1, 2, 5, 3, 4, 6, 7]), r = recorder(), st = [];
+  r.step(0, '"1-2--3--4-5--6--7": dashes before a number give its depth. Keep a stack of the current root path.', [A('tokens (value, depth)', toks.map(([v, d]) => `${v}@${d}`)), S('stack', [])]);
+  toks.forEach(([v, d], i) => { while (st.length > d) st.pop(); const parent = st.length ? st[st.length - 1] : null; st.push(v);
+    r.step(ln(C_RPT, 'st.push(n)'), `${v} has depth ${d}: pop until ${d} nodes remain → parent ${parent === null ? 'none (root)' : parent}. Push ${v}.`, [A('tokens (value, depth)', toks.map(([a, b]) => `${a}@${b}`), { active: [i] }), S('stack', [...st])]); });
+  r.step(ln(C_RPT, 'st.push(n)'), 'The bottom of the stack is the root. Result: [1, 2, 5, 3, 4, 6, 7].', [final.snap('result', { done: final.ids })]);
+  ANIM['Recover a Tree From Preorder Traversal'] = W('Stack of the root path', C_RPT, r.steps);
+}
+
+const C_FE = `
+private void recover(TreeNode n, int v) {
+    if (n == null) return;
+    n.val = v;
+    seen.add(v);
+    recover(n.left, 2 * v + 1);
+    recover(n.right, 2 * v + 2);
+}
+boolean find(int target) { return seen.contains(target); }`;
+{
+  const shape = make([-1, -1, -1, -1, -1]), clean = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4 }, r = recorder(), badge = {};
+  r.step(0, 'All values are −1. The original rule: root 0, left child 2x+1, right child 2x+2. Replay it.', [shape.snap('contaminated')]);
+  [[0, 0], [1, 1], [3, 3], [4, 4], [2, 2]].forEach(([u, v]) => { badge[u] = v; r.step(ln(C_FE, 'seen.add(v)'), `Node gets ${v}${u === 0 ? ' (root)' : `: parent ${shape.par[u] === 0 ? 0 : shape.par[u]} → ${shape.L[shape.par[u]] === u ? '2·' + shape.par[u] + '+1' : '2·' + shape.par[u] + '+2'}`}.`, [shape.snap('recovered', { active: [u], badge: { ...badge } }), TK.R('set', Object.values(badge))]); });
+  r.step(ln(C_FE, 'boolean find'), 'find(3) → yes, find(7) → no. (Bit trick without the set: 4 + 1 = 101₂; skip the leading 1, then 0 = left, 1 = right → node 4.)', [shape.snap('recovered', { done: shape.ids, badge }), TK.R('set', Object.values(badge), { done: [0, 1, 2, 3, 4] })]);
+  ANIM['Find Elements in a Contaminated Binary Tree'] = W('Replay the numbering', C_FE, r.steps);
+}
+
+function naryTree(name, cls = {}, badge = {}) { return BrainAnim.tree(name, { 1: -1, 3: 1, 2: 1, 4: 1, 5: 3, 6: 3 }, { cls, badge }); }
+const C_NL = `
+while (!q.isEmpty()) {
+    List<Integer> level = new ArrayList<>();
+    for (int i = q.size(); i > 0; i--) {
+        Node cur = q.poll();
+        level.add(cur.val);
+        q.addAll(cur.children);
+    }
+    res.add(level);
+}`;
+{
+  const r = recorder(), res = [];
+  r.step(0, 'Same BFS as a binary tree; <code>children</code> replaces left/right.', [naryTree('tree'), Q('queue', [1])]);
+  [[[1], [3, 2, 4]], [[3, 2, 4], [5, 6]], [[5, 6], []]].forEach(([lvl, next]) => { res.push(lvl); r.step(ln(C_NL, 'res.add(level)'), `Level ${JSON.stringify(lvl)}; queue its children ${JSON.stringify(next)}.`, [naryTree('tree', Object.fromEntries(lvl.map(x => [x, 'active']))), Q('queue', next), TK.R('result', res)]); });
+  ANIM['N-ary Tree Level Order Traversal'] = W('BFS by level', C_NL, r.steps);
+}
+const C_NP = `
+Deque<Node> st = new ArrayDeque<>();
+if (root != null) st.push(root);
+while (!st.isEmpty()) {
+    Node cur = st.pop();
+    res.add(cur.val);
+    for (int i = cur.children.size() - 1; i >= 0; i--) st.push(cur.children.get(i));
+}`;
+{
+  const r = recorder(), res = [], st = [1], kids = { 1: [3, 2, 4], 3: [5, 6] }; const done = {};
+  r.step(0, 'Pop a node, record it, push its children in <b>reverse</b> so the leftmost child comes out first.', [naryTree('tree'), S('stack', [...st])]);
+  while (st.length) { const n = st.pop(); res.push(n); done[n] = 'done'; (kids[n] || []).slice().reverse().forEach(c => st.push(c));
+    r.step(ln(C_NP, 'res.add(cur.val)'), `Pop ${n}, push its children ${JSON.stringify(kids[n] || [])} reversed.`, [naryTree('tree', { ...done, [n]: 'active' }), S('stack', [...st]), TK.R('preorder', res)]); }
+  ANIM['N-ary Tree Preorder Traversal'] = W('Stack with reversed children', C_NP, r.steps);
+}
+const C_ND = `
+public int maxDepth(Node root) {
+    if (root == null) return 0;
+    int best = 0;
+    for (Node c : root.children) best = Math.max(best, maxDepth(c));
+    return best + 1;
+}`;
+{
+  const r = recorder(), d = { 5: 1, 6: 1, 3: 2, 2: 1, 4: 1, 1: 3 }, badge = {};
+  r.step(0, 'Depth of a node = 1 + the deepest child.', [naryTree('tree')]);
+  [5, 6, 3, 2, 4, 1].forEach(u => { badge[u] = d[u]; r.step(ln(C_ND, 'return best + 1'), `Node ${u}: depth ${d[u]}.`, [naryTree('tree', { [u]: 'active' }, { ...badge })]); });
+  ANIM['Maximum Depth of N-ary Tree'] = W('1 + deepest child', C_ND, r.steps);
+}
+
+const C_QT = `
+private Node build(int[][] g, int r, int c, int n) {
+    if (same(g, r, c, n)) return new Node(g[r][c] == 1, true);
+    Node node = new Node(true, false);
+    int h = n / 2;
+    node.topLeft = build(g, r, c, h);
+    node.topRight = build(g, r, c + h, h);
+    node.bottomLeft = build(g, r + h, c, h);
+    node.bottomRight = build(g, r + h, c + h, h);
+    return node;
+}`;
+{
+  const g = [[1, 1, 0, 0], [1, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], r = recorder();
+  const gr = (hl = []) => BrainAnim.grid('grid', g, { cls: (i, j) => hl.some(([a, b, n]) => i >= a && i < a + n && j >= b && j < b + n) ? 'active' : '' });
+  r.step(0, 'A 4×4 grid. A uniform square becomes one leaf, otherwise split into four quadrants.', [gr()]);
+  r.step(ln(C_QT, 'if (same'), 'Whole 4×4 square is not uniform → internal node, split into four 2×2 quadrants.', [gr([[0, 0, 4]])]);
+  r.step(ln(C_QT, 'node.topLeft'), 'Top-left 2×2 is all 1 → <b>leaf(1)</b>. Top-right is all 0 → <b>leaf(0)</b>.', [gr([[0, 0, 2], [0, 2, 2]])]);
+  r.step(ln(C_QT, 'node.bottomLeft'), 'Bottom-left 2×2 is all 0 → leaf(0).', [gr([[2, 0, 2]])]);
+  r.step(ln(C_QT, 'node.bottomRight'), 'Bottom-right 2×2 is mixed → split again into four single cells: 1, 0, 0, 1.', [gr([[2, 2, 2]])]);
+  ANIM['Construct Quad Tree'] = W('Uniform or split', C_QT, r.steps);
+}

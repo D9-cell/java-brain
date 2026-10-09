@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trie Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, tree, recorder, mount } = BrainAnim;
+
+// Trie model keyed by prefix string; root is '^'
+class T {
+  constructor() { this.P = { '^': -1 }; this.L = { '^': '•' }; this.pass = {}; this.end = {}; }
+  id(p) { return p === '' ? '^' : '^' + p; }
+  add(word) { let p = ''; const made = []; for (const ch of word) { const q = p + ch; if (!(this.id(q) in this.P)) { this.P[this.id(q)] = this.id(p); this.L[this.id(q)] = ch; made.push(q); } p = q; } return made; }
+  has(p) { return this.id(p) in this.P; }
+  view(name, cls = {}, badge = {}, path = '') {
+    const c = {}, b = {}, edges = [];
+    for (const [k, v] of Object.entries(cls)) c[this.id(k)] = v;
+    for (const [k, v] of Object.entries(badge)) b[this.id(k)] = v;
+    for (let i = 1; i <= path.length; i++) edges.push([this.id(path.slice(0, i)), this.id(path.slice(0, i - 1))]);
+    return tree(name, this.P, { labels: this.L, cls: c, badge: b, edges });
+  }
+}
+const ends = (t, words) => Object.fromEntries(words.map(w => [w, '★']));
+const prefixesCls = (w, n, cls) => Object.fromEntries([...Array(n + 1).keys()].map(i => [w.slice(0, i), cls]));
+
+// Animates LC 208 insert/search/startsWith
+function implement() {
+  const r = recorder(), t = new T(), words = [];
+  const V = (cls, path) => t.view('Trie (★ = end of word)', cls, ends(t, words), path);
+  r.step(0, `A trie is a <b>tree of prefixes</b>: every path from the root spells a prefix, and words that share a prefix share nodes.`, [V({})]);
+  for (const w of ['apple', 'ant', 'bat']) {
+    let p = '';
+    for (const ch of w) { const made = t.add(p + ch).length > 0; p += ch; r.step(made ? 7 : 8, `insert("${w}"): '${ch}' ${made ? 'missing → <b>create</b> a node' : 'already there → just walk'}.`, [V({ [p]: made ? 'active' : 'warn' }, p)]); }
+    words.push(w);
+    r.step(10, `Mark the last node as <b>end of word</b> ★.`, [V({ [w]: 'done' }, w)]);
+  }
+  r.step(24, `search("app"): the path a → p → p exists, but that node is <b>not ★</b> → false.`, [V({ app: 'bad' }, 'app')]);
+  r.step(28, `startsWith("app"): the path exists → <b>true</b>. That is the only difference from search.`, [V({ app: 'done' }, 'app')]);
+  words.push('app');
+  r.step(10, `insert("app"): every node already exists; only the ★ is new. Now search("app") → <b>true</b>.`, [V({ app: 'done' }, 'app')]);
+  return r.steps;
+}
+
+// Animates LC 2185 prefix pass counts
+function counting() {
+  const r = recorder(), t = new T(), words = ['apple', 'app', 'apt', 'bat'], pass = {};
+  const V = (cls, path) => t.view('Trie (badge = how many words pass here)', cls, pass, path);
+  for (const w of words) {
+    let p = '';
+    for (const ch of w) { t.add(p + ch); p += ch; pass[p] = (pass[p] || 0) + 1; }
+    r.step(9, `insert("${w}"): every node on its path gets <b>pass++</b>.`, [V(prefixesCls(w, w.length, 'active'), w), lane('words', words, { done: [words.indexOf(w)] })]);
+  }
+  r.step(17, `Query pref = "ap": walk a → p and read the badge: <b>${pass.ap}</b> words start with "ap".`, [V({ ap: 'done' }, 'ap'), lane('words', words, { done: [0, 1, 2] })], { answer: pass.ap });
+  r.step(15, `If the walk falls off the trie, return 0. Every query costs O(|pref|), however many words there are.`, [V({}), lane('words', words)]);
+  return r.steps;
+}
+
+// Animates LC 3042 using prefix trie + reversed suffix trie of words[j]
+function prefSuf() {
+  const r = recorder(), words = ['a', 'aba', 'ababa', 'aa'];
+  let count = 0;
+  for (let j = 1; j < words.length; j++) {
+    const pre = new T(), suf = new T(), wj = words[j], rj = [...wj].reverse().join('');
+    pre.add(wj); suf.add(rj);
+    for (let i = 0; i < j; i++) {
+      const wi = words[i], ri = [...wi].reverse().join('');
+      const okP = wi.length <= wj.length && pre.has(wi), okS = wi.length <= wj.length && suf.has(ri);
+      if (okP && okS) count++;
+      r.step(okP && okS ? 34 : 33, `j=${j} ("${wj}"), i=${i} ("${wi}"): prefix trie has "${wi}"? ${okP ? '✓' : '✗'}. Reversed trie has "${ri}"? ${okS ? '✓' : '✗'}. ${okP && okS ? '<b>count++</b>' : ''}`,
+        [lane('words', words, { ptr: { [i]: 'i', [j]: 'j' }, active: [i], warn: [j] }),
+         pre.view(`prefix trie of "${wj}"`, { [wi]: okP ? 'done' : 'bad' }, {}, okP ? wi : ''), suf.view(`trie of reversed "${rj}"`, { [ri]: okS ? 'done' : 'bad' }, {}, okS ? ri : '')], { count });
+    }
+  }
+  r.step(37, `Answer <b>${count}</b>. A suffix check becomes a prefix check on the <b>reversed</b> strings.`, [lane('words', words)], { count });
+  return r.steps;
+}
+
+// Animates LC 3043 digit trie
+function digits() {
+  const r = recorder(), t = new T(), a1 = [1, 10, 100, 23], a2 = [1000, 105, 24];
+  const V = (cls, path) => t.view('Digit trie of arr1 (10 children per node)', cls, {}, path);
+  for (const v of a1) { const s = String(v); t.add(s); r.step(28, `Insert ${v} digit by digit.`, [V(prefixesCls(s, s.length, 'active'), s), lane('arr1', a1, { done: [a1.indexOf(v)] })]); }
+  let best = 0;
+  for (const v of a2) {
+    const s = String(v); let len = 0; while (len < s.length && t.has(s.slice(0, len + 1))) len++;
+    best = Math.max(best, len);
+    r.step(37, `Walk ${v}: matched "${s.slice(0, len)}" (${len} digit${len === 1 ? '' : 's'})${len < s.length ? `, then '${s[len]}' is missing → stop` : ''}. best = <b>${best}</b>.`,
+      [V({ ...prefixesCls(s, len, 'done') }, s.slice(0, len)), lane('arr2', a2, { active: [a2.indexOf(v)] })], { best });
+  }
+  return r.steps;
+}
+
+// Animates LC 648 shortest root replacement
+function replace() {
+  const r = recorder(), t = new T(), dict = ['cat', 'bat', 'rat'], words = 'the cattle was rattled by the battery'.split(' '), out = [];
+  dict.forEach(d => t.add(d));
+  const V = (cls, path) => t.view('Trie of roots (★ = root ends)', cls, ends(t, dict), path);
+  r.step(30, `Insert every dictionary root. Then, for each sentence word, walk until you hit the <b>first ★</b>: that is the shortest root.`, [V({})]);
+  for (const w of words) {
+    let i = 0, res = w;
+    while (i < w.length && t.has(w.slice(0, i + 1))) { i++; if (dict.includes(w.slice(0, i))) { res = w.slice(0, i); break; } }
+    out.push(res);
+    r.step(res !== w ? 12 : 10, res !== w ? `"${w}" → reaches ★ at "${res}" → replace with <b>${res}</b>.` : `"${w}" falls off the trie (no root is a prefix) → keep it.`,
+      [V(prefixesCls(w, i, res !== w ? 'done' : 'bad'), w.slice(0, i)), lane('output', out, { done: [out.length - 1] })]);
+  }
+  return r.steps;
+}
+
+// Animates LC 2416 prefix score sums
+function scores() {
+  const r = recorder(), t = new T(), words = ['abc', 'ab', 'bc', 'b'], pass = {}, res = [];
+  const V = (cls, path) => t.view('Trie (badge = pass count)', cls, pass, path);
+  for (const w of words) { let p = ''; for (const ch of w) { t.add(p + ch); p += ch; pass[p] = (pass[p] || 0) + 1; } r.step(10, `insert("${w}") with pass++ along the path.`, [V(prefixesCls(w, w.length, 'active'), w)]); }
+  for (const w of words) {
+    const parts = []; for (let i = 1; i <= w.length; i++) parts.push(pass[w.slice(0, i)]);
+    res.push(parts.reduce((a, b) => a + b));
+    r.step(20, `score("${w}") = sum of badges on its path = ${parts.join(' + ')} = <b>${res.at(-1)}</b>.`, [V(prefixesCls(w, w.length, 'done'), w), lane('answer', res)]);
+  }
+  return r.steps;
+}
+
+// Animates LC 3093 reversed trie with best index per node
+function suffix() {
+  const r = recorder(), t = new T(), C = ['abcd', 'bcd', 'xbcd'], Q = ['cd', 'bcd', 'xyz'], best = { '': 0 };
+  const lbl = () => Object.fromEntries(Object.entries(best).map(([k, v]) => [k, 'i' + v]));
+  const V = (cls, path) => t.view('Trie of REVERSED words (badge = best index)', cls, lbl(), path);
+  r.step(0, `Longest common suffix = longest common prefix of the <b>reversed</b> strings. Ties: shortest container word, then the earliest one.`, [V({}), lane('container', C, { showIdx: true })]);
+  C.forEach((w, i) => {
+    const rw = [...w].reverse().join(''); let p = '';
+    if (w.length < C[best['']].length) best[''] = i;
+    for (const ch of rw) { t.add(p + ch); p += ch; if (!(p in best) || w.length < C[best[p]].length) best[p] = i; }
+    r.step(16, `Insert reversed "${rw}" (index ${i}, length ${w.length}). Each node on the path keeps the index of the <b>shortest</b> word through it.`, [V(prefixesCls(rw, rw.length, 'active'), rw), lane('container', C, { showIdx: true, active: [i] })]);
+  });
+  const ans = [];
+  for (const q of Q) {
+    const rq = [...q].reverse().join(''); let k = 0; while (k < rq.length && t.has(rq.slice(0, k + 1))) k++;
+    ans.push(best[rq.slice(0, k)]);
+    r.step(24, `Query "${q}" → walk reversed "${rq}" as far as possible ("${rq.slice(0, k)}"). Answer = that node's best index = <b>${ans.at(-1)}</b>.`, [V(prefixesCls(rq, k, 'done'), rq.slice(0, k)), lane('answers', ans)]);
+  }
+  return r.steps;
+}
+
+// Animates LC 336 reversed trie + palindrome-rest lists
+function palPairs() {
+  const r = recorder(), W = ['lls', 's', 'sssll'], t = new T(), wi = {}, rest = {};
+  const isPal = (s, i, j) => { while (i < j) if (s[i++] !== s[j--]) return false; return true; };
+  const badge = () => { const b = {}; for (const k of Object.keys(t.P).map(x => x === '^' ? '' : x.slice(1))) { const a = []; if (k in wi) a.push('w' + wi[k]); if (rest[k]) a.push('pal[' + rest[k] + ']'); if (a.length) b[k] = a.join(' '); } return b; };
+  const V = (cls, path) => t.view('Trie of reversed words (wN = word ends; pal[..] = rest is palindrome)', cls, badge(), path);
+  r.step(0, `w1 + w2 is a palindrome when the start of w1 mirrors the end of w2. So walk w1 <b>forward</b> through a trie of <b>reversed</b> words.`, [V({}), lane('words', W, { showIdx: true })]);
+  W.forEach((w, idx) => {
+    let p = '';
+    for (let i = w.length - 1; i >= 0; i--) { if (isPal(w, 0, i)) (rest[p] = rest[p] || []).push(idx); t.add(p + w[i]); p += w[i]; }
+    wi[p] = idx;
+    r.step(18, `Insert "${w}" reversed ("${p}"). Before each step, if the <b>unread front part</b> of the word is a palindrome, note the word index in pal[] at that node.`, [V(prefixesCls(p, p.length, 'active'), p), lane('words', W, { showIdx: true, active: [idx] })]);
+  });
+  const res = [];
+  W.forEach((w, idx) => {
+    let p = '', ok = true;
+    for (let i = 0; i < w.length; i++) {
+      if (p in wi && wi[p] !== idx && isPal(w, i, w.length - 1)) { res.push(`[${idx},${wi[p]}]`); r.step(41, `Case 1 ("xyzll" + "zyx"): while walking "${w}", a word ends at "${p}" and the rest "${w.slice(i)}" is a palindrome → <b>[${idx},${wi[p]}]</b>.`, [V({ [p]: 'done' }, p), lane('pairs', res)]); }
+      if (!t.has(p + w[i])) { ok = false; break; }
+      p += w[i];
+    }
+    if (!ok) { r.step(43, `Walk "${w}" falls off the trie at "${p}" → no more pairs for word ${idx}.`, [V({ [p]: 'bad' }, p), lane('pairs', res)]); return; }
+    if (p in wi && wi[p] !== idx) { res.push(`[${idx},${wi[p]}]`); r.step(48, `Case 2 ("abcd" + "dcba"): exact reverse found → <b>[${idx},${wi[p]}]</b>.`, [V({ [p]: 'done' }, p), lane('pairs', res)]); }
+    for (const j of rest[p] || []) { res.push(`[${idx},${j}]`); r.step(52, `Case 3 ("zyx" + "llxyz"): "${w}" fully consumed; word ${j} continues with a palindrome → <b>[${idx},${j}]</b>.`, [V({ [p]: 'done' }, p), lane('pairs', res)]); }
+    if (!(p in wi && wi[p] !== idx) && !(rest[p] || []).length) r.step(46, `"${w}" consumed at "${p}": no word ends here and no pal[] list → nothing.`, [V({ [p]: 'warn' }, p), lane('pairs', res)]);
+  });
+  r.step(52, `Pairs: <b>${res.join(' ')}</b> → "lls"+"sssll" = "llssssll" and "s"+"lls" = "slls".`, [V({}), lane('pairs', res, { done: res.map((_, i) => i) })]);
+  return r.steps;
+}
+
+// Animates LC 212 trie-guided board DFS
+function wordSearch() {
+  const r = recorder(), B = ['oaan', 'etae', 'ihkr', 'iflv'].map(s => [...s]), words = ['oath', 'pea', 'eat', 'rain'], t = new T(), found = [];
+  words.forEach(w => t.add(w));
+  const live = new Set(words), ORIG = B.map(row => [...row]);
+  const G = (path, cls) => grid('board (orange = current path, visited cells are \'$\' in Java)', ORIG, { rowLabels: [0, 1, 2, 3], cls: (i, j) => { const k = path.findIndex(([a, b]) => a === i && b === j); return k === -1 ? '' : (k === path.length - 1 ? (cls || 'active') : 'warn'); } });
+  const V = (cls, p) => t.view('Trie of all words (★ = word end)', cls, Object.fromEntries([...live].map(w => [w, '★'])), p);
+  r.step(0, `Searching each word separately repeats work. Put <b>all words in one trie</b> and DFS the board once: only follow moves that are trie edges.`, [G([]), V({})]);
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const dfs = (i, j, pre, path) => {
+    if (i < 0 || j < 0 || i >= 4 || j >= 4 || B[i][j] === '$') return;
+    const q = pre + B[i][j]; if (!t.has(q)) return;
+    const np = [...path, [i, j]];
+    if (live.has(q)) { live.delete(q); found.push(q); r.step(13, `Reached ★ "${q}" → add to the result and clear the ★ so it is not found twice.`, [G(np, 'done'), V(prefixesCls(q, q.length, 'done'), q), lane('found', found)]); }
+    else r.step(10, `(${i},${j}) = '${B[i][j]}' → prefix "${q}" is in the trie, so keep going.`, [G(np), V(prefixesCls(q, q.length, 'active'), q), lane('found', found)]);
+    const s = B[i][j]; B[i][j] = '$';
+    for (const [a, b] of dirs) dfs(i + a, j + b, q, np);
+    B[i][j] = s;
+  };
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) dfs(i, j, '', []);
+  r.step(29, `Done: <b>${found.join(', ')}</b>. "pea" has no start cell 'p'; "rain" never gets past the "r" (no neighbouring "a").`, [G([]), V({}), lane('found', found, { done: found.map((_, i) => i) })]);
+  return r.steps;
+}
+
+// Animates LC 1948 subtree signatures and duplicate deletion
+function folders() {
+  const r = recorder(), paths = [['a'], ['c'], ['d'], ['a', 'b'], ['c', 'b'], ['d', 'a']];
+  const P = { '/': -1 }, L = { '/': '/' }, kids = { '/': [] };
+  for (const p of paths) { let cur = '/'; for (const f of p) { const id = cur + f + '/'; if (!(id in P)) { P[id] = cur; L[id] = f; kids[id] = []; kids[cur].push(id); } cur = id; } }
+  const sig = {}, freq = {};
+  const view = (cls, badge) => tree('Folder trie (badge = subtree signature)', P, { labels: L, cls, badge });
+  r.step(0, `Two folders are duplicates if their <b>subfolder structures</b> are identical (names inside, not their own name). Build a trie of folders.`, [view({}, {})]);
+  const ser = id => { const parts = kids[id].sort().map(k => '(' + L[k] + ser(k) + ')'); sig[id] = parts.join(''); if (sig[id]) freq[sig[id]] = (freq[sig[id]] || 0) + 1; return sig[id]; };
+  ser('/');
+  const badge = Object.fromEntries(Object.keys(P).filter(k => k !== '/').map(k => [k, sig[k] || '∅']));
+  r.step(16, `Post-order: each folder's signature = sorted "(childName + childSignature)". /a = "(b)", /c = "(b)", /d = "(a)".`, [view({}, badge), lane('signature counts', Object.entries(freq).map(([k, v]) => `${k} ×${v}`))]);
+  const dup = Object.keys(P).filter(k => k !== '/' && sig[k] && freq[sig[k]] > 1);
+  r.step(22, `"(b)" appears <b>twice</b> → delete /a and /c with their subtrees. Empty signatures (leaf folders) never count.`, [view(Object.fromEntries(dup.flatMap(d => Object.keys(P).filter(k => k.startsWith(d)).map(k => [k, 'bad']))), badge), lane('signature counts', Object.entries(freq).map(([k, v]) => `${k} ×${v}`), { bad: [Object.keys(freq).indexOf('(b)')] })]);
+  r.step(30, `Remaining paths: <b>[d], [d, a]</b>.`, [view({ '/d/': 'done', '/d/a/': 'done', '/a/': 'ghost', '/a/b/': 'ghost', '/c/': 'ghost', '/c/b/': 'ghost' }, badge)]);
+  return r.steps;
+}
+
+const one = (name, code, steps) => [{ name, code, steps }];
+mount({
+  title: 'Trie Animations',
+  sub: 'A trie stores strings as a tree of shared prefixes. Anything about prefixes (or, after reversing, suffixes) becomes a single walk from the root.',
+  problems: [
+    { name: 'Implement Trie (208)', hook: 'A <b>dictionary\'s thumb-index tabs</b>: first letter, then second letter… Words with the same beginning share the same tabs. A ★ sticker marks where a real word ends.', mantra: 'WALK, CREATE IF MISSING, ★ AT THE END',
+      statement: 'Implement insert(word), search(word) and startsWith(prefix) in O(length).',
+      anims: one('insert / search / startsWith', `
+static class Node { Node[] next = new Node[26]; boolean end; }
+
+public void insert(String word) {
+    Node cur = root;
+    for (char ch : word.toCharArray()) {
+        int i = ch - 'a';
+        if (cur.next[i] == null) cur.next[i] = new Node();
+        cur = cur.next[i];
+    }
+    cur.end = true;
+}
+
+private Node walk(String s) {
+    Node cur = root;
+    for (char ch : s.toCharArray()) {
+        cur = cur.next[ch - 'a'];
+        if (cur == null) return null;
+    }
+    return cur;
+}
+
+public boolean search(String word) {
+    Node n = walk(word);
+    return n != null && n.end;
+}
+
+public boolean startsWith(String prefix) {
+    return walk(prefix) != null;
+}`, implement()),
+      recall: [['search vs startsWith: the one difference?', 'search also needs node.end == true.'], ['Why Node[26] and not a HashMap?', 'It is faster for a fixed lowercase alphabet. Use a HashMap/TreeMap for large or unknown alphabets.'], ['Complexity?', 'O(L) per operation; O(total characters) space.']],
+      links: [['Counting Words With a Given Prefix', 1], ['Replace Words', 4], ['Word Search II', 8]] },
+    { name: 'Prefix Count (2185)', hook: 'A <b>turnstile at every node</b>: each word walking past clicks it. The click count at the prefix node = words with that prefix.', mantra: 'PASS++ ON INSERT, READ AT PREFIX',
+      statement: 'Count the words that start with pref.',
+      anims: one('pass counts', `
+public int prefixCount(String[] words, String pref) {
+    Node root = new Node();
+    for (String w : words) {
+        Node cur = root;
+        for (char ch : w.toCharArray()) {
+            int i = ch - 'a';
+            if (cur.next[i] == null) cur.next[i] = new Node();
+            cur = cur.next[i];
+            cur.pass++;
+        }
+    }
+    Node cur = root;
+    for (char ch : pref.toCharArray()) {
+        cur = cur.next[ch - 'a'];
+        if (cur == null) return 0;
+    }
+    return cur.pass;
+}`, counting()),
+      recall: [['Where is pass incremented: before or after moving to the child?', 'After moving, so the node for the prefix ending at this character counts.'], ['When is the trie worth it over startsWith?', 'Many queries against the same word list.']],
+      links: [['Sum of Prefix Scores (same pass counts)', 5]] },
+    { name: 'Prefix & Suffix Pairs (3042)', hook: '<b>Mirror trick</b>: a suffix is just a prefix seen in a mirror. Reverse both strings and reuse the prefix check.', mantra: 'PREFIX TRIE + REVERSED TRIE',
+      statement: 'Count pairs i < j where words[i] is both a prefix and a suffix of words[j].',
+      anims: one('two tries per j', `
+// (line numbers follow the Java file's method body)
+public int countPrefixSuffixPairs(String[] words) {
+    int c = 0;
+    for (int j = 0; j < words.length; j++) {
+        Node pre = new Node(), suf = new Node();
+        insert(pre, words[j]);
+        insert(suf, reverse(words[j]));
+        for (int i = 0; i < j; i++) {
+            if (words[i].length() > words[j].length()) continue;
+            if (hasPrefix(pre, words[i]) && hasPrefix(suf, reverse(words[i]))) c++;
+        }
+    }
+    return c;
+}
+// reverse(s) = new StringBuilder(s).reverse().toString()`.replace(/^\n\/\/.*\n/, '\n'), prefSuf().map(s => ({ ...s, line: s.line === 34 || s.line === 33 ? 9 : s.line === 37 ? 12 : 0 }))),
+      recall: [['How do you check "is a suffix" with a trie?', 'Insert the reversed word and look up the reversed candidate as a prefix.'], ['Is the trie faster than startsWith/endsWith here?', 'Not for this "I" version (n ≤ 50). It is practice for the "II" version, where you combine (prefix char, suffix char) pairs into one trie.']],
+      links: [['Longest Common Suffix Queries (reversed trie)', 6]] },
+    { name: 'LCP of Numbers (3043)', hook: 'A <b>phone-number directory</b>: digits instead of letters. Dial a number and see how far the directory follows you.', mantra: 'DIGIT TRIE, WALK UNTIL MISSING',
+      statement: 'Longest common prefix length over all pairs (x from arr1, y from arr2), comparing digits.',
+      anims: one('digit trie', `
+public int longestCommonPrefix(int[] arr1, int[] arr2) {
+    Node root = new Node();                 // Node[] next = new Node[10]
+    for (int v : arr1) {
+        Node cur = root;
+        for (char ch : String.valueOf(v).toCharArray()) {
+            int d = ch - '0';
+            if (cur.next[d] == null) cur.next[d] = new Node();
+            cur = cur.next[d];
+        }
+    }
+    int best = 0;
+    for (int v : arr2) {
+        Node cur = root;
+        int len = 0;
+        for (char ch : String.valueOf(v).toCharArray()) {
+            cur = cur.next[ch - '0'];
+            if (cur == null) break;
+            len++;
+        }
+        best = Math.max(best, len);
+    }
+    return best;
+}`, digits().map(s => ({ ...s, line: s.line === 28 ? 7 : 20 }))),
+      recall: [['The HashSet alternative?', 'Store every prefix of arr1 values (v, v/10, v/100…), then strip arr2 values until one is found.'], ['Trie children count?', '10 (digits).']],
+      links: [['Implement Trie', 0]] },
+    { name: 'Replace Words (648)', hook: 'A <b>word-root detective</b>: walk down the word and stop at the <b>first</b> ★. That is the shortest root.', mantra: 'FIRST ★ WINS',
+      statement: 'Replace each word in a sentence by the shortest dictionary root that is its prefix.',
+      anims: one('shortest root', `
+static String shortestRoot(Node root, String word) {
+    Node cur = root;
+    for (int i = 0; i < word.length(); i++) {
+        cur = cur.next[word.charAt(i) - 'a'];
+        if (cur == null) return word;
+        if (cur.end) return word.substring(0, i + 1);
+    }
+    return word;
+}`, replace().map(s => ({ ...s, line: s.line === 12 ? 6 : s.line === 10 ? 5 : 0 }))),
+      recall: [['Why does the first ★ give the shortest root?', 'We walk the word from left to right, so the first end-marker met is the shortest prefix that is a root.'], ['HashSet alternative?', 'Try every prefix length 1..L against a set of roots: O(L²) per word.']],
+      links: [['Implement Trie', 0]] },
+    { name: 'Prefix Scores (2416)', hook: 'Each word collects <b>toll at every gate</b> (node) it passes; the toll = how many words pass that gate.', mantra: 'PASS++ ON INSERT, SUM PASS ALONG PATH',
+      statement: 'For each word, return the sum over its prefixes of how many words start with that prefix.',
+      anims: one('sum of pass counts', `
+public int[] sumPrefixScores(String[] words) {
+    Node root = new Node();
+    for (String w : words) {
+        Node cur = root;
+        for (char ch : w.toCharArray()) {
+            int i = ch - 'a';
+            if (cur.next[i] == null) cur.next[i] = new Node();
+            cur = cur.next[i];
+            cur.pass++;
+        }
+    }
+    int[] res = new int[words.length];
+    for (int k = 0; k < words.length; k++) {
+        Node cur = root;
+        for (char ch : words[k].toCharArray()) {
+            cur = cur.next[ch - 'a'];
+            res[k] += cur.pass;
+        }
+    }
+    return res;
+}`, scores().map(s => ({ ...s, line: s.line === 20 ? 17 : 9 }))),
+      recall: [['Relation to 2185?', 'Same pass counts; instead of reading one node, sum all nodes on the word\'s path.'], ['Complexity?', 'O(total characters) for both building and querying.']],
+      links: [['Prefix Count', 1]] },
+    { name: 'Common Suffix Queries (3093)', hook: 'Each node is a <b>notice board</b> showing "the best word that passed here" (shortest, then earliest). A query reads the last board it reaches.', mantra: 'REVERSE, KEEP BEST AT EVERY NODE',
+      statement: 'For each query, return the index of the container word sharing the longest common suffix (ties: shortest, then earliest).',
+      anims: one('best-index trie', `
+public int[] stringIndices(String[] container, String[] queries) {
+    Node root = new Node(0);
+    for (int i = 0; i < container.length; i++) {
+        String w = container[i];
+        if (w.length() < container[root.best].length()) root.best = i;
+        Node cur = root;
+        for (int j = w.length() - 1; j >= 0; j--) {
+            int c = w.charAt(j) - 'a';
+            if (cur.next[c] == null) cur.next[c] = new Node(i);
+            cur = cur.next[c];
+            if (w.length() < container[cur.best].length()) cur.best = i;
+        }
+    }
+    int[] res = new int[queries.length];
+    for (int q = 0; q < queries.length; q++) {
+        String w = queries[q];
+        Node cur = root;
+        for (int j = w.length() - 1; j >= 0 && cur.next[w.charAt(j) - 'a'] != null; j--)
+            cur = cur.next[w.charAt(j) - 'a'];
+        res[q] = cur.best;
+    }
+    return res;
+}`, suffix().map(s => ({ ...s, line: s.line === 16 ? 11 : s.line === 24 ? 20 : 0 }))),
+      recall: [['Why strict < when updating best?', 'An equal length must keep the earlier index.'], ['What answers a query with no common suffix?', 'root.best: the shortest word overall.']],
+      links: [['Prefix & Suffix Pairs (reversed trie)', 2]] },
+    { name: 'Palindrome Pairs (336)', hook: 'Fold a paper strip: <b>w1 forward meets w2 backward</b>. The trie holds every word backwards; leftovers must read the same both ways.', mantra: 'REVERSED TRIE, 3 CASES: END-EARLY, EXACT, PAL-REST',
+      statement: 'Return all pairs (i, j) of distinct words such that words[i] + words[j] is a palindrome.',
+      anims: one('3 cases', `
+static void add(Node root, String w, int idx) {
+    Node cur = root;
+    for (int i = w.length() - 1; i >= 0; i--) {
+        if (isPal(w, 0, i)) cur.restIsPal.add(idx);
+        int c = w.charAt(i) - 'a';
+        if (cur.next[c] == null) cur.next[c] = new Node();
+        cur = cur.next[c];
+    }
+    cur.wordIndex = idx;
+}
+
+static void search(Node root, String w, int idx, List<List<Integer>> res) {
+    Node cur = root;
+    for (int i = 0; i < w.length(); i++) {
+        // case 1: a word ended early, and the rest of w is a palindrome
+        if (cur.wordIndex != -1 && cur.wordIndex != idx && isPal(w, i, w.length() - 1))
+            res.add(List.of(idx, cur.wordIndex));
+        cur = cur.next[w.charAt(i) - 'a'];
+        if (cur == null) return;
+    }
+    // case 2: exact reverse
+    if (cur.wordIndex != -1 && cur.wordIndex != idx) res.add(List.of(idx, cur.wordIndex));
+    // case 3: the other word is longer, and its leftover is a palindrome
+    for (int j : cur.restIsPal) res.add(List.of(idx, j));
+}`, palPairs().map(s => ({ ...s, line: ({ 18: 4, 41: 17, 43: 19, 48: 22, 52: 24, 46: 22 })[s.line] ?? 0 }))),
+      recall: [['Why insert words reversed?', 'So walking w1 forward matches w2 from its end backwards.'], ['The three cases?', '(1) The trie word ends while w1 still has a palindromic rest. (2) Exact reverse. (3) w1 ends while the trie word still has a palindromic rest (the restIsPal list).'], ['Complexity?', 'O(n · k²) for n words of length k.']],
+      links: [['Common Suffix Queries (reversed trie)', 6]] },
+    { name: 'Word Search II (212)', hook: 'A <b>guided maze walk</b>: the trie is the tour guide that says which next letters are worth trying. No guide edge, no step.', mantra: 'ONE TRIE, ONE DFS, PRUNE BY TRIE, ERASE FOUND',
+      statement: 'Find all words from the list that can be traced on the board by adjacent cells (each cell used at most once per word).',
+      anims: one('trie-guided DFS', `
+private void dfs(char[][] b, int i, int j, Node parent) {
+    if (i < 0 || j < 0 || i >= b.length || j >= b[0].length || b[i][j] == '$') return;
+    Node cur = parent.next[b[i][j] - 'a'];
+    if (cur == null) return;
+    if (cur.word != null) {
+        result.add(cur.word);
+        cur.word = null;
+    }
+    char saved = b[i][j];
+    b[i][j] = '$';
+    for (int[] d : DIRS) dfs(b, i + d[0], j + d[1], cur);
+    b[i][j] = saved;
+}
+
+public List<String> findWords(char[][] board, String[] words) {
+    // insert every word, storing it at its end node
+    for (int i = 0; i < board.length; i++)
+        for (int j = 0; j < board[0].length; j++) dfs(board, i, j, root);
+    return result;
+}`, wordSearch().map(s => ({ ...s, line: s.line === 13 ? 6 : s.line === 10 ? 11 : s.line === 29 ? 19 : 0 }))),
+      recall: [['Why one trie for all words instead of Word Search I per word?', 'Shared prefixes are explored once, and a branch is pruned as soon as no word continues.'], ['Why set cur.word = null after finding it?', 'To avoid adding duplicates when the word can be traced in several ways.'], ['How are visited cells marked?', 'Temporarily set to \'$\', then restored (backtracking).']],
+      links: [['Implement Trie', 0]] },
+    { name: 'Duplicate Folders (1948)', hook: 'Give every folder a <b>fingerprint</b> of what is inside it. Two identical fingerprints = duplicate rooms; demolish both.', mantra: 'TRIE, POST-ORDER SIGNATURE, COUNT, PRUNE',
+      statement: 'Delete all folders (with subtrees) that have an identical non-empty subfolder structure to another folder; return the remaining paths.',
+      anims: one('signatures', `
+static String serialize(Node node, Map<String, Integer> freq) {
+    StringBuilder sb = new StringBuilder();
+    for (Map.Entry<String, Node> e : node.children.entrySet())   // TreeMap: sorted
+        sb.append('(').append(e.getKey()).append(serialize(e.getValue(), freq)).append(')');
+    node.sig = sb.toString();
+    if (!node.sig.isEmpty()) freq.merge(node.sig, 1, Integer::sum);
+    return node.sig;
+}
+
+static void prune(Node node, Map<String, Integer> freq) {
+    node.children.values().removeIf(c -> !c.sig.isEmpty() && freq.get(c.sig) > 1);
+    for (Node c : node.children.values()) prune(c, freq);
+}
+// then collect remaining paths in pre-order`, folders().map(s => ({ ...s, line: ({ 16: 6, 22: 11, 30: 14 })[s.line] ?? 0 }))),
+      recall: [['Why must children be sorted when serialising?', 'So identical structures give identical strings regardless of insertion order (TreeMap does this for free).'], ['Why skip empty signatures?', 'Leaf folders have no structure and are never considered duplicates.'], ['Traversal order to build signatures?', 'Post-order: children first.']],
+      links: [['Implement Trie', 0]] }
+  ]
+});
+</script>
+</body>
+</html>

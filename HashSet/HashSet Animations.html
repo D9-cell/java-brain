@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HashSet Animations</title>
+<link rel="stylesheet" href="../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../assets/problem-links.js"></script>
+<script src="../assets/solved.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/brain-anim.js"></script>
+<script>
+const { lane, grid, recorder, mount, ln } = BrainAnim;
+const setLane = (name, s, hl = []) => { const a = [...s]; return lane(name, a, { active: hl.map(x => a.indexOf(x)).filter(i => i >= 0), tag: `size ${a.length}` }); };
+
+const C_PAIR = `
+public boolean canPair(int[] nums, int k) {
+    if (nums.length % 2 == 1) return false;
+    Map<Integer, Integer> freq = new HashMap<>();
+    for (int x : nums) freq.merge(((x % k) + k) % k, 1, Integer::sum);
+    for (Map.Entry<Integer, Integer> e : freq.entrySet()) {
+        int r = e.getKey(), c = e.getValue();
+        if (r == 0 || 2 * r == k) { if (c % 2 != 0) return false; }
+        else if (!freq.getOrDefault(k - r, 0).equals(c)) return false;
+    }
+    return true;
+}`;
+function pair() {
+  const r = recorder(), nums = [9, 5, 7, 3, 1, 5], k = 6, freq = new Map();
+  r.step(ln(C_PAIR, 'nums.length % 2'), `k = ${k}. Only <b>remainders</b> matter: a + b divisible by k ⇔ (a%k + b%k) % k == 0.`, [lane('nums', nums)]);
+  nums.forEach((x, i) => { freq.set(x % k, (freq.get(x % k) || 0) + 1); r.step(ln(C_PAIR, 'freq.merge'), `${x} % ${k} = ${x % k} → count it.`, [lane('nums', nums, { active: [i] }), lane('remainder counts', [...freq].sort((a, b) => a[0] - b[0]).map(([a, b]) => `r${a}: ${b}`))]); });
+  for (const [rr, c] of [...freq].sort((a, b) => a[0] - b[0])) {
+    const self = rr === 0 || 2 * rr === k, partner = freq.get(k - rr) || 0, ok = self ? c % 2 === 0 : partner === c;
+    r.step(ln(C_PAIR, self ? 'c % 2 != 0' : 'getOrDefault(k - r'), self ? `r${rr} pairs with itself → needs an even count: ${c} ${ok ? '✓' : '✗'}.` : `r${rr} (×${c}) needs r${k - rr} (×${partner}) → ${ok ? 'equal ✓' : 'unequal ✗'}.`, [lane('remainder counts', [...freq].sort((a, b) => a[0] - b[0]).map(([a, b]) => `r${a}: ${b}`), { active: [[...freq].sort((a, b) => a[0] - b[0]).findIndex(e => e[0] === rr)], done: ok ? [] : [] })]);
+    if (!ok) { r.step(ln(C_PAIR, 'return false', 2), 'Return <b>false</b>.', []); return r.steps; }
+  }
+  r.step(ln(C_PAIR, 'return true'), `All remainder classes balance → <b>true</b>.`, [lane('nums', nums, { done: nums.map((_, i) => i) })]);
+  return r.steps;
+}
+function pairWhySetFails() {
+  const r = recorder(), nums = [1, 1, 3, 3], k = 4, st = new Set();
+  r.step(0, `The original HashSet version keeps <b>one</b> copy per remainder. Watch it on [1,1,3,3], k=4 (answer: true, since 1+3 and 1+3).`, [lane('nums', nums), setLane('set', st)]);
+  nums.forEach((x, i) => {
+    const rem = x % k, o = k - rem;
+    if (st.has(o) || (rem === 0 && st.has(0))) { st.delete(rem); st.delete(o); r.step(0, `${x}: partner r${o} is in the set → erase both.`, [lane('nums', nums, { active: [i] }), setLane('set', st)]); }
+    else { const had = st.has(rem); st.add(rem); r.step(0, `${x}: no partner → insert r${rem}${had ? ' <b>(already there, so the second copy is lost!)</b>' : ''}.`, [lane('nums', nums, { active: [i] }), setLane('set', st, [rem])]); }
+  });
+  r.step(0, `The set is not empty → it says <b>false</b>. Wrong. A set forgets multiplicity; use a <b>HashMap of counts</b>.`, [setLane('set', st)]);
+  return r.steps;
+}
+
+const C_OR = `
+public int subarrayBitwiseORs(int[] arr) {
+    Set<Integer> prev = new HashSet<>(), result = new HashSet<>();
+    for (int x : arr) {
+        Set<Integer> cur = new HashSet<>();
+        cur.add(x);
+        for (int p : prev) cur.add(p | x);
+        result.addAll(cur);
+        prev = cur;
+    }
+    return result.size();
+}`;
+function ors() {
+  const r = recorder(), arr = [1, 2, 4, 2]; let prev = new Set(); const res = new Set();
+  r.step(ln(C_OR, 'Set<Integer> prev'), `ORs of subarrays <b>ending at i</b> are (OR ending at i−1) | arr[i], plus arr[i] alone. OR only turns bits on, so there are at most ~32 distinct values per i.`, [lane('arr', arr, { showIdx: true })]);
+  arr.forEach((x, i) => {
+    const cur = new Set([x]); for (const p of prev) cur.add(p | x);
+    r.step(ln(C_OR, 'cur.add(p | x)'), `i=${i}, x=${x}: prev {${[...prev]}} each | ${x} → cur {${[...cur]}}.`, [lane('arr', arr, { showIdx: true, active: [i] }), setLane('prev', prev), setLane('cur', cur)]);
+    cur.forEach(v => res.add(v)); prev = cur;
+    r.step(ln(C_OR, 'result.addAll'), `result ∪= cur → {${[...res]}}.`, [lane('arr', arr, { showIdx: true, active: [i] }), setLane('result', res)]);
+  });
+  r.step(ln(C_OR, 'return result.size()'), `Answer <b>${res.size}</b>.`, [setLane('result', res)]);
+  return r.steps;
+}
+
+const C_DUP = `
+public boolean containsNearbyAlmostDuplicate(int[] nums, int indexDiff, int valueDiff) {
+    TreeSet<Long> window = new TreeSet<>();
+    for (int i = 0; i < nums.length; i++) {
+        if (i > indexDiff) window.remove((long) nums[i - indexDiff - 1]);
+        Long c = window.ceiling((long) nums[i] - valueDiff);
+        if (c != null && c - nums[i] <= valueDiff) return true;
+        window.add((long) nums[i]);
+    }
+    return false;
+}`;
+function dup3() {
+  const r = recorder(), nums = [1, 5, 9, 4, 1], k = 2, t = 3, w = new Set();
+  r.step(ln(C_DUP, 'TreeSet<Long> window'), `indexDiff = ${k}, valueDiff = ${t}. Keep only the last ${k} values in a <b>sorted</b> window (TreeSet). For nums[i], the best candidate is the smallest value ≥ nums[i] − ${t}.`, [lane('nums', nums, { showIdx: true })]);
+  for (let i = 0; i < nums.length; i++) {
+    if (i > k) { w.delete(nums[i - k - 1]); r.step(ln(C_DUP, 'window.remove'), `Slide: drop nums[${i - k - 1}] = ${nums[i - k - 1]} (too far back).`, [lane('nums', nums, { showIdx: true, ghost: [...Array(i - k).keys()] }), setLane('window (sorted)', [...w].sort((a, b) => a - b))]); }
+    const c = [...w].sort((a, b) => a - b).find(v => v >= nums[i] - t);
+    const hit = c !== undefined && c - nums[i] <= t;
+    r.step(ln(C_DUP, hit ? 'return true' : 'window.ceiling'), `nums[${i}] = ${nums[i]}: ceiling(${nums[i] - t}) = ${c ?? 'none'}${c !== undefined ? `; ${c} − ${nums[i]} = ${c - nums[i]} ${hit ? '≤' : '&gt;'} ${t}` : ''} → ${hit ? '<b>true</b>' : 'no'}.`, [lane('nums', nums, { showIdx: true, active: [i], ghost: [...Array(Math.max(0, i - k)).keys()] }), setLane('window (sorted)', [...w].sort((a, b) => a - b), c !== undefined ? [c] : [])]);
+    if (hit) return r.steps;
+    w.add(nums[i]);
+  }
+  return r.steps;
+}
+
+const C_CONS = `
+public int countConsistentStrings(String allowed, String[] words) {
+    int mask = 0;
+    for (char c : allowed.toCharArray()) mask |= 1 << (c - 'a');
+    int count = 0;
+    for (String w : words) {
+        int wm = 0;
+        for (char c : w.toCharArray()) wm |= 1 << (c - 'a');
+        if ((wm & ~mask) == 0) count++;
+    }
+    return count;
+}`;
+function consistent() {
+  const r = recorder(), allowed = 'ab', words = ['ad', 'bd', 'aaab', 'baa', 'badab'];
+  const bits = s => { let m = 0; for (const c of s) m |= 1 << (c.charCodeAt(0) - 97); return m; };
+  const show = m => [...'dcba'].map(c => (m >> (c.charCodeAt(0) - 97) & 1) ? '1' : '0');
+  const mask = bits(allowed); let count = 0;
+  r.step(ln(C_CONS, 'mask |='), `A set of letters fits in one int: bit i ↔ letter 'a'+i. allowed "ab" → mask = ${show(mask).join('')} (bits d c b a).`, [lane('allowed mask (d c b a)', show(mask), { done: [2, 3] })]);
+  words.forEach((w, i) => {
+    const wm = bits(w), ok = (wm & ~mask) === 0; if (ok) count++;
+    r.step(ln(C_CONS, '(wm & ~mask) == 0'), `"${w}" → ${show(wm).join('')}. Any bit outside allowed? ${ok ? 'no → <b>count</b>' : 'yes (d) → skip'}.`, [lane('allowed mask', show(mask)), lane(`"${w}" mask`, show(wm), { bad: ok ? [] : [0] }), lane('words', words, { active: [i] })], { count });
+  });
+  return r.steps;
+}
+
+const C_DEST = `
+public String destCity(List<List<String>> paths) {
+    Set<String> sources = new HashSet<>();
+    for (List<String> p : paths) sources.add(p.get(0));
+    for (List<String> p : paths) if (!sources.contains(p.get(1))) return p.get(1);
+    return "";
+}`;
+function dest() {
+  const r = recorder(), P = [['London', 'New York'], ['New York', 'Lima'], ['Lima', 'Sao Paulo']], src = new Set();
+  P.forEach(p => src.add(p[0]));
+  r.step(ln(C_DEST, 'sources.add'), `Every city that has an outgoing road is a <b>source</b>. Put them all in a set.`, [lane('paths', P.map(p => p.join(' → '))), setLane('sources', src)]);
+  for (const p of P) { const ok = !src.has(p[1]); r.step(ln(C_DEST, '!sources.contains'), `${p[1]}: ${ok ? 'never a source → <b>destination</b>!' : 'is a source, keep looking'}.`, [lane('paths', P.map(q => q.join(' → ')), { active: [P.indexOf(p)] }), setLane('sources', src, ok ? [] : [p[1]])]); if (ok) break; }
+  return r.steps;
+}
+
+const C_LCS = `
+public int longestConsecutive(int[] nums) {
+    Set<Integer> set = new HashSet<>();
+    for (int x : nums) set.add(x);
+    int best = 0;
+    for (int x : set) {
+        if (set.contains(x - 1)) continue;
+        int len = 1;
+        while (set.contains(x + len)) len++;
+        best = Math.max(best, len);
+    }
+    return best;
+}`;
+function lcs() {
+  const r = recorder(), nums = [100, 4, 200, 1, 3, 2], s = new Set(nums); let best = 0;
+  const L = (o = {}) => lane('numbers on a line (sorted for display)', [...s].sort((a, b) => a - b), o);
+  const sorted = [...s].sort((a, b) => a - b);
+  r.step(ln(C_LCS, 'set.add'), `Put everything in a HashSet: O(1) "is x there?".`, [L()]);
+  for (const x of nums) {
+    if (s.has(x - 1)) { r.step(ln(C_LCS, 'continue'), `${x}: ${x - 1} exists, so ${x} is <b>not a start</b>. Skip (someone to its left will count it).`, [L({ ghost: [sorted.indexOf(x)] })], { best }); continue; }
+    let len = 1; while (s.has(x + len)) len++;
+    best = Math.max(best, len);
+    r.step(ln(C_LCS, 'while (set.contains'), `${x} is a <b>start</b> (no ${x - 1}). Walk up: ${[...Array(len).keys()].map(k => x + k).join(', ')} → length ${len}.`, [L({ done: [...Array(len).keys()].map(k => sorted.indexOf(x + k)) })], { best });
+  }
+  r.step(ln(C_LCS, 'return best'), `Answer <b>${best}</b>. Each number is walked at most once, so O(n).`, [L()], { best });
+  return r.steps;
+}
+
+const C_SQ = `
+public int maximizeSquareArea(int m, int n, int[] hFences, int[] vFences) {
+    // h = hFences + {1, m}, v = vFences + {1, n}
+    Set<Integer> widths = new HashSet<>();
+    for (int i = 0; i < v.length; i++)
+        for (int j = i + 1; j < v.length; j++) widths.add(Math.abs(v[j] - v[i]));
+    long side = 0;
+    for (int i = 0; i < h.length; i++)
+        for (int j = i + 1; j < h.length; j++) {
+            int d = Math.abs(h[j] - h[i]);
+            if (d > side && widths.contains(d)) side = d;
+        }
+    return side == 0 ? -1 : (int) (side * side % 1_000_000_007);
+}`;
+function square() {
+  const r = recorder(), h = [1, 2, 3, 4], v = [1, 2, 3], W = new Set(); let side = 0;
+  r.step(ln(C_SQ, 'h = hFences'), `m=4, n=3, hFences [2,3], vFences [2]. Add the borders: h = [${h}], v = [${v}]. A square needs a height gap that also exists as a width gap.`, [lane('h fences', h), lane('v fences', v)]);
+  for (let i = 0; i < v.length; i++) for (let j = i + 1; j < v.length; j++) W.add(v[j] - v[i]);
+  r.step(ln(C_SQ, 'widths.add'), `All possible widths: {${[...W]}}.`, [setLane('widths', W)]);
+  for (let i = 0; i < h.length; i++) for (let j = i + 1; j < h.length; j++) { const d = h[j] - h[i], ok = W.has(d); if (ok && d > side) side = d; r.step(ln(C_SQ, 'widths.contains(d)'), `height ${h[j]}−${h[i]} = ${d}: in widths? ${ok ? '✓' : '✗'}. side = ${side}.`, [setLane('widths', W, ok ? [d] : []), lane('h fences', h, { active: [i, j] })], { side }); }
+  r.step(ln(C_SQ, 'return side'), `Answer ${side}² = <b>${side * side}</b>.`, [setLane('widths', W)], { area: side * side });
+  return r.steps;
+}
+
+const C_MPR = `
+while (bad > 0) {
+    int a = (int) pairs.pollFirst()[1], b = next[a], left = prev[a], right = next[b];
+    long merged = v[a] + v[b];
+    if (v[a] > v[b]) bad--;
+    if (left >= 0) {
+        if (v[left] > v[a] && v[left] <= merged) bad--;
+        else if (v[left] <= v[a] && v[left] > merged) bad++;
+        pairs.remove(new long[]{v[left] + v[a], left});
+        pairs.add(new long[]{v[left] + merged, left});
+    }
+    if (right < n) {
+        if (v[right] >= v[b] && v[right] < merged) bad++;
+        else if (v[right] < v[b] && v[right] >= merged) bad--;
+        pairs.remove(new long[]{v[b] + v[right], b});
+        pairs.add(new long[]{merged + v[right], a});
+        prev[right] = a;
+    }
+    next[a] = right;
+    v[a] = merged;
+    ops++;
+}`;
+function mpr() {
+  const r = recorder(), arr = [5, 2, 3, 1]; let a = [...arr], ops = 0;
+  const badCount = x => x.slice(1).filter((y, i) => x[i] > y).length;
+  const pairsOf = x => x.slice(1).map((y, i) => `(${x[i] + y}, ${i})`);
+  r.step(0, `Rule: repeatedly merge the adjacent pair with the <b>smallest sum</b> (leftmost on ties) until sorted. Track: a TreeSet of (sum, index), a linked list of alive cells, and the number of "bad" pairs (x[i] > x[i+1]).`, [lane('array', a), lane('pairs (sum, left)', pairsOf(a))], { bad: badCount(a) });
+  while (badCount(a) > 0) {
+    let bi = 0; for (let i = 1; i + 1 < a.length; i++) if (a[i] + a[i + 1] < a[bi] + a[bi + 1]) bi = i;
+    r.step(ln(C_MPR, 'pollFirst'), `Smallest pair: ${a[bi]} + ${a[bi + 1]} = ${a[bi] + a[bi + 1]}. Merge it.`, [lane('array', a, { active: [bi, bi + 1] }), lane('pairs (sum, left)', pairsOf(a), { active: [bi] })], { bad: badCount(a) });
+    a = [...a.slice(0, bi), a[bi] + a[bi + 1], ...a.slice(bi + 2)]; ops++;
+    r.step(ln(C_MPR, 'ops++'), `Only the <b>neighbours</b> of the merged cell change: update the bad count and the two neighbouring pair sums in O(log n).`, [lane('array', a, { done: [bi] }), lane('pairs (sum, left)', pairsOf(a))], { bad: badCount(a), ops });
+  }
+  r.step(ln(C_MPR, 'while (bad > 0)'), `bad = 0 → sorted. Answer <b>${ops}</b>.`, [lane('array', a, { done: a.map((_, i) => i) })], { ops });
+  return r.steps;
+}
+
+const C_RW = `
+static String findRoot(String word, Set<String> roots) {
+    for (int len = 1; len <= word.length(); len++) {
+        String p = word.substring(0, len);
+        if (roots.contains(p)) return p;
+    }
+    return word;
+}`;
+function rw() {
+  const r = recorder(), roots = new Set(['cat', 'bat', 'rat']), w = 'cattle';
+  for (let len = 1; len <= w.length; len++) { const p = w.slice(0, len), ok = roots.has(p); r.step(ln(C_RW, ok ? 'return p' : 'roots.contains'), `"${w}" prefix "${p}" in the set? ${ok ? '<b>yes → replace</b>' : 'no'}.`, [setLane('roots', roots, ok ? [p] : []), lane('word', [...w], { active: [...Array(len).keys()] })]); if (ok) break; }
+  r.step(0, `Simple, but each prefix costs O(L) to build and hash → O(L²) per word. The Trie version is O(L).`, [setLane('roots', roots)]);
+  return r.steps;
+}
+
+const C_INF = `
+static class SmallestInfiniteSet {
+    private final TreeSet<Integer> back = new TreeSet<>();
+    private int curr = 1;
+
+    public int popSmallest() {
+        return back.isEmpty() ? curr++ : back.pollFirst();
+    }
+
+    public void addBack(int num) {
+        if (num < curr) back.add(num);
+    }
+}`;
+function inf() {
+  const r = recorder(), back = new Set(); let curr = 1; const out = [];
+  const V = () => [lane('untouched tail', [curr, curr + 1, curr + 2, '…'], { active: [0] }), setLane('back (TreeSet)', [...back].sort((a, b) => a - b)), lane('popped', [...out])];
+  r.step(ln(C_INF, 'curr = 1'), `Split the infinite set into an <b>untouched tail</b> curr, curr+1, … and a small TreeSet of numbers that were added back.`, V());
+  const ops = [['add', 2], ['pop'], ['pop'], ['pop'], ['add', 1], ['pop'], ['pop'], ['pop']];
+  for (const [op, x] of ops) {
+    if (op === 'add') { const ok = x < curr; if (ok) back.add(x); r.step(ln(C_INF, 'if (num < curr)'), `addBack(${x}): ${ok ? `${x} &lt; curr → it was popped earlier, so store it` : `${x} ≥ curr → still in the tail, ignore`}.`, V()); }
+    else { const fromBack = back.size > 0; const v = fromBack ? Math.min(...back) : curr++; if (fromBack) back.delete(v); out.push(v); r.step(ln(C_INF, 'back.isEmpty()'), `popSmallest() → ${fromBack ? 'smallest added-back' : 'tail'} → <b>${v}</b>.`, V()); }
+  }
+  return r.steps;
+}
+
+const C_MU = `
+public int maxSum(int[] nums) {
+    boolean[] seen = new boolean[101];
+    int sum = 0, maxNonPos = Integer.MIN_VALUE;
+    for (int x : nums) {
+        if (x <= 0) maxNonPos = Math.max(maxNonPos, x);
+        else if (!seen[x]) { seen[x] = true; sum += x; }
+    }
+    return sum == 0 ? maxNonPos : sum;
+}`;
+function mu() {
+  const r = recorder(), nums = [1, 2, -1, -2, 1, 0, -1], seen = new Set(); let sum = 0, mx = -Infinity;
+  nums.forEach((x, i) => { const fresh = x > 0 && !seen.has(x); if (x <= 0) mx = Math.max(mx, x); else if (fresh) { seen.add(x); sum += x; } r.step(ln(C_MU, x <= 0 ? 'maxNonPos = Math.max' : 'seen[x] = true'), `${x}: ${x <= 0 ? 'non-positive → just remember the max' : fresh ? 'new positive → <b>take it</b>' : 'positive but already taken → skip'}. sum = ${sum}.`, [lane('nums', nums, { active: [i] }), setLane('taken positives', seen)], { sum, maxNonPos: mx }); });
+  r.step(ln(C_MU, 'return sum'), `We can delete anything, so keep each distinct positive once. Answer <b>${sum || mx}</b>.`, [setLane('taken positives', seen)]);
+  return r.steps;
+}
+
+const C_MOD = `
+public int minimumOperations(int[] nums) {
+    Set<Integer> seen = new HashSet<>();
+    for (int i = nums.length - 1; i >= 0; i--)
+        if (!seen.add(nums[i])) return (i + 1 + 2) / 3;
+    return 0;
+}`;
+function mod() {
+  const r = recorder(), nums = [1, 2, 3, 4, 2, 3, 3, 5, 7], seen = new Set();
+  r.step(ln(C_MOD, 'for (int i'), `Scan from the <b>back</b>: the suffix that stays must be distinct. The first repeat found decides how much of the front must go.`, [lane('nums', nums, { showIdx: true })]);
+  for (let i = nums.length - 1; i >= 0; i--) {
+    if (seen.has(nums[i])) { const ops = Math.ceil((i + 1) / 3); r.step(ln(C_MOD, 'return (i + 1 + 2) / 3'), `nums[${i}] = ${nums[i]} is a repeat → indices 0..${i} (${i + 1} items) must be removed, 3 per operation → ceil(${i + 1}/3) = <b>${ops}</b>.`, [lane('nums', nums, { showIdx: true, bad: [...Array(i + 1).keys()], done: [...Array(nums.length - i - 1).keys()].map(k => k + i + 1) }), setLane('seen', seen, [nums[i]])], { ops }); return r.steps; }
+    seen.add(nums[i]);
+    r.step(ln(C_MOD, 'seen.add'), `nums[${i}] = ${nums[i]} is new → add it.`, [lane('nums', nums, { showIdx: true, active: [i] }), setLane('seen', seen)]);
+  }
+  return r.steps;
+}
+
+const C_MK = `
+public int minOperations(int[] nums, int k) {
+    Set<Integer> above = new HashSet<>();
+    for (int x : nums) {
+        if (x < k) return -1;
+        if (x > k) above.add(x);
+    }
+    return above.size();
+}`;
+function mk() {
+  const r = recorder(), nums = [5, 2, 5, 4, 5], k = 2, above = new Set();
+  r.step(ln(C_MK, 'Set<Integer> above'), `An operation lowers all values above some valid h down to h. Each distinct value above k needs <b>one step down</b>: 5 → 4 → 2.`, [lane('nums', nums)]);
+  nums.forEach((x, i) => { if (x > k) above.add(x); r.step(ln(C_MK, x > k ? 'above.add' : 'x < k'), `${x} ${x > k ? '> k → distinct level to remove' : x < k ? '< k → impossible' : '= k → fine'}.`, [lane('nums', nums, { active: [i] }), setLane('distinct values above k', above)]); });
+  r.step(ln(C_MK, 'above.size()'), `Answer <b>${above.size}</b>.`, [setLane('distinct values above k', above)]);
+  return r.steps;
+}
+
+const C_NR = `
+public int repeatedNTimes(int[] nums) {
+    for (int i = 2; i < nums.length; i++)
+        if (nums[i] == nums[i - 1] || nums[i] == nums[i - 2]) return nums[i];
+    return nums[0];
+}`;
+function nr() {
+  const r = recorder(), nums = [2, 1, 4, 2, 3, 2];
+  r.step(0, `Half of the array is the same value x. <b>Pigeonhole</b>: some two copies of x are at most 2 apart (except the 4-length shape [x, a, b, x]). So O(1) space is enough.`, [lane('nums', nums, { showIdx: true })]);
+  for (let i = 2; i < nums.length; i++) { const hit = nums[i] === nums[i - 1] || nums[i] === nums[i - 2]; r.step(ln(C_NR, hit ? 'return nums[i]' : 'nums[i - 2]'), `i=${i}: compare ${nums[i]} with ${nums[i - 1]} and ${nums[i - 2]} → ${hit ? '<b>found</b>' : 'no'}.`, [lane('nums', nums, { showIdx: true, active: [i], warn: [i - 1, i - 2] })]); if (hit) break; }
+  return r.steps;
+}
+
+const C_PC = `
+public boolean isPathCrossing(String path) {
+    Set<Long> seen = new HashSet<>();
+    int x = 0, y = 0;
+    seen.add(key(x, y));
+    for (char c : path.toCharArray()) {
+        if (c == 'N') y++; else if (c == 'S') y--; else if (c == 'E') x++; else x--;
+        if (!seen.add(key(x, y))) return true;
+    }
+    return false;
+}
+// key(x, y) = ((long) x << 32) | (y & 0xffffffffL)`;
+function pc() {
+  const r = recorder(), path = 'NESWW', N = 5, off = 2, G = [...Array(N)].map(() => Array(N).fill(null)); let x = 0, y = 0, step = 0;
+  const show = (cls) => grid('map (row = y, col = x; cell = step)', G.map(row => [...row]).reverse(), { rowLabels: [2, 1, 0, -1, -2], colLabels: [-2, -1, 0, 1, 2], cls });
+  G[y + off][x + off] = 0;
+  r.step(ln(C_PC, 'seen.add(key'), `Start at (0,0). Remember every point in a HashSet.`, [show((rr, c) => (4 - rr === y + off && c === x + off) ? 'active' : '')]);
+  for (const ch of path) {
+    if (ch === 'N') y++; else if (ch === 'S') y--; else if (ch === 'E') x++; else x--; step++;
+    const hit = G[y + off][x + off] !== null;
+    if (!hit) G[y + off][x + off] = step;
+    r.step(ln(C_PC, hit ? 'return true' : 'if (c == \'N\')'), `${ch} → (${x},${y}) ${hit ? '<b>already visited → crossing!</b>' : 'new point'}.`, [show((rr, c) => (4 - rr === y + off && c === x + off) ? (hit ? 'bad' : 'active') : G[4 - rr][c] !== null ? 'done' : '')]);
+    if (hit) break;
+  }
+  return r.steps;
+}
+
+const C_SM = `
+public int missingInteger(int[] nums) {
+    Set<Integer> set = new HashSet<>();
+    for (int x : nums) set.add(x);
+    int sum = nums[0];
+    for (int j = 1; j < nums.length && nums[j] == nums[j - 1] + 1; j++) sum += nums[j];
+    while (set.contains(sum)) sum++;
+    return sum;
+}`;
+function sm() {
+  const r = recorder(), nums = [3, 4, 5, 1, 12, 14, 13], s = new Set(nums); let sum = 3, j = 1;
+  while (j < nums.length && nums[j] === nums[j - 1] + 1) { sum += nums[j]; j++; }
+  r.step(ln(C_SM, 'sum += nums[j]'), `Longest sequential prefix: 3, 4, 5 → sum = <b>${sum}</b>.`, [lane('nums', nums, { done: [0, 1, 2] })], { sum });
+  while (s.has(sum)) { r.step(ln(C_SM, 'while (set.contains'), `${sum} is in the array → try ${sum + 1}.`, [setLane('set', s, [sum])], { sum }); sum++; }
+  r.step(ln(C_SM, 'return sum'), `Answer <b>${sum}</b>.`, [setLane('set', s)], { sum });
+  return r.steps;
+}
+
+const T = (name, hook, mantra, statement, anims, recall, links) => ({ name, hook, mantra, statement, anims, recall, links });
+const A1 = (code, steps, name = 'Walkthrough') => [{ name, code, steps }];
+mount({
+  title: 'HashSet Animations',
+  sub: 'A HashSet answers one question in O(1): <b>"have I seen this before?"</b>. TreeSet adds order (floor/ceiling/first) in O(log n). Need counts? Use a HashMap.',
+  problems: [
+    T('Pair Sum Divisibility (GFG)', 'Dance partners by <b>remainder</b>: r dances with k−r. Remainder 0 and k/2 dance with their own kind, so they need an even crowd.', 'COUNT REMAINDERS, r ↔ k−r, 0 & k/2 EVEN', 'Can the array be split into pairs whose sums are divisible by k?',
+      [{ name: 'Remainder counts', code: C_PAIR, steps: pair() }, { name: 'Why a plain set fails', code: '// set-based version from the C++ file\n// keeps ONE copy per remainder → loses duplicates', steps: pairWhySetFails() }],
+      [['Why is the remainder enough?', '(a + b) % k depends only on a % k and b % k.'], ['Special classes?', 'r = 0 and r = k/2 (k even) pair with themselves → need an even count.'], ['Why not a HashSet?', 'It forgets multiplicity: [1,1,3,3], k=4 fails.']], [['Longest Consecutive Sequence', 5]]),
+    T('Bitwise ORs (898)', 'A light panel: OR only ever <b>turns lights on</b>. Subarrays ending here can only have ~32 different light patterns.', 'PREV ORs | x, PLUS x; COLLECT ALL', 'Count distinct OR values over all subarrays.', A1(C_OR, ors()),
+      [['Why is cur small?', 'Moving the start left can only add bits, and there are at most 32 bits, so there are at most 32 distinct values.'], ['Complexity?', 'O(32·n).']], []),
+    T('Contains Duplicate III (220)', 'A <b>sorted sliding window</b> of the last k values. For a new value, ask the window: "who is just above value − t?"', 'WINDOW ≤ k, CEILING(v − t) ≤ v + t', 'Is there i ≠ j with |i − j| ≤ indexDiff and |nums[i] − nums[j]| ≤ valueDiff?', A1(C_DUP, dup3()),
+      [['Why TreeSet and not HashSet?', 'We need "smallest value ≥ x" (ceiling), which needs order.'], ['Why long?', 'nums[i] − valueDiff can overflow int.'], ['O(n) alternative?', 'Buckets of width valueDiff+1 in a HashMap.']], [['Contains Duplicate II (Sliding Window)', '../Sliding%20Window/Sliding%20Window%20Animations.html#p=3']]),
+    T('Consistent Strings (1684)', 'A <b>26-light panel</b> for the allowed letters. A word is fine if it switches on no light outside the panel.', 'MASK, (word & ~allowed) == 0', 'Count words made only of allowed characters.', A1(C_CONS, consistent()),
+      [['Three ways?', 'HashSet<Character>, boolean[26], an int bitmask.'], ['Bit test?', '(mask >> (c−\'a\')) & 1, or build the word mask and check wm & ~mask == 0.']], []),
+    T('Destination City (1436)', 'A one-way <b>train line</b>: the last station is the only one you never depart from.', 'SET OF SOURCES, FIND NON-SOURCE', 'Paths form a line; return the city with no outgoing path.', A1(C_DEST, dest()),
+      [['Why does one pass suffice after building the set?', 'Exactly one destination is never a source.']], []),
+    T('Longest Consecutive (128)', 'Only the <b>first domino</b> in a row starts counting; the others know someone to their left will do it.', 'START ONLY IF x−1 MISSING, WALK UP', 'Length of the longest run of consecutive integers in O(n).', A1(C_LCS, lcs()),
+      [['Why O(n) despite the inner while?', 'Only starts walk, and each number belongs to exactly one run.'], ['Iterate over nums or over the set?', 'Over the set: duplicates of a start would otherwise repeat the walk.']], []),
+    T('Max Square by Fences (2975)', 'Two rulers: list every gap on the <b>width ruler</b>, then look for the biggest height gap that is also on it.', 'ADD BORDERS, SET OF WIDTHS, MATCH HEIGHTS', 'Remove fences to form the largest square; return its area mod 1e9+7, or −1.', A1(C_SQ, square()),
+      [['Why add 1 and m / 1 and n?', 'The borders are fixed fences too.'], ['Overflow?', 'side² can exceed int, so use long before the mod.']], []),
+    T('Min Pair Removal II (3510)', 'A <b>train of wagons</b>: always couple the lightest adjacent pair. Keep a sorted list of pair weights and a counter of "out-of-order" joints.', 'TREESET(sum, idx) + LINKED LIST + BAD COUNT', 'Repeatedly merge the adjacent pair with the minimum sum (leftmost) until non-decreasing; count operations.', A1(C_MPR, mpr()),
+      [['Why count bad pairs?', 'To know in O(1) when the array is sorted.'], ['What changes after merging (a, b)?', 'Only the pairs (left, a) and (a, right), and the bad status around them.'], ['Java ordered set of pairs?', 'TreeSet<long[]> with a comparator (sum, then index).']], []),
+    T('Replace Words (set)', 'Try on hats from the <b>smallest size up</b>; the first that fits is the root.', 'PREFIXES SHORT → LONG, FIRST HIT', 'Replace each word by its shortest root from a dictionary.', A1(C_RW, rw()),
+      [['Cost per word?', 'O(L²) (substring + hash per length). The Trie version is O(L).']], []),
+    T('Smallest Infinite Set (2336)', 'A <b>ticket roll</b> (the tail counter) plus a small tray of returned tickets. Always serve from the tray first.', 'TAIL COUNTER + TREESET OF RETURNS', 'popSmallest() and addBack(num) on the set of all positive integers.', A1(C_INF, inf()),
+      [['Why ignore addBack(num ≥ curr)?', 'num is still in the untouched tail.'], ['PQ version needs what extra?', 'A HashSet to avoid duplicates in the heap.']], []),
+    T('Max Unique Sum (3487)', 'At a <b>buffet</b> you may skip anything: take one of each positive dish. If none is positive, take the least bad.', 'DISTINCT POSITIVES, ELSE MAX NON-POSITIVE', 'Delete any elements (not all), then pick a subarray with unique elements and maximum sum.', A1(C_MU, mu()),
+      [['Why is the answer just the distinct positives?', 'Deletions let us bring them together; negatives never help.'], ['All non-positive?', 'Return the maximum single element.']], []),
+    T('Min Ops Distinct (3396)', 'Read the queue <b>from the back</b>: the first repeated face tells you how far from the front you must cut.', 'SCAN BACK, FIRST REPEAT i → ceil((i+1)/3)', 'Remove 3 elements from the front per operation until all elements are distinct.', A1(C_MOD, mod()),
+      [['Integer ceil?', '(i + 1 + 2) / 3.']], []),
+    T('Ops to Make Equal K (3375)', 'A <b>staircase</b> down to k: each distinct step above k costs one jump.', 'ANY < k → −1, ELSE #DISTINCT > k', 'Minimum operations to make all values equal to k.', A1(C_MK, mk()),
+      [['Why distinct count?', 'Each operation can flatten the highest level onto the next one.']], []),
+    T('N-Repeated (961)', '<b>Pigeonhole</b>: half the seats hold the same person, so two of them must sit at most 2 seats apart.', 'CHECK i−1 AND i−2, ELSE nums[0]', 'In a size-2n array with n+1 distinct values, one value appears n times; find it.', A1(C_NR, nr()),
+      [['Why the nums[0] fallback?', 'For length 4 the shape [x, a, b, x] has a distance of 3.']], []),
+    T('Path Crossing (1496)', '<b>Breadcrumbs</b>: drop one on every point; stepping on a crumb means you crossed your path.', 'WALK, SET OF POINTS, ADD FAILS → CROSS', 'Does the walk N/S/E/W ever revisit a point?', A1(C_PC, pc()),
+      [['How do you hash a point in Java?', 'Pack it into a long: (x << 32) | (y & 0xffffffffL), or use the string "x,y".'], ['set.add returns?', 'false if the element was already present.']], []),
+    T('Smallest Missing (2996)', 'Count the <b>staircase</b> prefix 3,4,5, then step over every number that already exists.', 'SUM SEQUENTIAL PREFIX, BUMP WHILE PRESENT', 'The smallest x ≥ sum(longest sequential prefix) that is missing from nums.', A1(C_SM, sm()),
+      [['Sequential means?', 'nums[j] = nums[j−1] + 1 from index 0.']], [])
+  ].map(p => ({ ...p, links: (p.links || []).filter(l => typeof l[1] === 'number') }))
+});
+</script>
+</body>
+</html>

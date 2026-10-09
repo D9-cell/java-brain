@@ -1,0 +1,370 @@
+const W = (name, code, steps) => [{ name, code, steps }];
+const idx = n => Array.from({ length: n }, (_, i) => i);
+const chars = s => [...s];
+
+const C_BP = `
+for (int i = 0; i < n / 2; i++) if (c[i] != 'a') { c[i] = 'a'; return new String(c); }
+c[n - 1] = 'b';
+return new String(c);`;
+{
+  const r = recorder();
+  r.step(0, 'Break "abccba": make it smaller by lowering the first non-`a` in the first half.', [A('s', chars('abccba'))]);
+  r.step(ln(C_BP, 'c[i] = \'a\''), 'Index 0 is `a`; index 1 is `b` → change to `a`: "aaccba" is no longer a palindrome.', [A('s', chars('abccba'), { active: [1] }), A('result', chars('aaccba'), { done: [1] })]);
+  r.step(ln(C_BP, 'c[n - 1]'), 'For "aa" the whole first half is `a`: raise the last letter instead → "ab".', [A('s', chars('aa')), A('result', chars('ab'), { done: [1] })]);
+  ANIM['Break a Palindrome'] = W('Lower the first non-a', C_BP, r.steps);
+}
+
+const C_MC = `
+for (int i = 0; i < n; i++) {
+    while (size > 0 && st[size - 1] > nums[i] && size - 1 + (n - i) >= k) size--;
+    if (size < k) st[size++] = nums[i];
+}`;
+{
+  const a = [2, 4, 3, 3, 5, 4, 9, 6], k = 4, r = recorder(), st = [];
+  r.step(0, 'k = 4. Keep a stack; a smaller value pops bigger ones while enough numbers remain.', [A('nums', a), S('stack', [])]);
+  a.forEach((x, i) => { const popped = []; while (st.length && st[st.length - 1] > x && st.length - 1 + (a.length - i) >= k) popped.push(st.pop()); if (st.length < k) st.push(x); r.step(ln(C_MC, 'if (size < k)'), `Read ${x}: popped [${popped.join(', ')}]${st[st.length - 1] === x ? ', pushed ' + x : ', stack already holds k'}.`, [A('nums', a, { active: [i] }), S('stack', [...st])]); });
+  ANIM['Find the Most Competitive Subsequence'] = W('Monotonic stack', C_MC, r.steps);
+}
+
+const C_VS = `
+for (int i = 0, j = 0; i < n && j < m; i++) {
+    if (word1.charAt(i) == word2.charAt(j)) { seq[idx++] = i; j++; }
+    else if (canChange && i + 1 <= n && suffix[i + 1] >= m - j - 1) { seq[idx++] = i; j++; canChange = false; }
+}`;
+{
+  const w1 = 'bacdc', w2 = 'abc', r = recorder();
+  r.step(0, 'word1 = bacdc, word2 = abc. suffix[i] = how many trailing letters of word2 can be matched inside word1[i..]: suffix = [2, 1, 1, 1, 1, 0].', [A('word1', chars(w1)), A('suffix', [2, 1, 1, 1, 1, 0]), A('word2', chars(w2))]);
+  r.step(ln(C_VS, 'else if (canChange'), 'i = 0: `b` ≠ `a`. Spending the change here needs suffix[1] = 1 ≥ 2 remaining letters of word2: not true → skip index 0.', [A('word1', chars(w1), { bad: [0] }), A('word2', chars(w2), { active: [0] })]);
+  r.step(ln(C_VS, 'seq[idx++] = i; j++; }'), 'i = 1: `a` = `a` → take index 1.', [A('word1', chars(w1), { done: [1] }), A('indices', [1], { done: [0] })]);
+  r.step(ln(C_VS, 'canChange = false'), 'i = 2: `c` ≠ `b`, but suffix[3] = 1 ≥ 1 remaining letter → spend the change, take index 2.', [A('word1', chars(w1), { done: [1, 2] }), A('indices', [1, 2], { done: [0, 1] })]);
+  r.step(ln(C_VS, 'i < n && j < m'), 'i = 3: `d` ≠ `c` and the change is used → skip. i = 4: `c` = `c` → take 4. Answer <b>[1, 2, 4]</b>.', [A('word1', chars(w1), { done: [1, 2, 4] }), A('indices', [1, 2, 4], { done: [0, 1, 2] })]);
+  ANIM['Find the Lexicographically Smallest Valid Sequence'] = W('Greedy with one change', C_VS, r.steps);
+}
+
+const C_GS = `
+for (int i = 0; i < n; i++) if (str1.charAt(i) == 'T') { write str2 at i (conflict → return "") }
+for (int i = 0; i < len; i++) if (w[i] == 0) { w[i] = 'a'; free[i] = true; }
+for (int i = 0; i < n; i++) if (str1.charAt(i) == 'F' && same(w, str2, i)) {
+    for (int k = i + m - 1; k >= i && !changed; k--) if (free[k]) { w[k] = 'b'; changed = true; }
+}`;
+{
+  const r = recorder();
+  r.step(0, 'str1 = "TFTF", str2 = "ab" → word length 5.', [A('str1', chars('TFTF')), A('str2', chars('ab'))]);
+  r.step(ln(C_GS, 'str1.charAt(i) == \'T\''), 'T at 0 → "ab" at positions 0-1. T at 2 → "ab" at positions 2-3.', [A('word', ['a', 'b', 'a', 'b', '·'], { done: [0, 1, 2, 3] })]);
+  r.step(ln(C_GS, 'w[i] = \'a\''), 'Free positions get `a`: position 4 → `a`.', [A('word', chars('ababa'), { warn: [4] })]);
+  r.step(ln(C_GS, 'same(w, str2, i)'), 'F at 1: window "ba" ≠ "ab" ✓. F at 3: window "ba" ≠ "ab" ✓. Result <b>ababa</b>.', [A('word', chars('ababa'), { done: idx(5) })]);
+  ANIM['Lexicographically Smallest Generated String'] = W('Write, fill, repair', C_GS, r.steps);
+}
+
+const C_PG = `
+for (char ch = 'a'; ch <= 'z'; ch++) {
+    if (count[ch - 'a'] == 0) continue;
+    if (!greater && ch < target.charAt(i)) continue;
+    cur.append(ch);
+    count[ch - 'a']--;
+    if (solve(cur, count, target, i + 1, greater || ch > target.charAt(i))) return true;
+    cur.setLength(cur.length() - 1);
+    count[ch - 'a']++;
+}`;
+{
+  const r = recorder();
+  r.step(0, 's = "abc", target = "bba". Build the answer letter by letter, staying ≥ the target prefix.', [A('letters left', chars('abc')), A('target', chars('bba'))]);
+  r.step(ln(C_PG, 'cur.append(ch)'), 'Position 0: `a` < `b` is not allowed. Take `b` (equal → still tight).', [A('prefix', ['b'], { done: [0] }), A('letters left', chars('ac'))]);
+  r.step(ln(C_PG, 'greater || ch >'), 'Position 1: need ≥ `b`, only `a` and `c` remain: `a` is too small, `c` > `b` → we are now strictly greater.', [A('prefix', ['b', 'c'], { done: [0, 1] }), A('letters left', ['a'])]);
+  r.step(ln(C_PG, 'return true'), 'Rest is the smallest remaining letter: `a`. Answer <b>bca</b>.', [A('answer', chars('bca'), { done: idx(3) })]);
+  ANIM['Lexicographically Smallest Permutation Greater Than Target'] = W('Stay tight, then break out', C_PG, r.steps);
+}
+
+const C_PP = `
+int[] half = new int[26];
+for (int c = 0; c < 26; c++) half[c] = count[c] / 2;
+search(new StringBuilder(), half, mid, target, n / 2, result);
+...
+String cand = cur.toString() + mid + reverse(cur);
+if (cand.compareTo(target) > 0) { result[0] = cand; return true; }`;
+{
+  const r = recorder();
+  r.step(0, 's = "baba", target = "abbb". Counts a:2, b:2 → half letters {a, b}, no middle letter.', [A('half letters', ['a', 'b']), A('target', chars('abbb'))]);
+  r.step(ln(C_PP, 'search('), 'Try half "ab": candidate "ab" + "ba" = "abba". "abba" < "abbb" → rejected, backtrack.', [A('candidate', chars('abba'), { bad: idx(4) })]);
+  r.step(ln(C_PP, 'if (cand.compareTo'), 'Next first letter `b` (> `a`): half "ba", candidate "ba" + "ab" = "baab" > "abbb" ✓. Answer <b>baab</b>.', [A('candidate', chars('baab'), { done: idx(4) })]);
+  ANIM['Lexicographically Smallest Palindromic Permutation Greater Than Target'] = W('Search the left half', C_PP, r.steps);
+}
+
+const C_BIN = `
+for (int i = s.length() - 1; i >= 0; i--) {
+    if (s.charAt(i) == '0') { zeros++; if (power <= k) power <<= 1; continue; }
+    if (power <= k && value + power <= k) { value += power; ones++; }
+    if (power <= k) power <<= 1;
+}`;
+{
+  const s = '1001010', k = 5, r = recorder(); let zeros = 0, ones = 0, value = 0, power = 1;
+  r.step(0, 's = 1001010, k = 5. Zeros are free; ones are added from the right while the value stays ≤ k.', [A('s', chars(s))]);
+  for (let i = s.length - 1; i >= 0; i--) { let say; if (s[i] === '0') { zeros++; say = `Index ${i}: 0 → free (zeros = ${zeros}).`; } else if (power <= k && value + power <= k) { value += power; ones++; say = `Index ${i}: 1 with weight ${power} → value ${value} ≤ ${k}, take it.`; } else say = `Index ${i}: 1 with weight ${power} would exceed ${k}: skip.`; if (power <= k) power *= 2; r.step(ln(C_BIN, 'if (power <= k && value'), say, [A('s', chars(s), { active: [i] }), A('zeros / ones / value', [zeros, ones, value])]); }
+  r.step(ln(C_BIN, 'for (int i'), `Length = zeros + ones = <b>${zeros + ones}</b>.`, [A('answer', [zeros + ones], { done: [0] })]);
+  ANIM['Longest Binary Subsequence Less Than or Equal to K'] = W('Ones from the right', C_BIN, r.steps);
+}
+
+const C_LP = `
+for (String w : words) {
+    String rev = "" + w.charAt(1) + w.charAt(0);
+    if (cnt.getOrDefault(rev, 0) > 0) { len += 4; cnt.merge(rev, -1, Integer::sum); }
+    else cnt.merge(w, 1, Integer::sum);
+}
+for (Map.Entry<String, Integer> e : cnt.entrySet()) if (e.getValue() > 0 && e.getKey().charAt(0) == e.getKey().charAt(1)) return len + 2;`;
+{
+  const words = ['lc', 'cl', 'gg'], r = recorder(); let len = 0; const cnt = {};
+  r.step(0, 'words = lc, cl, gg. Pair each word with its reverse.', [A('words', words)]);
+  words.forEach((w, i) => { const rev = w[1] + w[0]; if (cnt[rev] > 0) { len += 4; cnt[rev]--; r.step(ln(C_LP, 'len += 4'), `${w} meets waiting ${rev} → pair, +4. Length ${len}.`, [A('words', words, { active: [i] }), A('length', [len], { done: [0] })]); } else { cnt[w] = (cnt[w] || 0) + 1; r.step(ln(C_LP, 'else cnt.merge'), `${w}: no twin yet, wait.`, [A('words', words, { active: [i] }), A('waiting', Object.keys(cnt).filter(k => cnt[k] > 0))]); } });
+  r.step(ln(C_LP, 'return len + 2'), '`gg` is left unmatched and is its own reverse → it goes in the middle: +2. Answer <b>6</b>.', [A('answer', [len + 2], { done: [0] })]);
+  ANIM['Longest Palindrome by Concatenating Two Letter Words'] = W('Pair with reverses', C_LP, r.steps);
+}
+
+const C_MD = `
+for (char c : s.toCharArray()) if (c != '9') { hi = s.replace(c, '9'); break; }
+if (s.charAt(0) != '1') lo = s.replace(s.charAt(0), '1');
+else for (int i = 1; i < s.length(); i++) { char c = s.charAt(i); if (c != '0' && c != '1') { lo = s.replace(c, '0'); break; } }`;
+{
+  const r = recorder();
+  r.step(0, 'num = 555. Maximum: replace the first non-9 digit everywhere.', [A('num', chars('555'))]);
+  r.step(ln(C_MD, 'hi = s.replace'), '5 → 9 everywhere: 999.', [A('max', chars('999'), { done: [0, 1, 2] })]);
+  r.step(ln(C_MD, 'lo = s.replace(s.charAt(0)'), 'Minimum: first digit is not 1 → turn it (and its copies) into 1: 111. Difference <b>888</b>.', [A('min', chars('111'), { done: [0, 1, 2] }), A('difference', [888], { done: [0] })]);
+  ANIM['Max Difference You Can Get From Changing an Integer'] = W('Max and min', C_MD, r.steps);
+}
+
+const C_69 = `
+char[] c = String.valueOf(num).toCharArray();
+for (int i = 0; i < c.length; i++) if (c[i] == '6') { c[i] = '9'; break; }`;
+{
+  const r = recorder();
+  r.step(0, 'num = 9669. Only a 6 can grow; the leftmost 6 is worth the most.', [A('digits', chars('9669'))]);
+  r.step(ln(C_69, 'c[i] = \'9\''), 'First 6 is at index 1 → 9. Result <b>9969</b>.', [A('digits', chars('9669'), { active: [1] }), A('result', chars('9969'), { done: [1] })]);
+  ANIM['Maximum 69 Number'] = W('Leftmost 6', C_69, r.steps);
+}
+
+const C_MAN = `
+for (int i = 0; i < s.length(); i++) {
+    ... update e, w, n, so ...
+    int dist = Math.abs(e - w) + Math.abs(n - so);
+    int wasted = i + 1 - dist;
+    best = Math.max(best, dist + Math.min(2 * k, wasted));
+}`;
+{
+  const s = 'NWSE', k = 1, r = recorder(); let e = 0, w = 0, n = 0, so = 0, best = 0;
+  r.step(0, 's = NWSE, k = 1. After each step: distance + 2 per change on a wasted step.', [A('moves', chars(s))]);
+  for (let i = 0; i < s.length; i++) { ({ E: () => e++, W: () => w++, N: () => n++, S: () => so++ })[s[i]](); const d = Math.abs(e - w) + Math.abs(n - so), wasted = i + 1 - d, v = d + Math.min(2 * k, wasted); best = Math.max(best, v); r.step(ln(C_MAN, 'best = Math.max'), `After ${i + 1} step(s): distance ${d}, wasted ${wasted} → ${d} + min(${2 * k}, ${wasted}) = ${v}. Best ${best}.`, [A('moves', chars(s), { done: idx(i + 1) }), A('best', [best], { done: [0] })]); }
+  ANIM['Maximum Manhattan Distance After K Changes'] = W('Prefix scan', C_MAN, r.steps);
+}
+
+const C_ND = `
+for (int i = 0; i < seq.length(); i++) {
+    if (seq.charAt(i) == '(') { depth++; res[i] = depth % 2; }
+    else { res[i] = depth % 2; depth--; }
+}`;
+{
+  const s = '(()(()))', r = recorder(), res = []; let depth = 0;
+  r.step(0, 'Split "(()(()))" into two valid strings: group = depth % 2 for both the opening and its closing bracket.', [A('seq', chars(s))]);
+  chars(s).forEach((c, i) => { if (c === '(') { depth++; res.push(depth % 2); } else { res.push(depth % 2); depth--; } r.step(ln(C_ND, c === '(' ? 'depth++' : 'depth--'), `${c} at depth ${c === '(' ? depth : depth + 1} → group ${res[i]}.`, [A('seq', chars(s), { active: [i] }), A('group', res)]); });
+  r.step(ln(C_ND, 'for (int i'), 'Maximum depth 3 is split into depth 2 (group 1) and depth 1 (group 0): max depth 2 is the best possible.', [A('group', res, { done: idx(res.length) })]);
+  ANIM['Maximum Nesting Depth of Two Valid Parentheses Strings'] = W('Depth parity', C_ND, r.steps);
+}
+
+const C_OPS = `
+for (int i = 0; i < n; ) {
+    if (s.charAt(i) == '0') {
+        ops += ones;
+        while (i < n && s.charAt(i) == '0') i++;
+    } else { ones++; i++; }
+}`;
+{
+  const s = '1001101', r = recorder(); let ones = 0, ops = 0; let i = 0;
+  r.step(0, 's = 1001101. Each block of zeros is crossed once by every `1` on its left.', [A('s', chars(s))]);
+  while (i < s.length) { if (s[i] === '0') { ops += ones; const st = i; while (i < s.length && s[i] === '0') i++; r.step(ln(C_OPS, 'ops += ones'), `Zero block at ${st}..${i - 1}: add ${ones} one(s). Ops ${ops}.`, [A('s', chars(s), { warn: idx(i).filter(x => x >= st) }), A('ones / ops', [ones, ops])]); } else { ones++; r.step(ln(C_OPS, 'ones++'), `A 1 at index ${i}: ones = ${ones}.`, [A('s', chars(s), { active: [i] }), A('ones / ops', [ones, ops])]); i++; } }
+  ANIM['Maximum Number of Operations to Move Ones to the End'] = W('Zero blocks', C_OPS, r.steps);
+}
+
+const C_MSP = `
+for (int left = 0, right = n - 1; left < right; left++) {
+    int k = right;
+    while (k > left && s[k] != s[left]) k--;
+    if (k == left) { swap s[left], s[left + 1]; swaps++; left--; continue; }
+    for (; k < right; k++) { swap s[k], s[k + 1]; swaps++; }
+    right--;
+}`;
+{
+  const r = recorder();
+  r.step(0, '"aabb": for the left letter find its twin from the right and bubble it to the right end with adjacent swaps.', [A('s', chars('aabb'))]);
+  r.step(ln(C_MSP, 'while (k > left'), 'left = 0 (`a`). Searching from the right: index 3 `b`, 2 `b`, 1 `a` → the nearest twin is at index 1.', [A('s', chars('aabb'), { active: [0, 1] })]);
+  r.step(ln(C_MSP, 'for (; k < right'), 'Swap indexes 1 and 2: "abab" (1 swap). Swap indexes 2 and 3: "abba" (2 swaps). The twin is now at the right end.', [A('s', chars('abba'), { done: [0, 3] }), A('swaps', [2], { done: [0] })]);
+  r.step(ln(C_MSP, 'right--'), 'Shrink to the inside "bb": left `b` already matches the right `b`. The string is a palindrome after <b>2</b> swaps.', [A('s', chars('abba'), { done: idx(4) }), A('swaps', [2], { done: [0] })]);
+  ANIM['Min Swaps to Make Palindrome'] = W('Bubble the twin', C_MSP, r.steps);
+}
+
+const C_ROPE = `
+for (int i = 0; i < colors.length(); i++) {
+    if (i > 0 && colors.charAt(i) != colors.charAt(i - 1)) prevMax = 0;
+    time += Math.min(prevMax, neededTime[i]);
+    prevMax = Math.max(prevMax, neededTime[i]);
+}`;
+{
+  const col = 'abaac', cost = [1, 2, 3, 4, 5], r = recorder(); let time = 0, prevMax = 0;
+  r.step(0, '"abaac" with costs [1,2,3,4,5]. In a run of equal colours keep the most expensive.', [A('colors', chars(col)), A('cost', cost)]);
+  col.split('').forEach((c, i) => { if (i > 0 && c !== col[i - 1]) prevMax = 0; time += Math.min(prevMax, cost[i]); prevMax = Math.max(prevMax, cost[i]); r.step(ln(C_ROPE, 'time += Math.min'), `Index ${i} (${c}, cost ${cost[i]}): pay min(prevMax, cost). Total ${time}, prevMax ${prevMax}.`, [A('colors', chars(col), { active: [i] }), A('time / prevMax', [time, prevMax])]); });
+  ANIM['Minimum Time to Make Rope Colorful'] = W('Running maximum', C_ROPE, r.steps);
+}
+
+const C_UF = `
+Arrays.sort(freq);
+int deletions = 0, allowed = Integer.MAX_VALUE;
+for (int i = 25; i >= 0 && freq[i] > 0; i--) {
+    if (freq[i] > allowed) { deletions += freq[i] - allowed; freq[i] = allowed; }
+    allowed = Math.max(0, freq[i] - 1);
+}`;
+{
+  const f = [3, 3, 2], r = recorder(); let allowed = Infinity, del = 0; const cur = [...f];
+  r.step(0, '"aaabbbcc": frequencies 3, 3, 2 (sorted descending).', [A('frequencies', f)]);
+  f.forEach((x, i) => { if (cur[i] > allowed) { del += cur[i] - allowed; cur[i] = allowed; } allowed = Math.max(0, cur[i] - 1); r.step(ln(C_UF, 'allowed = Math.max'), `Frequency ${x}: ${x === cur[i] ? 'fits' : 'lowered to ' + cur[i]}. Deletions ${del}. Next allowed ${allowed}.`, [A('frequencies', cur, { active: [i] }), A('deletions', [del], { done: [0] })]); });
+  ANIM['Minimum Deletions to Make Character Frequencies Unique'] = W('Lower each below the previous', C_UF, r.steps);
+}
+
+const C_KS = `
+for (int f : freq) {
+    if (f == 0) continue;
+    int del = 0;
+    for (int g : freq) {
+        if (g < f) del += g;
+        else if (g > f + k) del += g - (f + k);
+    }
+    best = Math.min(best, del);
+}`;
+{
+  const freq = { a: 3, b: 2, c: 1, d: 5 }, k = 2, r = recorder(); let best = Infinity;
+  r.step(0, 'Frequencies a:3, b:2, c:1, d:5 and k = 2. Try each frequency f as the smallest kept one.', [A('frequencies', Object.values(freq))]);
+  Object.values(freq).forEach(f => { let del = 0; Object.values(freq).forEach(g => { if (g < f) del += g; else if (g > f + k) del += g - (f + k); }); best = Math.min(best, del); r.step(ln(C_KS, 'best = Math.min'), `f = ${f}: drop rarer letters, trim above ${f + k} → ${del} deletions. Best ${best}.`, [A('frequencies', Object.values(freq), { active: [Object.values(freq).indexOf(f)] }), A('best', [best], { done: [0] })]); });
+  ANIM['Minimum Deletions to Make String K-Special'] = W('Try each minimum', C_KS, r.steps);
+}
+
+const C_SE = `
+for (int i = 0; i < s1.length(); i++) {
+    if (s1.charAt(i) == 'x' && s2.charAt(i) == 'y') xy++;
+    else if (s1.charAt(i) == 'y' && s2.charAt(i) == 'x') yx++;
+}
+if ((xy + yx) % 2 == 1) return -1;
+return xy / 2 + yx / 2 + 2 * (xy % 2);`;
+{
+  const r = recorder();
+  r.step(0, 's1 = "xy", s2 = "yx": position 0 is (x,y), position 1 is (y,x).', [A('s1', ['x', 'y']), A('s2', ['y', 'x'])]);
+  r.step(ln(C_SE, 'xy++'), 'xy = 1, yx = 1. The total 2 is even.', [A('xy / yx', [1, 1])]);
+  r.step(ln(C_SE, 'return xy / 2'), '0 + 0 + 2 · (1 % 2) = <b>2</b> swaps: first make both mismatches the same kind, then fix them together.', [A('answer', [2], { done: [0] })]);
+  ANIM['Minimum Swaps to Make Strings Equal'] = W('Count mismatch types', C_SE, r.steps);
+}
+
+const C_OP = `
+boolean[] seen = new boolean[26];
+int parts = 1;
+for (char c : s.toCharArray()) {
+    if (seen[c - 'a']) { parts++; Arrays.fill(seen, false); }
+    seen[c - 'a'] = true;
+}`;
+{
+  const s = 'abacaba', r = recorder(); let seen = new Set(), parts = 1;
+  r.step(0, 'Extend each piece until a letter repeats.', [A('s', chars(s))]);
+  chars(s).forEach((c, i) => { if (seen.has(c)) { parts++; seen = new Set(); } seen.add(c); r.step(ln(C_OP, 'seen[c - \'a\'] = true'), `Read ${c}: current piece letters {${[...seen].join(',')}}. Pieces: ${parts}.`, [A('s', chars(s), { active: [i] }), A('pieces', [parts], { done: [0] })]); });
+  ANIM['Optimal Partition of String'] = W('Cut on repeat', C_OP, r.steps);
+}
+
+const C_DB = `
+int max = 0;
+for (char c : n.toCharArray()) max = Math.max(max, c - '0');
+return max;`;
+{
+  const r = recorder();
+  r.step(0, 'n = 32. Each deci-binary summand adds 0 or 1 to every digit.', [A('digits', ['3', '2'])]);
+  r.step(ln(C_DB, 'max = Math.max'), 'The digit 3 needs three summands (each contributes at most 1 to it). Three are enough: 11 + 11 + 10 = 32.', [A('digits', ['3', '2'], { active: [0] }), A('max digit', [3], { done: [0] })]);
+  ANIM['Partitioning Into Minimum Number Of Deci-Binary Numbers'] = W('Max digit', C_DB, r.steps);
+}
+
+const C_RC = `
+for (int i = 1; i + 1 < colors.length(); i++) {
+    char c = colors.charAt(i);
+    if (colors.charAt(i - 1) == c && colors.charAt(i + 1) == c) { if (c == 'A') a++; else b++; }
+}
+return a > b;`;
+{
+  const s = 'AAABABB', r = recorder(); let a = 0, b = 0;
+  r.step(0, 'Alice removes A with A on both sides, Bob does the same with B. Count the available moves.', [A('colors', chars(s))]);
+  for (let i = 1; i + 1 < s.length; i++) { const c = s[i], ok = s[i - 1] === c && s[i + 1] === c; if (ok) { if (c === 'A') a++; else b++; } r.step(ln(C_RC, 'if (colors.charAt(i - 1)'), ok ? `Index ${i}: ${c} with equal neighbours → one move for ${c === 'A' ? 'Alice' : 'Bob'}.` : `Index ${i}: not a move.`, [A('colors', chars(s), { active: [i - 1, i, i + 1].filter(x => ok) }), A('Alice / Bob moves', [a, b])]); }
+  r.step(ln(C_RC, 'return a > b'), `Alice ${a} > Bob ${b}? ${a > b ? '<b>Alice wins</b>' : 'Bob wins'}.`, [A('Alice / Bob moves', [a, b], { done: [0] })]);
+  ANIM['Remove Colored Pieces if Both Neighbors are the Same Color'] = W('Count moves', C_RC, r.steps);
+}
+
+const C_SDD = `
+for (int pos = Math.min(zeroFree, n - 1); pos >= 0; pos--) {
+    for (int d = num.charAt(pos) - '0' + 1; d <= 9; d++) {
+        long r = need[pos] / gcd(need[pos], d);
+        if (digitsNeeded(r) <= n - pos - 1) return num.substring(0, pos) + d + fill(r, n - pos - 1);
+    }
+}`;
+{
+  const r = recorder();
+  r.step(0, 'num = "1234", t = 256 = 2⁸. need[i] = factor still required after the first i digits: 256, 256, 128, 128, 32.', [A('num', chars('1234')), A('need after prefix', [256, 256, 128, 128, 32])]);
+  r.step(ln(C_SDD, 'for (int pos'), 'The whole number does not work (32 is still missing). Try raising the last digit (position 3): every larger digit leaves a requirement that needs more digits than the 0 free slots → fail. Position 2: needs 2 digits but only 1 slot → fail.', [A('num', chars('1234'), { bad: [2, 3] })]);
+  r.step(ln(C_SDD, 'long r'), 'Position 1: keep "1", raise 2 to 3? 256 still needs 3 digits > 2 slots. Raise it to 4: 256 / gcd(256, 4) = 64 needs digits 8 and 8 = 2 ≤ 2 slots. ✓', [A('num', chars('1234'), { active: [1] }), A('remaining need', [64])]);
+  r.step(ln(C_SDD, 'return num.substring'), 'Result: "1" + 4 + fill(64, 2) = "1" + "4" + "88" = <b>1488</b>.', [A('answer', chars('1488'), { done: idx(4) })]);
+  ANIM['Smallest Divisible Digit Product II'] = W('Prefix search', C_SDD, r.steps);
+}
+
+const C_SPR = `
+public String smallestPalindrome(String s) {
+    int n = s.length(), mid = n / 2;
+    char[] c = s.toCharArray();
+    Arrays.sort(c, 0, mid);
+    for (int i = 0; i < mid; i++) c[n - 1 - i] = c[i];
+    return new String(c);
+}`;
+{
+  const r = recorder();
+  r.step(0, 's = "daccad" is a palindrome. Sort the first half "dac".', [A('s', chars('daccad'), { warn: [0, 1, 2] })]);
+  r.step(ln(C_SPR, 'Arrays.sort'), 'Sorted half: "acd".', [A('s', chars('acdcad'), { done: [0, 1, 2] })]);
+  r.step(ln(C_SPR, 'c[n - 1 - i]'), 'Mirror it into the second half: "acd" + "dca" = <b>acddca</b>.', [A('s', chars('acddca'), { done: idx(6) })]);
+  ANIM['Smallest Palindromic Rearrangement I'] = W('Sort the half', C_SPR, r.steps);
+}
+
+const C_SSV = `
+Arrays.fill(c, 'a');
+k -= n;
+for (int i = n - 1; i >= 0 && k > 0; i--) {
+    int add = Math.min(25, k);
+    c[i] += add;
+    k -= add;
+}`;
+{
+  const r = recorder(); const c = ['a', 'a', 'a', 'a', 'a']; let k = 73 - 5;
+  r.step(0, 'n = 5, k = 73. Start with "aaaaa" (value 5); 68 more to distribute.', [A('string', [...c]), A('k left', [k])]);
+  for (let i = 4; i >= 0 && k > 0; i--) { const add = Math.min(25, k); c[i] = String.fromCharCode(c[i].charCodeAt(0) + add); k -= add; r.step(ln(C_SSV, 'c[i] += add'), `Position ${i}: add ${add} → ${c[i]}. Left ${k}.`, [A('string', [...c], { active: [i] }), A('k left', [k])]); }
+  r.step(ln(C_SSV, 'for (int i'), `Result <b>${c.join('')}</b>.`, [A('string', [...c], { done: idx(5) })]);
+  ANIM['Smallest String With A Given Numeric Value'] = W('Fill from the right', C_SSV, r.steps);
+}
+
+const C_MDR = `
+String max = s;
+for (char c : s.toCharArray()) if (c != '9') { max = s.replace(c, '9'); break; }
+String min = s.replace(s.charAt(0), '0');
+return Integer.parseInt(max) - Integer.parseInt(min);`;
+{
+  const r = recorder();
+  r.step(0, 'num = 11891. Maximum: remap the first digit that is not 9 to 9 everywhere.', [A('num', chars('11891'))]);
+  r.step(ln(C_MDR, 'max = s.replace'), '1 → 9: 99899. Minimum: remap the first digit to 0.', [A('max', chars('99899'), { done: [0, 1, 3] })]);
+  r.step(ln(C_MDR, 'String min'), '1 → 0: 00890 = 890. Difference 99899 − 890 = <b>99009</b>.', [A('min', chars('00890'), { done: [0, 1, 4] }), A('difference', [99009], { done: [0] })]);
+  ANIM['Maximum Difference by Remapping a Digit'] = W('Remap the first digit', C_MDR, r.steps);
+}
+
+const C_ODD = `
+int ones = 0;
+for (char c : s.toCharArray()) if (c == '1') ones++;
+return "1".repeat(ones - 1) + "0".repeat(s.length() - ones) + "1";`;
+{
+  const r = recorder();
+  r.step(0, 's = "0101": two ones, two zeros.', [A('bits', chars('0101'))]);
+  r.step(ln(C_ODD, 'return "1".repeat'), 'One `1` must stay at the end. Put the other ones first, then the zeros: "1" + "00" + "1" = <b>1001</b>.', [A('result', chars('1001'), { done: idx(4) })]);
+  ANIM['Maximum Odd Binary Number'] = W('Reserve the last 1', C_ODD, r.steps);
+}

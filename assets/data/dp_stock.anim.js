@@ -1,0 +1,227 @@
+const W = (name, code, steps) => [{ name, code, steps }];
+const idx = n => Array.from({ length: n }, (_, i) => i);
+const range = (a, b) => idx(Math.max(0, b - a + 1)).map(x => x + a);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+const show = v => (v <= -1e9 ? '−∞' : v);
+
+const C_S3 = `
+for (int p : prices) {
+    buy1 = Math.max(buy1, -p);
+    sell1 = Math.max(sell1, buy1 + p);
+    buy2 = Math.max(buy2, sell1 - p);
+    sell2 = Math.max(sell2, buy2 + p);
+}
+return sell2;`;
+{
+  const p = [3, 3, 5, 0, 0, 3, 1, 4], r = recorder(); let b1 = -1e9, s1 = 0, b2 = -1e9, s2 = 0;
+  r.step(0, 'prices = [3,3,5,0,0,3,1,4]. Four checkpoints: buy1, sell1, buy2, sell2.', [A('prices', p), R('buy1 sell1 buy2 sell2', [show(b1), s1, show(b2), s2])]);
+  p.forEach((x, i) => { b1 = Math.max(b1, -x); s1 = Math.max(s1, b1 + x); b2 = Math.max(b2, s1 - x); s2 = Math.max(s2, b2 + x); r.step(ln(C_S3, 'sell2 = Math.max'), `Day ${i} (price ${x}): buy1 ${b1}, sell1 ${s1}, buy2 ${b2}, sell2 ${s2}.`, [A('prices', p, { active: [i], done: idx(i) }), R('buy1 sell1 buy2 sell2', [b1, s1, b2, s2])]); });
+  r.step(ln(C_S3, 'return sell2'), `Answer <b>${s2}</b>: buy 0 sell 3, buy 1 sell 4.`, [R('sell2', [s2], { done: [0] })]);
+  ANIM['Best Time to Buy and Sell Stock III'] = W('Four states', C_S3, r.steps);
+}
+
+const C_S4 = `
+for (int p : prices)
+    for (int t = 1; t <= k; t++) {
+        buy[t] = Math.max(buy[t], sell[t - 1] - p);
+        sell[t] = Math.max(sell[t], buy[t] + p);
+    }
+return sell[k];`;
+{
+  const p = [3, 2, 6, 5, 0, 3], k = 2, r = recorder(), buy = [0, -1e9, -1e9], sell = [0, 0, 0];
+  r.step(0, 'k = 2, prices = [3,2,6,5,0,3]. Row 0 = buy[t], row 1 = sell[t].', [A('prices', p), G('states', [buy.slice(1).map(show), sell.slice(1)], [], { rowLabels: ['buy', 'sell'], colLabels: [1, 2] })]);
+  p.forEach((x, i) => { for (let t = 1; t <= k; t++) { buy[t] = Math.max(buy[t], sell[t - 1] - x); sell[t] = Math.max(sell[t], buy[t] + x); } r.step(ln(C_S4, 'sell[t] = Math.max'), `Price ${x}: buy = [${buy.slice(1)}], sell = [${sell.slice(1)}].`, [A('prices', p, { active: [i], done: idx(i) }), G('states', [buy.slice(1), sell.slice(1)], [], { rowLabels: ['buy', 'sell'], colLabels: [1, 2] })]); });
+  r.step(ln(C_S4, 'return sell[k]'), `Answer <b>${sell[k]}</b>: buy 2 sell 6, buy 0 sell 3.`, [G('states', [buy.slice(1), sell.slice(1)], [[1, 1, 'done']], { rowLabels: ['buy', 'sell'], colLabels: [1, 2] })]);
+  ANIM['Best Time to Buy and Sell Stock IV'] = W('k pairs of states', C_S4, r.steps);
+}
+
+const C_S5 = `
+for (int t = 0; t < k; t++) {
+    nf[t + 1] = max(nf[t + 1], longPos[t] + p, shortPos[t] - p);
+    nl[t] = Math.max(nl[t], free[t] - p);
+    ns[t] = Math.max(ns[t], free[t] + p);
+}
+free = nf; longPos = nl; shortPos = ns;`;
+{
+  const p = [1, 7, 9, 8, 2], k = 2, r = recorder(); let f = [0, -1e9, -1e9], l = [-1e9, -1e9, -1e9], s = [-1e9, -1e9, -1e9];
+  const view = () => [f.map(show), l.slice(0, k).map(show).concat(['']), s.slice(0, k).map(show).concat([''])];
+  r.step(0, 'prices = [1,7,9,8,2], k = 2. Rows: flat after t trades, long open, short open.', [A('prices', p), G('states', view(), [], { rowLabels: ['flat', 'long', 'short'] })]);
+  p.forEach((x, i) => {
+    const nf = f.slice(), nl = l.slice(), ns = s.slice();
+    for (let t = 0; t < k; t++) { if (l[t] > -1e9) nf[t + 1] = Math.max(nf[t + 1], l[t] + x); if (s[t] > -1e9) nf[t + 1] = Math.max(nf[t + 1], s[t] - x); if (f[t] > -1e9) { nl[t] = Math.max(nl[t], f[t] - x); ns[t] = Math.max(ns[t], f[t] + x); } }
+    f = nf; l = nl; s = ns;
+    r.step(ln(C_S5, 'nf[t + 1]'), `Price ${x}: close longs (+${x}), close shorts (−${x}), or open either from flat.`, [A('prices', p, { active: [i], done: idx(i) }), G('states', view(), [], { rowLabels: ['flat', 'long', 'short'] })]);
+  });
+  r.step(ln(C_S5, 'free = nf'), `Answer <b>${Math.max(...f)}</b>: long 1 → 9, then short 8 → 2.`, [G('states', view(), [[0, 2, 'done']], { rowLabels: ['flat', 'long', 'short'] })]);
+  ANIM['Best Time to Buy and Sell Stock V'] = W('Flat, long, short', C_S5, r.steps);
+}
+
+const C_CD = `
+for (int p : prices) {
+    int nHold = Math.max(hold, rest - p), nSold = hold + p, nRest = Math.max(rest, sold);
+    hold = nHold; sold = nSold; rest = nRest;
+}
+return Math.max(sold, rest);`;
+{
+  const p = [1, 2, 3, 0, 2], r = recorder(); let h = -1e9, so = 0, re = 0;
+  r.step(0, 'prices = [1,2,3,0,2]. hold, sold (cooling today), rest.', [A('prices', p), R('hold sold rest', [show(h), so, re])]);
+  p.forEach((x, i) => { const nh = Math.max(h, re - x), ns = h + x, nr = Math.max(re, so); h = nh; so = ns; re = nr; r.step(ln(C_CD, 'int nHold'), `Price ${x}: hold = ${h}, sold = ${show(so)}, rest = ${re}.`, [A('prices', p, { active: [i], done: idx(i) }), R('hold sold rest', [h, show(so), re])]); });
+  r.step(ln(C_CD, 'return'), `Answer <b>${Math.max(so, re)}</b>: buy 1, sell 2, cool, buy 0, sell 2.`, [R('answer', [Math.max(so, re)], { done: [0] })]);
+  ANIM['Best Time to Buy and Sell Stock with Cooldown'] = W('Three states', C_CD, r.steps);
+}
+
+const C_FEE = `
+int cash = 0, hold = -prices[0];
+for (int i = 1; i < prices.length; i++) {
+    cash = Math.max(cash, hold + prices[i] - fee);
+    hold = Math.max(hold, cash - prices[i]);
+}
+return cash;`;
+{
+  const p = [1, 3, 2, 8, 4, 9], fee = 2, r = recorder(); let cash = 0, hold = -1;
+  r.step(ln(C_FEE, 'int cash'), 'prices = [1,3,2,8,4,9], fee 2. Day 0: cash 0, hold −1.', [A('prices', p, { active: [0] }), R('cash / hold', [cash, hold])]);
+  for (let i = 1; i < p.length; i++) { cash = Math.max(cash, hold + p[i] - fee); hold = Math.max(hold, cash - p[i]); r.step(ln(C_FEE, 'cash = Math.max'), `Price ${p[i]}: cash = ${cash}, hold = ${hold}.`, [A('prices', p, { active: [i], done: idx(i) }), R('cash / hold', [cash, hold])]); }
+  r.step(ln(C_FEE, 'return cash'), `Answer <b>${cash}</b>: (8 − 1 − 2) + (9 − 4 − 2).`, [R('cash', [cash], { done: [0] })]);
+  ANIM['Best Time to Buy and Sell Stock with Transaction Fee'] = W('Two states', C_FEE, r.steps);
+}
+
+const C_MPS = `
+for (int i = 1; i < nums.length; i++) {
+    int x = nums[i];
+    if (x < 0) { int t = hi; hi = lo; lo = t; }
+    hi = Math.max(x, hi * x);
+    lo = Math.min(x, lo * x);
+    best = Math.max(best, hi);
+}`;
+{
+  const a = [2, 3, -2, 4, -1], r = recorder(); let hi = 2, lo = 2, best = 2;
+  r.step(0, 'nums = [2,3,-2,4,-1]. hi / lo = largest / smallest product ending here.', [A('nums', a, { active: [0] }), R('hi / lo / best', [hi, lo, best])]);
+  for (let i = 1; i < a.length; i++) { const x = a[i]; if (x < 0) [hi, lo] = [lo, hi]; hi = Math.max(x, hi * x); lo = Math.min(x, lo * x); best = Math.max(best, hi); r.step(ln(C_MPS, x < 0 ? 'if (x < 0)' : 'hi = Math.max'), `x = ${x}${x < 0 ? ' (negative: swap)' : ''}: hi = ${hi}, lo = ${lo}, best = ${best}.`, [A('nums', a, { active: [i], done: idx(i) }), R('hi / lo / best', [hi, lo, best])]); }
+  r.step(0, `Answer <b>${best}</b>: the whole array, since the two negatives cancel.`, [R('best', [best], { done: [0] })]);
+  ANIM['Maximum Product Subarray'] = W('Max and min', C_MPS, r.steps);
+}
+
+const C_TURB = `
+for (int i = 1; i < arr.length; i++) {
+    if (arr[i] > arr[i - 1]) { up = down + 1; down = 1; }
+    else if (arr[i] < arr[i - 1]) { down = up + 1; up = 1; }
+    else { up = 1; down = 1; }
+    best = Math.max(best, Math.max(up, down));
+}`;
+{
+  const a = [9, 4, 2, 10, 7, 8, 8, 1, 9], r = recorder(); let up = 1, down = 1, best = 1;
+  r.step(0, 'arr = [9,4,2,10,7,8,8,1,9]. up / down = longest zigzag ending here with a rise / fall last.', [A('arr', a), R('up / down / best', [up, down, best])]);
+  for (let i = 1; i < a.length; i++) { const t = a[i] > a[i - 1] ? 1 : a[i] < a[i - 1] ? -1 : 0; if (t > 0) { up = down + 1; down = 1; } else if (t < 0) { down = up + 1; up = 1; } else { up = 1; down = 1; } best = Math.max(best, up, down); r.step(ln(C_TURB, t > 0 ? 'up = down + 1' : t < 0 ? 'down = up + 1' : 'else { up = 1'), `${a[i - 1]} → ${a[i]} ${t > 0 ? 'rises' : t < 0 ? 'falls' : 'is flat'}: up ${up}, down ${down}.`, [A('arr', a, { active: [i - 1, i] }), R('up / down / best', [up, down, best])]); }
+  r.step(0, `Answer <b>${best}</b>: [4, 2, 10, 7, 8].`, [R('best', [best], { done: [0] })]);
+  ANIM['Longest Turbulent Subarray'] = W('Two run lengths', C_TURB, r.steps);
+}
+
+const C_AS = `
+for (int i = 2; i < nums.length; i++) {
+    if (nums[i] - nums[i - 1] == nums[i - 1] - nums[i - 2]) run++;
+    else run = 0;
+    total += run;
+}
+return total;`;
+{
+  const a = [1, 2, 3, 4, 6, 8, 9], r = recorder(); let run = 0, total = 0;
+  r.step(0, 'nums = [1,2,3,4,6,8,9]. run = slices ending at i.', [A('nums', a)]);
+  for (let i = 2; i < a.length; i++) { const same = a[i] - a[i - 1] === a[i - 1] - a[i - 2]; run = same ? run + 1 : 0; total += run; r.step(ln(C_AS, same ? 'run++' : 'run = 0'), `i = ${i}: diffs ${a[i - 1] - a[i - 2]} and ${a[i] - a[i - 1]} ${same ? 'match' : 'differ'} → run ${run}, total ${total}.`, [A('nums', a, { active: [i - 2, i - 1, i] }), R('run / total', [run, total])]); }
+  r.step(ln(C_AS, 'return total'), `Answer <b>${total}</b>.`, [R('total', [total], { done: [0] })]);
+  ANIM['Arithmetic Slices'] = W('Run length', C_AS, r.steps);
+}
+
+const C_FAIR = `
+for (int i = 0; i < nums.length; i++) {
+    if (i % 2 == 0) evenRight -= nums[i]; else oddRight -= nums[i];
+    if (evenLeft + oddRight == oddLeft + evenRight) count++;
+    if (i % 2 == 0) evenLeft += nums[i]; else oddLeft += nums[i];
+}
+return count;`;
+{
+  const a = [2, 1, 6, 4], r = recorder(); let eR = 8, oR = 5, eL = 0, oL = 0, cnt = 0;
+  r.step(0, 'nums = [2,1,6,4]. Right sums start with everything: even 8, odd 5.', [A('nums', a), R('eL oL eR oR', [eL, oL, eR, oR])]);
+  a.forEach((x, i) => { if (i % 2 === 0) eR -= x; else oR -= x; const ok = eL + oR === oL + eR; if (ok) cnt++; r.step(ln(C_FAIR, 'if (evenLeft + oddRight'), `Remove index ${i}: even = ${eL} + ${oR}, odd = ${oL} + ${eR} → ${ok ? 'fair' : 'not fair'}.`, [A('nums', a, { active: [i], bad: ok ? [] : [i] }), R('eL oL eR oR', [eL, oL, eR, oR])]); if (i % 2 === 0) eL += x; else oL += x; });
+  r.step(ln(C_FAIR, 'return count'), `Answer <b>${cnt}</b>.`, [R('count', [cnt], { done: [0] })]);
+  ANIM['Ways to Make a Fair Array'] = W('Parity swap', C_FAIR, r.steps);
+}
+
+const C_ITS = `
+for (int x : nums) {
+    if (x <= first) first = x;
+    else if (x <= second) second = x;
+    else return true;
+}
+return false;`;
+{
+  const a = [2, 1, 5, 0, 4, 6], r = recorder(); let f = Infinity, s = Infinity;
+  r.step(0, 'nums = [2,1,5,0,4,6]. first and second start at ∞.', [A('nums', a)]);
+  for (let i = 0; i < a.length; i++) { const x = a[i]; if (x <= f) { f = x; r.step(ln(C_ITS, 'first = x'), `${x} ≤ first → first = ${x}.`, [A('nums', a, { active: [i] }), R('first / second', [f, s === Infinity ? '∞' : s])]); } else if (x <= s) { s = x; r.step(ln(C_ITS, 'second = x'), `${x} > first but ≤ second → second = ${x}.`, [A('nums', a, { active: [i] }), R('first / second', [f, s])]); } else { r.step(ln(C_ITS, 'return true'), `${x} > second = ${s} → <b>true</b> (e.g. 1, 4, 6).`, [A('nums', a, { done: [i] }), R('first / second', [f, s])]); break; } }
+  ANIM['Increasing Triplet Subsequence'] = W('Two thresholds', C_ITS, r.steps);
+}
+
+const C_RECT = `
+for (int top = 0; top < rows; top++) {
+    int[] col = new int[cols];
+    for (int bottom = top; bottom < rows; bottom++) {
+        for (int c = 0; c < cols; c++) col[c] += m[bottom][c];
+        best = Math.max(best, kadane(col));
+    }
+}`;
+{
+  const m = [[1, 2, -1, -4, -20], [-8, -3, 4, 2, 1], [3, 8, 10, 1, 3], [-4, -1, 1, 7, -6]], r = recorder(); let best = -Infinity;
+  const kad = a => { let c = a[0], b = a[0]; for (let i = 1; i < a.length; i++) { c = Math.max(a[i], c + a[i]); b = Math.max(b, c); } return b; };
+  r.step(0, '4 × 5 matrix. Fix rows top..bottom, sum each column, run Kadane.', [G('matrix', m)]);
+  for (let top = 0; top < 4; top++) { const col = Array(5).fill(0); for (let bot = top; bot < 4; bot++) { for (let c = 0; c < 5; c++) col[c] += m[bot][c]; const k = kad(col); best = Math.max(best, k); if (top === 1 || (top === 0 && bot < 2)) r.step(ln(C_RECT, 'best = Math.max'), `Rows ${top}..${bot}: column sums [${col}] → Kadane ${k}, best ${best}.`, [G('matrix', m, range(top, bot).flatMap(rr => idx(5).map(c => [rr, c, 'active']))), A('col', col.slice())]); } }
+  r.step(0, `Answer <b>${best}</b>: rows 1..3, columns 1..3.`, [G('matrix', m, range(1, 3).flatMap(rr => range(1, 3).map(c => [rr, c, 'done'])))]);
+  ANIM['Maximum Sum Rectangle'] = W('2-D Kadane', C_RECT, r.steps);
+}
+
+const C_RK = `
+TreeSet<Integer> seen = new TreeSet<>(List.of(0));
+int prefix = 0;
+for (int v : col) {
+    prefix += v;
+    Integer lowest = seen.ceiling(prefix - k);
+    if (lowest != null) best = Math.max(best, prefix - lowest);
+    seen.add(prefix);
+}`;
+{
+  const col = [1, -2, 4], k = 2, r = recorder(), seen = [0]; let prefix = 0, best = -Infinity;
+  r.step(0, 'Band rows 0..1 of [[1,0,1],[0,-2,3]] gives columns [1, −2, 4], k = 2.', [A('col', col), R('seen prefixes', seen)]);
+  col.forEach((v, i) => { prefix += v; const cand = seen.filter(x => x >= prefix - k).sort((a, b) => a - b)[0]; if (cand !== undefined) best = Math.max(best, prefix - cand); seen.push(prefix); r.step(ln(C_RK, 'seen.ceiling'), `prefix ${prefix}: smallest earlier prefix ≥ ${prefix - k} is ${cand ?? 'none'} → sum ${cand !== undefined ? prefix - cand : '—'}, best ${best}.`, [A('col', col, { active: [i] }), R('seen prefixes', [...seen].sort((a, b) => a - b))]); });
+  r.step(0, `Best ≤ 2: <b>${best}</b>.`, [R('best', [best], { done: [0] })]);
+  ANIM['Max Sum of Rectangle No Larger Than K'] = W('Ordered prefix sums', C_RK, r.steps);
+}
+
+const C_3W = `
+for (int mid = k; mid + k < m; mid++) {
+    int a = left[mid - k], c = right[mid + k];
+    if (best == null || w[a] + w[mid] + w[c] > total(best)) best = new int[]{a, mid, c};
+}
+return best;`;
+{
+  const a = [1, 2, 1, 2, 6, 7, 5, 1], k = 2, w = [3, 3, 3, 8, 13, 12, 6], r = recorder();
+  const left = [0, 0, 0, 3, 4, 4, 4], right = [4, 4, 4, 4, 4, 5, 6];
+  r.step(0, 'nums = [1,2,1,2,6,7,5,1], k = 2. Window sums w[i] for every start.', [A('w', w)]);
+  r.step(0, 'left[i] = best start in 0..i (first on ties); right[i] = best start in i..end.', [A('left', left), A('right', right)]);
+  let best = null, bs = -1;
+  for (let mid = k; mid + k < w.length; mid++) { const x = left[mid - k], z = right[mid + k], s = w[x] + w[mid] + w[z]; if (s > bs) { bs = s; best = [x, mid, z]; } r.step(ln(C_3W, 'int a = left'), `Middle ${mid}: ${x} + ${mid} + ${z} → ${w[x]} + ${w[mid]} + ${w[z]} = ${s}. Best [${best}] = ${bs}.`, [A('w', w, { active: [mid], warn: [x, z] })]); }
+  r.step(ln(C_3W, 'return best'), `Answer <b>[${best}]</b> with total ${bs}.`, [A('w', w, { done: best })]);
+  ANIM['Maximum Sum of 3 Non-Overlapping Subarrays'] = W('Pin the middle', C_3W, r.steps);
+}
+
+const C_KDS = `
+for (int j = 1; j <= k; j++) {
+    long w = (k - j + 1) * (j % 2 == 1 ? 1 : -1) * x;
+    long start = Math.max(closed[j - 1], open[j - 1]);
+    nOpen[j] = Math.max(open[j], start) + w;
+}
+for (int j = 1; j <= k; j++) closed[j] = Math.max(closed[j], nOpen[j]);`;
+{
+  const a = [1, 2, 3, -1, 2], k = 3, N = -1e9, r = recorder(); let closed = [0, N, N, N], open = [N, N, N, N];
+  r.step(0, 'nums = [1,2,3,-1,2], k = 3. Weights: piece 1 ×3, piece 2 ×(−2), piece 3 ×1.', [A('nums', a), G('states', [open.slice(1).map(show), closed.slice(1).map(show)], [], { rowLabels: ['open', 'closed'], colLabels: [1, 2, 3] })]);
+  a.forEach((x, i) => { const no = [N, N, N, N]; for (let j = 1; j <= k; j++) { const w = (k - j + 1) * (j % 2 ? 1 : -1) * x, st = Math.max(closed[j - 1], open[j - 1]), b = Math.max(open[j], st); if (b > N) no[j] = b + w; } for (let j = 1; j <= k; j++) closed[j] = Math.max(closed[j], no[j]); open = no; r.step(ln(C_KDS, 'nOpen[j]'), `x = ${x}: continue a piece or start piece j right here.`, [A('nums', a, { active: [i], done: idx(i) }), G('states', [open.slice(1).map(show), closed.slice(1).map(show)], [], { rowLabels: ['open', 'closed'], colLabels: [1, 2, 3] })]); });
+  r.step(ln(C_KDS, 'closed[j] = Math.max'), `Answer closed[3] = <b>${closed[3]}</b>: (1+2+3)·3 − (−1)·2 + 2·1.`, [G('states', [open.slice(1).map(show), closed.slice(1).map(show)], [[1, 2, 'done']], { rowLabels: ['open', 'closed'], colLabels: [1, 2, 3] })]);
+  ANIM['Maximum Strength of K Disjoint Subarrays'] = W('Open and closed', C_KDS, r.steps);
+}
