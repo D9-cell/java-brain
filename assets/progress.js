@@ -26,7 +26,7 @@
 
   // Merges a solved list brought back by a sync bookmarklet; returns how many were new
   function importSynced(data) {
-    const cur = read(SYNCED, {}), out = { ...cur, updated: new Date().toISOString().slice(0, 16).replace('T', ' ') };
+    const cur = read(SYNCED, {}), out = { ...cur, updated: new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) };
     let added = 0;
     for (const k of ['leetcode', 'gfg']) if (data[k]) { const set = new Set(cur[k] || []); for (const x of data[k]) if (!set.has(x)) { set.add(x); added++; } out[k] = [...set]; }
     write(SYNCED, out);
