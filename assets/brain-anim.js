@@ -1,7 +1,52 @@
 // Shared step-by-step animation engine for Java Brain topic pages
 (function () {
-  const ROOT = document.currentScript ? document.currentScript.src.replace(/assets\/brain-anim\.js.*$/, '') : '';
+  const ROOT = document.currentScript ? document.currentScript.src.replace(/assets\/brain-anim[^/]*\.js.*$/, '') : '';
   const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const svg = (d, o = {}) => `<svg aria-hidden="true" width="${o.s || 16}" height="${o.s || 16}" viewBox="0 0 24 24" fill="${o.fill || 'none'}" stroke="${o.fill ? 'none' : 'currentColor'}" stroke-width="${o.w || 2.4}" stroke-linecap="round" stroke-linejoin="round"${o.cls ? ` class="${o.cls}"` : ''}>${d}</svg>`;
+  const ICON = {
+    first: svg('<path d="M6 5v14"/><path d="m18 6-8 6 8 6z"/>', { s: 18, w: 2.2 }), last: svg('<path d="M18 5v14"/><path d="m6 6 8 6-8 6z"/>', { s: 18, w: 2.2 }),
+    prev: svg('<path d="m15 18-6-6 6-6"/>'), next: svg('<path d="m9 18 6-6-6-6"/>'),
+    play: svg('<polygon points="7 4 20 12 7 20"/>', { s: 18, fill: 'currentColor' }), pause: svg('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>', { s: 18, fill: 'currentColor' }),
+    chat: svg('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+    bulb: svg('<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/>', { s: 20, w: 2 }),
+    check: svg('<polyline points="20 6 9 17 4 12"/>', { s: 18, w: 3 }), tick: svg('<polyline points="20 6 9 17 4 12"/>', { s: 14, w: 3.5, cls: 'tick' }),
+    ext: svg('<path d="M7 17 17 7"/><path d="M8 7h9v9"/>'), book: svg('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>', { w: 2.2 }),
+    grid: svg('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', { w: 2.2 }),
+    arrowL: svg('<path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>'), arrowR: svg('<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>'),
+    chev: svg('<path d="m9 18 6-6-6-6"/>', { s: 18, cls: 'chev' }),
+    moon: '<svg class="ico-moon" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>',
+    sun: '<svg class="ico-sun" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>'
+  };
+  const ABBR = { Backtracking: 'BT', 'Binary Lifting': 'BL', Bit_Magic: 'BM', DP: 'DP', Design: 'DS', Graph: 'GR', Greedy: 'GD', HashMap: 'HM', HashSet: 'HS', Heap: 'HP', 'Line Sweep': 'LS', 'Linked List': 'LL', 'Meet In The Middle': 'MM', Queue: 'QU', Recursion: 'RC', 'Segment Tree': 'ST', 'Sliding Window': 'SW', Stack: 'SK', Tree: 'TR', Trie: 'TI' };
+
+  // Splits a code line into its source and trailing // comment, ignoring slashes inside quotes
+  function splitComment(l) {
+    let q = null;
+    for (let k = 0; k < l.length - 1; k++) {
+      const c = l[k];
+      if (q) { if (c === '\\') k++; else if (c === q) q = null; } else if (c === '"' || c === "'") q = c;
+      else if (c === '/' && l[k + 1] === '/') return [l.slice(0, k), l.slice(k)];
+    }
+    return [l, ''];
+  }
+
+  // Picks the color class for a code comment from the choose / explore / un-choose vocabulary
+  const cmtClass = c => /un-?choose/i.test(c) ? 'c-green' : /explore/i.test(c) ? 'c-yellow' : /choose/i.test(c) ? 'c-blue' : '';
+
+  // Colors the pointer label above a cell: a and i blue, b and j red, anything else green
+  const ptrClass = p => /^(a|i)$/i.test(p) ? 'p-blue' : /^(b|j)$/i.test(p) ? 'p-red' : '';
+
+  // Splits a mantra into short pills on middots and top-level commas
+  function mantraPills(m) {
+    const out = []; let d = 0, cur = '';
+    for (const ch of String(m)) {
+      if ('([{'.includes(ch)) d++; else if (')]}'.includes(ch)) d--;
+      if (d <= 0 && (ch === ',' || ch === '·')) { out.push(cur); cur = ''; } else cur += ch;
+    }
+    out.push(cur);
+    return out.map(x => x.trim()).filter(Boolean);
+  }
 
   // Builds a lane snapshot from an array plus highlight options
   function lane(name, arr, o = {}) {
@@ -101,7 +146,7 @@
     if (l.type === 'graph') return `<div class="lane">${head}<div class="tree-wrap">${graphSvg(l)}</div></div>`;
     if (l.type === 'tree') return `<div class="lane">${head}<div class="tree-wrap">${treeSvg(l)}</div></div>`;
     return `<div class="lane">${head}<div class="cells ${l.vertical ? 'vertical' : ''}">${l.cells.length ? l.cells.map(c => `
-      <div class="cell-wrap"><div class="ptr">${esc(c.ptr)}</div><div class="cell ${c.cls}">${esc(c.v)}</div>
+      <div class="cell-wrap"><div class="ptr ${ptrClass(c.ptr)}">${esc(c.ptr)}</div><div class="cell ${c.cls}">${esc(c.v)}</div>
       ${c.idx !== null ? `<div class="idx">${c.idx}</div>` : ''}</div>`).join('') : '<div class="cell empty">empty</div>'}</div></div>`;
   }
 
@@ -121,32 +166,50 @@
     };
   }
 
-  // Renders one animation (stage + code + controls) into a container
+  // Renders one animation (step bar + stage + code + controls) into a container
   function player(root, anim, start) {
     let i = Math.min(start || 0, anim.steps.length - 1), timer = null;
     const lines = anim.code.replace(/^\n/, '').split('\n');
+    const codeLine = (l, n) => { const [src, cmt] = splitComment(l); return `<span class="ln" data-k="${n}"><span class="no">${n}</span><span class="src">${esc(src) || ' '}</span>${cmt ? `<span class="cmt ${cmtClass(cmt)}">${esc(cmt)}</span>` : ''}</span>`; };
     root.innerHTML = `
+      <div class="stepbar" role="group" aria-label="Steps">${anim.steps.map((_, k) => `<button type="button" class="seg" data-a="seg" data-k="${k}" aria-label="Go to step ${k + 1}"></button>`).join('')}</div>
       <div class="stage-grid">
-        <div><div class="stage"></div><div class="say"></div></div>
-        <pre class="code">${lines.map((l, k) => `<span class="ln" data-k="${k + 1}">${esc(l) || ' '}</span>`).join('')}</pre>
+        <div class="stage-col">
+          <div class="stage"></div>
+          <div class="vars"></div>
+          <div class="say-box"><span class="say-ico" aria-hidden="true">${ICON.chat}</span><div class="say-main"><div class="say-head">WHAT HAPPENS</div><div class="say"></div></div></div>
+        </div>
+        <div class="code-card"><div class="code-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="fname">Solution.java</span></div>
+          <pre class="code">${lines.map((l, k) => codeLine(l, k + 1)).join('')}</pre></div>
       </div>
       <div class="controls">
-        <button data-a="first">⏮</button><button data-a="prev">◀ Prev</button>
-        <button class="primary" data-a="play">▶ Play</button><button data-a="next">Next ▶</button><button data-a="last">⏭</button>
-        <label><input type="checkbox" data-a="predict"> Predict mode</label>
-        <label>Speed <input type="range" min="300" max="2500" step="100" value="1300" data-a="speed"></label>
-        <span class="count"></span>
+        <div class="ctl-main">
+          <button type="button" class="ico-btn" data-a="first" aria-label="First step">${ICON.first}</button>
+          <button type="button" data-a="prev">${ICON.prev}Prev</button>
+          <button type="button" class="play" data-a="play">${ICON.play}Play</button>
+          <button type="button" data-a="next">Next${ICON.next}</button>
+          <button type="button" class="ico-btn" data-a="last" aria-label="Last step">${ICON.last}</button>
+        </div>
+        <div class="ctl-opts">
+          <label class="switch"><input type="checkbox" data-a="predict"><span class="track"><span class="knob"></span></span>Predict mode</label>
+          <label class="speed">Speed <input type="range" min="300" max="2500" step="100" value="1300" data-a="speed"></label>
+          <span class="count"></span>
+        </div>
       </div>
-      <div class="hint">Keys: ← → step, space play/pause. Predict mode blurs the explanation: guess first, then click it.</div>`;
-    const stage = root.querySelector('.stage'), say = root.querySelector('.say'), count = root.querySelector('.count');
+      <div class="hint"><kbd>←</kbd><kbd>→</kbd> step <kbd class="gap">Space</kbd> play or pause <span class="gap">Predict mode blurs the explanation. Guess first, then click it.</span></div>`;
+    const stage = root.querySelector('.stage'), say = root.querySelector('.say'), count = root.querySelector('.count'), varsEl = root.querySelector('.vars'), sayHead = root.querySelector('.say-head');
     const playBtn = root.querySelector('[data-a=play]'), predict = root.querySelector('[data-a=predict]'), speed = root.querySelector('[data-a=speed]');
+    const segs = [...root.querySelectorAll('.seg')];
 
     function render() {
       const s = anim.steps[i];
-      stage.innerHTML = s.lanes.map(laneHtml).join('')
-        + (Object.keys(s.vars).length ? `<div class="vars">${Object.entries(s.vars).map(([k, v]) => `<span class="var">${esc(k)} = ${esc(v)}</span>`).join('')}</div>` : '');
+      stage.innerHTML = s.lanes.map(laneHtml).join('');
+      varsEl.innerHTML = Object.entries(s.vars).map(([k, v]) => `<span class="var"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></span>`).join('');
       say.innerHTML = s.say;
       say.classList.toggle('hidden-say', predict.checked);
+      sayHead.textContent = predict.checked ? 'PREDICT FIRST. CLICK TO REVEAL' : 'WHAT HAPPENS';
+      say.classList.remove('fade'); void say.offsetWidth; say.classList.add('fade');
+      segs.forEach((g, k) => { g.classList.toggle('past', k < i); g.classList.toggle('now', k === i); });
       root.querySelectorAll('.ln').forEach(el => el.classList.toggle('on', +el.dataset.k === s.line));
       stage.querySelectorAll('.tree-wrap').forEach(w => {
         const hot = w.querySelector('.tn.active') || w.querySelector('.tn.warn');
@@ -156,19 +219,20 @@
       });
       count.textContent = `step ${i + 1} / ${anim.steps.length}`;
     }
+    function paintPlay(on) { playBtn.innerHTML = (on ? ICON.pause : ICON.play) + (on ? 'Pause' : 'Play'); playBtn.classList.toggle('playing', on); }
     function go(n) { i = Math.max(0, Math.min(anim.steps.length - 1, n)); render(); if (i === anim.steps.length - 1) stop(); }
-    function stop() { clearInterval(timer); timer = null; playBtn.textContent = '▶ Play'; }
+    function stop() { clearInterval(timer); timer = null; paintPlay(false); }
     function play() {
       if (timer) return stop();
       if (i === anim.steps.length - 1) go(0);
-      playBtn.textContent = '⏸ Pause';
+      paintPlay(true);
       timer = setInterval(() => go(i + 1), 2800 - +speed.value);
     }
     root.addEventListener('click', e => {
       const a = e.target.dataset.a;
       if (a === 'first') go(0); else if (a === 'prev') go(i - 1); else if (a === 'next') go(i + 1);
-      else if (a === 'last') go(anim.steps.length - 1); else if (a === 'play') play();
-      if (e.target === say) say.classList.remove('hidden-say');
+      else if (a === 'last') go(anim.steps.length - 1); else if (a === 'play') play(); else if (a === 'seg') go(+e.target.dataset.k);
+      if (e.target.closest('.say-box')) { say.classList.remove('hidden-say'); sayHead.textContent = 'WHAT HAPPENS'; }
     });
     predict.addEventListener('change', render);
     speed.addEventListener('input', () => { if (timer) { stop(); play(); } });
@@ -180,48 +244,62 @@
     render();
   }
 
-  // Builds the hub / previous / next topic bar and returns this page's problem links
+  // Builds the sticky top bar and returns this page's topic info and problem links
   function topicNav() {
     const all = window.BrainLinks || {}, pages = Object.keys(all);
     const here = decodeURIComponent(location.href.split('#')[0]).slice(decodeURIComponent(ROOT).length);
     const k = pages.indexOf(here), rel = h => ROOT + h.split('/').map(encodeURIComponent).join('/');
     const label = h => esc(h.split('/').pop().replace(/ Animations\.html$/, ''));
-    const side = (h, cls, arrow) => h ? `<a class="${cls}" href="${rel(h)}">${arrow}</a>` : '<span></span>';
-    const bar = `<nav class="topnav"><a href="${ROOT}index.html">⌂ All topics</a><button type="button" class="themebtn" data-theme-toggle aria-label="Switch to dark mode"><svg class="ico-moon" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg><svg class="ico-sun" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></button>
-      ${side(pages[k - 1], 'prev', pages[k - 1] && '← ' + label(pages[k - 1]))}${side(pages[k + 1], 'next', pages[k + 1] && label(pages[k + 1]) + ' →')}</nav>`;
+    const tops = [...new Set(pages.map(h => h.split('/')[0]))], top = here.split('/')[0], ti = Math.max(0, tops.indexOf(top));
+    const pill = (h, arrow, left) => h ? `<a class="${left ? 'prev' : 'next'}" href="${rel(h)}">${left ? ICON.arrowL + label(h) : label(h) + ICON.arrowR}</a>` : '';
+    const bar = `<header class="jb-top"><div class="jb-top-in">
+      <a class="brand" href="${ROOT}index.html"><span class="bdots" aria-hidden="true"><i style="background:var(--blue)"></i><i style="background:var(--red)"></i><i style="background:var(--yellow)"></i><i style="background:var(--green)"></i></span><span class="bname">Java Brain<span>.</span></span></a>
+      <nav class="topnav" aria-label="Topics"><a class="tn-all" href="${ROOT}index.html">${ICON.grid}All topics</a>${pill(pages[k - 1], '', true)}${pill(pages[k + 1], '', false)}<button type="button" class="themebtn" data-theme-toggle aria-label="Switch to dark mode">${ICON.moon}${ICON.sun}</button></nav>
+    </div></header>`;
     const dir = here.split('/').slice(0, -1).join('/');
     const note = title => location.protocol === 'file:'
       ? 'obsidian://open?vault=' + encodeURIComponent('Obsidian Vault') + '&file=' + encodeURIComponent('Interview_DS_Algo/Java Brain/' + dir + '/' + title)
       : (window.BrainRepo || 'https://github.com/D9-cell/java-brain/blob/main/') + (dir + '/' + title + '.md').split('/').map(encodeURIComponent).join('/');
-    return { bar, links: all[here] || [], note };
+    return { bar, links: all[here] || [], note, topic: { n: ti + 1, total: tops.length, abbr: ABBR[top] || top.slice(0, 2).toUpperCase(), hue: ti % 4 } };
   }
 
   // Mounts a whole topic page with one tab per problem
   function mount(cfg) {
     document.title = cfg.title;
     const app = document.getElementById('app');
-    const nav = topicNav();
-    app.innerHTML = `<div class="wrap">${nav.bar}<h1>${esc(cfg.title)}</h1><p class="sub">${cfg.sub || ''}</p>
-      <div class="tabs">${cfg.problems.map((p, k) => `<button data-p="${k}">${esc(p.name)}</button>`).join('')}</div>
-      <div id="problem"></div></div>`;
+    const nav = topicNav(), T = nav.topic, pad = n => String(n).padStart(2, '0');
+    const sub = (cfg.sub || '').replace(/\b(un-choose|choose|explore)\b/gi, w => `<span class="${/^un/i.test(w) ? 'c-green' : /^choose/i.test(w) ? 'c-blue' : 'c-yellow'}">${w}</span>`);
+    app.innerHTML = `${nav.bar}<main class="wrap">
+      <section class="hero jb-up" aria-labelledby="ttl"><div class="hero-copy"><div class="eyebrow"><span class="tbadge h${T.hue}" aria-hidden="true">${esc(T.abbr)}</span>TOPIC ${pad(T.n)} OF ${T.total}</div>
+        <h1 id="ttl">${esc(cfg.title.replace(/ Animations$/, ''))}</h1><p class="sub">${sub}</p></div>
+        <div class="tprog"><div class="row"><span>Topic progress</span><span class="big"><span id="tp-n">0</span> <small>/ ${cfg.problems.length}</small></span></div><div class="track"><i id="tp-bar"></i></div></div></section>
+      <nav class="tabs-card jb-up" aria-label="Problems" style="animation-delay:.08s"><div class="tabs">${cfg.problems.map((p, k) => `<button type="button" data-p="${k}"><span class="num">${k + 1}</span>${esc(p.name)}${ICON.tick}</button>`).join('')}</div></nav>
+      <div id="problem"></div></main>`;
     const holder = app.querySelector('#problem');
     let current = null;
     const H = Object.fromEntries(location.hash.slice(1).split('&').filter(Boolean).map(x => x.split('=')).map(([a, b]) => [a, +b]));
     function showProblem(k, a0, s0) {
-      const p = cfg.problems[k];
-      app.querySelectorAll('.tabs button').forEach((b, j) => b.classList.toggle('on', j === k));
+      const p = cfg.problems[k], links = (nav.links[k] || [, []])[1], first = links[0];
+      const chip = first ? `<span class="chip ${/^LeetCode/i.test(first[0]) ? 'lc' : /^GfG/i.test(first[0]) ? 'gfg' : ''}">${esc(first[0].replace(/^LeetCode/i, 'LC'))}</span>` : '';
+      const prevP = cfg.problems[k - 1], nextP = cfg.problems[k + 1];
+      app.querySelectorAll('.tabs button').forEach((b, j) => { b.classList.toggle('on', j === k); b.setAttribute('aria-current', j === k ? 'page' : 'false'); });
       holder.innerHTML = `
-        <div class="card"><div class="hook">🧠 ${p.hook}</div><div class="mantra">Mantra: ${esc(p.mantra)}</div>
-          <p>${p.statement}</p>${(nav.links[k] || [, []])[1].map(([n, u]) => `<a class="solve" href="${u}" target="_blank" rel="noopener">Solve on ${esc(n)} ↗</a>`).join(' ')}${nav.links[k] ? ` <a class="solve note" href="${nav.note(nav.links[k][0])}" target="_blank" rel="noopener">📖 Note</a>` : ''}${window.BrainProgress ? ' <button class="solvedbtn"></button>' : ''}</div>
-        <div class="card"><div class="anim-tabs">${p.anims.map((a, j) => `<button data-x="${j}">${esc(a.name)}</button>`).join('')}</div>
-          <div class="player"></div></div>
-        <div class="card recall"><h3 style="margin-top:0">Recall before you reveal</h3>
-          ${p.recall.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('')}</div>
-        ${p.links ? `<div class="card links"><b>Connected problems:</b> ${p.links.map(([t, h]) => typeof h === 'number' ? `<a href="#" data-tab="${h}">${esc(t)}</a>` : `<a href="${h}">${esc(t)}</a>`).join(' · ')}</div>` : ''}`;
+        <section class="pcard jb-up" aria-labelledby="pname"><div class="pmain">
+          <div class="ptitle-row">${chip}<h2 id="pname">${esc(p.name)}</h2></div>
+          <p class="statement">${p.statement}</p>
+          <div class="hook"><span class="hook-ico" aria-hidden="true">${ICON.bulb}</span><div class="hook-body"><div class="lbl">MEMORY HOOK</div><div>${p.hook}</div></div></div>
+          <div class="mantra"><div class="lbl">MANTRA</div><div class="pills">${mantraPills(p.mantra).map(m => `<span>${esc(m)}</span>`).join('')}</div></div></div>
+          <div class="pside">${window.BrainProgress ? '<button type="button" class="solvedbtn" aria-pressed="false"></button>' : ''}${links.map(([n, u]) => `<a class="solve" href="${u}" target="_blank" rel="noopener">Solve on ${esc(n.replace(/\s*\d+$/, ''))}${ICON.ext}</a>`).join('')}${nav.links[k] ? `<a class="solve note" href="${nav.note(nav.links[k][0])}" target="_blank" rel="noopener">${ICON.book}Open note</a>` : ''}</div></section>
+        <section class="acard jb-up" aria-labelledby="player-h"><div class="ahead"><h2 id="player-h">Animation</h2><div class="anim-tabs">${p.anims.map((a, j) => `<button type="button" data-x="${j}">${esc(a.name)}</button>`).join('')}</div></div>
+          <div class="player"></div></section>
+        <section class="card recall jb-up" aria-labelledby="recall-h"><div class="rhead"><span class="rdots" aria-hidden="true"><i></i><i></i><i></i><i></i></span><h2 id="recall-h">Recall before you reveal</h2></div>
+          ${p.recall.map(([q, a], n) => `<details><summary><span class="rn">${n + 1}</span><span class="rq">${q}</span>${ICON.chev}</summary><p class="ans">${a}</p></details>`).join('')}</section>
+        ${p.links && p.links.length ? `<div class="card links"><b>Connected problems:</b> ${p.links.map(([t, h]) => typeof h === 'number' ? `<a href="#" data-tab="${h}">${esc(t)}</a>` : `<a href="${h}">${esc(t)}</a>`).join(' · ')}</div>` : ''}
+        <nav class="probnav" aria-label="Problem navigation">${prevP ? `<button type="button" class="pn-prev" data-go="${k - 1}">${ICON.arrowL}Previous: ${esc(prevP.name)}</button>` : '<span class="pn-none">First problem</span>'}${nextP ? `<button type="button" class="pn-next" data-go="${k + 1}">Next: ${esc(nextP.name)}${ICON.arrowR}</button>` : '<span class="pn-none">Last problem</span>'}</nav>`;
       const sb = holder.querySelector('.solvedbtn');
       if (sb) {
         const [t, us] = nav.links[k] || [p.name, []];
-        const paint = ok => { sb.classList.toggle('on', ok); sb.textContent = ok ? '✓ Solved' : 'Mark solved'; markTabs(); };
+        const paint = ok => { sb.classList.toggle('on', ok); sb.setAttribute('aria-pressed', ok); sb.innerHTML = (ok ? ICON.check : '') + (ok ? 'Solved' : 'Mark solved'); markTabs(); };
         paint(BrainProgress.isSolved(t, us));
         sb.onclick = () => paint(BrainProgress.toggle(t, us));
       }
@@ -233,13 +311,17 @@
       };
       holder.querySelectorAll('.anim-tabs button').forEach((b, j) => b.onclick = () => showAnim(j));
       holder.querySelectorAll('a[data-tab]').forEach(a => a.onclick = e => { e.preventDefault(); showProblem(+a.dataset.tab); window.scrollTo(0, 0); });
+      holder.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { showProblem(+b.dataset.go); window.scrollTo(0, 0); });
       showAnim(a0 && a0 < p.anims.length ? a0 : 0, s0);
       try { localStorage.setItem('jb-' + cfg.title, k); } catch (e) {}
     }
-    // Puts a check mark on the tab of every solved problem
+    // Puts a check mark on the tab of every solved problem and updates the topic progress card
     function markTabs() {
       if (!window.BrainProgress) return;
-      app.querySelectorAll('.tabs button').forEach((b, j) => { const [t, us] = nav.links[j] || [cfg.problems[j].name, []]; b.classList.toggle('solved', BrainProgress.isSolved(t, us)); });
+      let n = 0;
+      app.querySelectorAll('.tabs button').forEach((b, j) => { const [t, us] = nav.links[j] || [cfg.problems[j].name, []], ok = BrainProgress.isSolved(t, us); b.classList.toggle('solved', ok); n += ok; });
+      app.querySelector('#tp-n').textContent = n;
+      app.querySelector('#tp-bar').style.width = (100 * n / cfg.problems.length) + '%';
     }
     markTabs();
     app.querySelectorAll('.tabs button').forEach((b, k) => b.onclick = () => showProblem(k));

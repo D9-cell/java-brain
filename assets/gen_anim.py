@@ -40,14 +40,14 @@ def build(data_path):
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <script src="{up}assets/theme.js?v=3"></script>
 <link rel="stylesheet" href="{up}assets/theme.css?v=3">
-<link rel="stylesheet" href="{up}assets/brain-anim.css?v=3">
+<link rel="stylesheet" href="{up}assets/brain-anim.css?v=4">
 </head>
 <body>
 <div id="app"></div>
 <script src="{up}assets/problem-links.js"></script>
 <script src="{up}assets/solved.js"></script>
 <script src="{up}assets/progress.js"></script>
-<script src="{up}assets/brain-anim.js?v=3"></script>
+<script src="{up}assets/brain-anim.js?v=4"></script>
 <script src="{up}assets/tree-kit.js"></script>
 <script>
 const {{ lane, tree, recorder, mount, ln }} = BrainAnim;
