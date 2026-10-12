@@ -126,6 +126,7 @@ svg.graph .gn.bad rect { fill: var(--bad-soft); stroke: var(--bad); stroke-width
 .topnav a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 999px; color: var(--muted); font-weight: 500; text-decoration: none; transition: background-color .2s, color .2s; }
 .topnav a:hover { background: var(--accent-soft); color: var(--link); }
 .topnav .prev { margin-left: auto; }
+.topnav .themebtn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 a.solve { display: inline-flex; align-items: center; min-height: 44px; margin-top: 4px; padding: 0 16px; border-radius: 999px; background: var(--accent-soft); color: var(--link); font-weight: 600; font-size: 14px; text-decoration: none; transition: transform .15s, background-color .2s; }
 a.solve:hover { background: var(--primary); color: #fff; transform: translateY(-1px); }
 button.solvedbtn { min-height: 44px; margin-top: 4px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: transform .15s, background-color .2s; }

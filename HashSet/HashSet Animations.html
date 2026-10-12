@@ -6,16 +6,16 @@
 <title>HashSet Animations</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
-<script src="../assets/theme.js"></script>
-<link rel="stylesheet" href="../assets/theme.css">
-<link rel="stylesheet" href="../assets/brain-anim.css">
+<script src="../assets/theme.js?v=3"></script>
+<link rel="stylesheet" href="../assets/theme.css?v=3">
+<link rel="stylesheet" href="../assets/brain-anim.css?v=3">
 </head>
 <body>
 <div id="app"></div>
 <script src="../assets/problem-links.js"></script>
 <script src="../assets/solved.js"></script>
 <script src="../assets/progress.js"></script>
-<script src="../assets/brain-anim.js"></script>
+<script src="../assets/brain-anim.js?v=3"></script>
 <script>
 const { lane, grid, recorder, mount, ln } = BrainAnim;
 const setLane = (name, s, hl = []) => { const a = [...s]; return lane(name, a, { active: hl.map(x => a.indexOf(x)).filter(i => i >= 0), tag: `size ${a.length}` }); };

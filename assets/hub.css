@@ -179,9 +179,6 @@ details.paste .linkish{margin-top:6px}
 
 
 .icon-btn{width:44px;padding:0}
-.icon-btn .ico-sun{display:none}
-:root[data-theme="dark"] .icon-btn .ico-sun{display:block}
-:root[data-theme="dark"] .icon-btn .ico-moon{display:none}
 body:has(dialog[open]){overflow:hidden}
 dialog.sync-dialog{border:0;padding:0;margin:auto;background:transparent;color:var(--text);width:calc(100% - 32px);max-width:1040px;max-height:calc(100vh - 32px);overflow:auto}
 dialog.sync-dialog[open]{animation:jbUp .35s var(--ease) both}
