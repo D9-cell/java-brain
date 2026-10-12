@@ -72,4 +72,4 @@ The base case rejects plans that end with merges left.
 
 ## Connected
 - [Frog Jump](Frog%20Jump.md)
-- Minimum Cost to Cut a Stick
+- [Minimum Cost to Cut a Stick](../Interval%20DP/Minimum%20Cost%20to%20Cut%20a%20Stick.md)

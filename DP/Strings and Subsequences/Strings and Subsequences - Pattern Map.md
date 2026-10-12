@@ -64,5 +64,5 @@ graph LR
 
 ## Connections to other folders
 - [Palindromes and Word Splits - Pattern Map](../Palindromes%20and%20Word%20Splits/Palindromes%20and%20Word%20Splits%20-%20Pattern%20Map.md) for DP inside one string
-- LIS and Variants - Pattern Map for subsequences of one array
+- [LIS and Variants - Pattern Map](../LIS%20and%20Variants/LIS%20and%20Variants%20-%20Pattern%20Map.md) for subsequences of one array
 - [Sliding Window - Pattern Map](../../Sliding%20Window/Sliding%20Window%20-%20Pattern%20Map.md) for contiguous matching with a window

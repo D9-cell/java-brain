@@ -83,4 +83,4 @@ One string may still have unmatched prefix letters.
 
 ## Connected
 - [Longest Common Subsequence](Longest%20Common%20Subsequence.md)
-- Find the Shortest Superstring
+- [Find the Shortest Superstring](../Bitmask%20Digit%20and%20Tree%20DP/Find%20the%20Shortest%20Superstring.md)

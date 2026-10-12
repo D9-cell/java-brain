@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid Paths Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../../assets/theme.css">
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const idx = n => Array.from({ length: n }, (_, i) => i);
+const range = (a, b) => idx(Math.max(0, b - a + 1)).map(x => x + a);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+const cp = m => m.map(r => r.slice());
+
+const C_UP = `
+int[] ways = new int[n];
+Arrays.fill(ways, 1);
+for (int i = 1; i < m; i++)
+    for (int j = 1; j < n; j++) ways[j] += ways[j - 1];
+return ways[n - 1];`;
+{
+  const m = 3, n = 4, r = recorder(), d = Array.from({ length: m }, (_, i) => Array.from({ length: n }, (_, j) => (i === 0 || j === 0) ? 1 : 0));
+  r.step(ln(C_UP, 'Arrays.fill'), '3 × 4 grid. First row and first column have one path each.', [G('ways', cp(d))]);
+  for (let i = 1; i < m; i++) { for (let j = 1; j < n; j++) d[i][j] = d[i - 1][j] + d[i][j - 1]; r.step(ln(C_UP, 'ways[j] += ways[j - 1]'), `Row ${i}: each cell = above + left.`, [G('ways', cp(d), range(1, n - 1).map(j => [i, j, 'active']))]); }
+  r.step(ln(C_UP, 'return'), `Answer <b>${d[m - 1][n - 1]}</b> = C(5, 2).`, [G('ways', cp(d), [[m - 1, n - 1, 'done']])]);
+  ANIM['Unique Paths'] = W('Rolling row', C_UP, r.steps);
+}
+
+const C_UP2 = `
+for (int[] row : grid)
+    for (int j = 0; j < n; j++) {
+        if (row[j] == 1) ways[j] = 0;
+        else if (j > 0) ways[j] += ways[j - 1];
+    }
+return ways[n - 1];`;
+{
+  const g = [[0, 0, 0], [0, 1, 0], [0, 0, 0]], r = recorder(), d = g.map(row => row.map(() => 0)); d[0][0] = 1;
+  const view = () => cp(d).map((row, i) => row.map((v, j) => g[i][j] === 1 ? '█' : v));
+  r.step(0, '3 × 3 grid with an obstacle (█) in the middle.', [G('ways', view())]);
+  for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) { if (i === 0 && j === 0) continue; if (g[i][j] === 1) d[i][j] = 0; else d[i][j] = (i ? d[i - 1][j] : 0) + (j ? d[i][j - 1] : 0); } r.step(ln(C_UP2, 'ways[j] += ways[j - 1]'), `Row ${i} done.`, [G('ways', view(), range(0, 2).map(j => [i, j, g[i][j] ? 'bad' : 'active']))]); }
+  r.step(ln(C_UP2, 'return'), `Answer <b>${d[2][2]}</b>: around either side of the block.`, [G('ways', view(), [[2, 2, 'done']])]);
+  ANIM['Unique Paths II'] = W('Rolling row', C_UP2, r.steps);
+}
+
+const C_MPS = `
+for (int i = 0; i < grid.length; i++)
+    for (int j = 0; j < n; j++) {
+        if (i == 0 && j == 0) dp[j] = grid[0][0];
+        else if (i == 0) dp[j] = dp[j - 1] + grid[i][j];
+        else if (j == 0) dp[j] = dp[j] + grid[i][j];
+        else dp[j] = Math.min(dp[j], dp[j - 1]) + grid[i][j];
+    }`;
+{
+  const g = [[1, 3, 1], [1, 5, 1], [4, 2, 1]], r = recorder(), d = g.map(x => x.map(() => '')); const m = 3, n = 3;
+  r.step(0, 'grid [[1,3,1],[1,5,1],[4,2,1]]. dp = cheapest cost to reach each cell.', [G('grid', g), G('dp', d)]);
+  for (let i = 0; i < m; i++) { for (let j = 0; j < n; j++) d[i][j] = g[i][j] + (i === 0 && j === 0 ? 0 : Math.min(i ? d[i - 1][j] : 1e9, j ? d[i][j - 1] : 1e9)); r.step(ln(C_MPS, 'else dp[j] = Math.min'), `Row ${i}: cost = cell + the cheaper of up and left.`, [G('grid', g), G('dp', cp(d), range(0, n - 1).map(j => [i, j, 'active']))]); }
+  r.step(0, `Answer <b>${d[2][2]}</b>: 1 → 3 → 1 → 1 → 1.`, [G('dp', cp(d), [[2, 2, 'done']])]);
+  ANIM['Minimum Path Sum'] = W('Rolling row', C_MPS, r.steps);
+}
+
+const C_TRI = `
+for (int i = n - 1; i >= 0; i--)
+    for (int j = 0; j <= i; j++)
+        dp[j] = triangle.get(i).get(j) + Math.min(dp[j], dp[j + 1]);
+return dp[0];`;
+{
+  const t = [[2], [3, 4], [6, 5, 7], [4, 1, 8, 3]], n = 4, r = recorder(); let dp = [0, 0, 0, 0, 0];
+  r.step(0, 'triangle [[2],[3,4],[6,5,7],[4,1,8,3]]. dp starts as the virtual row of zeros below.', [R('dp', dp)]);
+  for (let i = n - 1; i >= 0; i--) { for (let j = 0; j <= i; j++) dp[j] = t[i][j] + Math.min(dp[j], dp[j + 1]); r.step(ln(C_TRI, 'dp[j] = triangle'), `Row ${i} ${JSON.stringify(t[i])}: add the smaller child.`, [R('row', t[i]), A('dp', dp.slice(0, i + 1), { active: idx(i + 1) })]); }
+  r.step(ln(C_TRI, 'return'), `Answer dp[0] = <b>${dp[0]}</b>: 2 + 3 + 5 + 1.`, [A('dp', dp.slice(0, 1), { done: [0] })]);
+  ANIM['Triangle'] = W('Bottom-up, O(n) space', C_TRI, r.steps);
+}
+
+const C_FP = `
+for (int i = 1; i < n; i++) {
+    for (int j = 0; j < n; j++) {
+        int best = prev[j];
+        if (j > 0) best = Math.min(best, prev[j - 1]);
+        if (j < n - 1) best = Math.min(best, prev[j + 1]);
+        cur[j] = matrix[i][j] + best;
+    }
+    prev = cur;
+}`;
+{
+  const g = [[2, 1, 3], [6, 5, 4], [7, 8, 9]], n = 3, r = recorder(), d = [g[0].slice()];
+  r.step(0, 'matrix [[2,1,3],[6,5,4],[7,8,9]]. Row 0 is the start.', [G('grid', g), G('dp', [d[0]], [], { rowLabels: ['r0'] })]);
+  for (let i = 1; i < n; i++) { const cur = []; for (let j = 0; j < n; j++) cur.push(g[i][j] + Math.min(d[i - 1][j], j > 0 ? d[i - 1][j - 1] : 1e9, j < n - 1 ? d[i - 1][j + 1] : 1e9)); d.push(cur); r.step(ln(C_FP, 'cur[j] = matrix'), `Row ${i}: each cell adds the min of the three cells above.`, [G('dp', cp(d).concat(Array.from({ length: n - d.length }, () => Array(n).fill(''))), range(0, n - 1).map(j => [i, j, 'active']))]); }
+  r.step(0, `Answer = min of last row = <b>${Math.min(...d[n - 1])}</b>: 1 → 5 → 7.`, [G('dp', cp(d), [[2, d[2].indexOf(Math.min(...d[2])), 'done']])]);
+  ANIM['Minimum Falling Path Sum'] = W('Two rows', C_FP, r.steps);
+}
+
+const C_FP2 = `
+for (int[] row : grid) {
+    for (int j = 0; j < n; j++) {
+        int cost = row[j] + (j == col1 ? min2 : min1);
+        if (cost < nMin1) { nMin2 = nMin1; nMin1 = cost; nCol1 = j; }
+        else if (cost < nMin2) nMin2 = cost;
+    }
+    min1 = nMin1; min2 = nMin2; col1 = nCol1;
+}`;
+{
+  const g = [[1, 2, 3], [4, 5, 6], [7, 8, 9]], r = recorder(); let min1 = 0, min2 = 0, col1 = -1;
+  r.step(0, 'grid [[1,2,3],[4,5,6],[7,8,9]]. Keep the two smallest totals of the row above and the column of the smallest.', [G('grid', g)]);
+  g.forEach((row, i) => { let n1 = 1e9, n2 = 1e9, nc = -1; const costs = row.map((v, j) => v + (j === col1 ? min2 : min1)); costs.forEach((c, j) => { if (c < n1) { n2 = n1; n1 = c; nc = j; } else if (c < n2) n2 = c; }); r.step(ln(C_FP2, 'int cost'), `Row ${i}: totals ${JSON.stringify(costs)} (a cell in column ${col1} must use min2 = ${min2}, others use min1 = ${min1}).`, [R('totals', costs, { active: [nc] }), R('[min1, min2, col of min1]', [n1, n2, nc])]); min1 = n1; min2 = n2; col1 = nc; });
+  r.step(0, `Answer min1 = <b>${min1}</b>: 1 (column 0) → 5 (column 1) → 7 (column 0), no two neighbours share a column.`, [R('answer', [min1], { done: [0] })]);
+  ANIM['Minimum Falling Path Sum II'] = W('Track two minima', C_FP2, r.steps);
+}
+
+const C_PTS = `
+left[0] = prev[0];
+for (int j = 1; j < n; j++) left[j] = Math.max(prev[j], left[j - 1] - 1);
+right[n - 1] = prev[n - 1];
+for (int j = n - 2; j >= 0; j--) right[j] = Math.max(prev[j], right[j + 1] - 1);
+for (int j = 0; j < n; j++) cur[j] = points[i][j] + Math.max(left[j], right[j]);`;
+{
+  const pts = [[1, 2, 3], [1, 5, 1], [3, 1, 1]], n = 3, r = recorder(); let prev = pts[0].slice();
+  r.step(0, 'points [[1,2,3],[1,5,1],[3,1,1]]. Row 0 scores are the start.', [A('row 0', prev)]);
+  for (let i = 1; i < 3; i++) { const L = [prev[0]], Rr = []; for (let j = 1; j < n; j++) L[j] = Math.max(prev[j], L[j - 1] - 1); Rr[n - 1] = prev[n - 1]; for (let j = n - 2; j >= 0; j--) Rr[j] = Math.max(prev[j], Rr[j + 1] - 1); r.step(ln(C_PTS, 'left[j]'), `Row ${i}: left sweep (best from the left, losing 1 per column) and right sweep.`, [A('prev', prev), A('left', L), A('right', Rr)]); prev = prev.map((_, j) => pts[i][j] + Math.max(L[j], Rr[j])); r.step(ln(C_PTS, 'cur[j]'), `cur[j] = points[${i}][j] + max(left, right) = [${prev}].`, [A('row ' + i, prev, { active: idx(n) })]); }
+  r.step(0, `Answer <b>${Math.max(...prev)}</b>: 3 (column 2), 5 (column 1, penalty 1), 3 (column 0, penalty 1).`, [A('row 2', prev, { done: [prev.indexOf(Math.max(...prev))] })]);
+  ANIM['Maximum Number of Points with Cost'] = W('Two sweeps', C_PTS, r.steps);
+}
+
+const C_DG = `
+need[m][n - 1] = 1; need[m - 1][n] = 1;
+for (int i = m - 1; i >= 0; i--)
+    for (int j = n - 1; j >= 0; j--)
+        need[i][j] = Math.max(1, Math.min(need[i + 1][j], need[i][j + 1]) - dungeon[i][j]);
+return need[0][0];`;
+{
+  const g = [[-2, -3, 3], [-5, -10, 1], [10, 30, -5]], m = 3, n = 3, r = recorder(), need = g.map(x => x.map(() => '')); const nv = (i, j) => (i === m - 1 && j === n) || (i === m && j === n - 1) ? 1 : (i >= m || j >= n ? 1e9 : need[i][j]);
+  r.step(0, 'dungeon [[−2,−3,3],[−5,−10,1],[10,30,−5]]. need[i][j] = health required when entering (i, j). Solve from the princess.', [G('dungeon', g), G('need', cp(need))]);
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) { need[i][j] = Math.max(1, Math.min(nv(i + 1, j), nv(i, j + 1)) - g[i][j]); r.step(ln(C_DG, 'need[i][j] = Math.max'), `(${i},${j}): min(next needs) − ${g[i][j]}, at least 1 → ${need[i][j]}.`, [G('dungeon', g, [[i, j, 'active']]), G('need', cp(need), [[i, j, 'active']])]); }
+  r.step(ln(C_DG, 'return'), `Answer need[0][0] = <b>${need[0][0]}</b>.`, [G('need', cp(need), [[0, 0, 'done']])]);
+  ANIM['Dungeon Game'] = W('Backwards table', C_DG, r.steps);
+}
+
+const C_CH = `
+for (int row = 1; row < rows; row++)
+    for (int a = 0; a < cols; a++)
+        for (int b = 0; b < cols; b++) {
+            best = max of dp[a ± 1][b ± 1] (9 pairs)
+            next[a][b] = best + grid[row][a] + (a == b ? 0 : grid[row][b]);
+        }`;
+{
+  const g = [[3, 1, 1], [2, 5, 1], [1, 5, 5], [2, 1, 1]], rows = 4, cols = 3, r = recorder(); const NEG = -1e9;
+  let dp = Array.from({ length: cols }, () => Array(cols).fill(NEG)); dp[0][2] = g[0][0] + g[0][2];
+  const show = d => d.map(row => row.map(v => v === NEG ? '·' : v));
+  r.step(0, 'grid 4 × 3. Robot A starts at column 0, robot B at column 2. dp[a][b] = best cherries with A in column a, B in column b.', [G('row 0', show(dp), [[0, 2, 'active']], { rowLabels: ['a=0', 'a=1', 'a=2'], colLabels: ['b=0', 'b=1', 'b=2'] })]);
+  for (let row = 1; row < rows; row++) { const nx = Array.from({ length: cols }, () => Array(cols).fill(NEG)); for (let a = 0; a < cols; a++) for (let b = 0; b < cols; b++) { let best = NEG; for (let da = -1; da <= 1; da++) for (let db = -1; db <= 1; db++) { const pa = a + da, pb = b + db; if (pa >= 0 && pa < cols && pb >= 0 && pb < cols) best = Math.max(best, dp[pa][pb]); } if (best > NEG / 2) nx[a][b] = best + g[row][a] + (a === b ? 0 : g[row][b]); } dp = nx; r.step(ln(C_CH, 'next[a][b]'), `Row ${row}: each pair (a, b) comes from the best of 9 previous pairs, plus the cherries in both columns.`, [G(`row ${row}`, show(dp), [], { rowLabels: ['a=0', 'a=1', 'a=2'], colLabels: ['b=0', 'b=1', 'b=2'] })]); }
+  const best = Math.max(...dp.flat());
+  r.step(0, `Answer <b>${best}</b>: the largest cell of the last layer.`, [G('row 3', show(dp), dp.flatMap((row, a) => row.map((v, b) => v === best ? [a, b, 'done'] : null)).filter(Boolean), { rowLabels: ['a=0', 'a=1', 'a=2'], colLabels: ['b=0', 'b=1', 'b=2'] })]);
+  ANIM['Cherry Pickup II'] = W('Row layers', C_CH, r.steps);
+}
+
+const C_DIVK = `
+dp[0][0][grid[0][0] % k] = 1;
+for (i, j, r with ways = dp[i][j][r] > 0) {
+    if (i + 1 < m) dp[i + 1][j][(r + grid[i + 1][j]) % k] += ways;
+    if (j + 1 < n) dp[i][j + 1][(r + grid[i][j + 1]) % k] += ways;
+}
+return dp[m - 1][n - 1][0];`;
+{
+  const g = [[5, 2, 4], [3, 0, 5], [0, 7, 2]], k = 3, m = 3, n = 3, r = recorder(), dp = Array.from({ length: m }, () => Array.from({ length: n }, () => Array(k).fill(0)));
+  dp[0][0][g[0][0] % k] = 1;
+  const view = () => dp.map(row => row.map(c => `[${c.join(',')}]`));
+  r.step(ln(C_DIVK, 'dp[0][0]'), 'k = 3. Each cell stores paths per remainder [r0, r1, r2]. Start: 5 % 3 = 2.', [G('grid', g), G('dp (remainders 0,1,2)', view(), [[0, 0, 'active']])]);
+  for (let i = 0; i < m; i++) { for (let j = 0; j < n; j++) for (let q = 0; q < k; q++) { const w = dp[i][j][q]; if (!w) continue; if (i + 1 < m) dp[i + 1][j][(q + g[i + 1][j]) % k] += w; if (j + 1 < n) dp[i][j + 1][(q + g[i][j + 1]) % k] += w; } r.step(ln(C_DIVK, 'dp[i + 1][j]'), `Row ${i} pushed into row ${i + 1} and to the right.`, [G('dp (remainders 0,1,2)', view(), range(0, n - 1).map(j => [i, j, 'active']))]); }
+  r.step(ln(C_DIVK, 'return'), `Answer dp[2][2][0] = <b>${dp[2][2][0]}</b> paths with sum divisible by 3.`, [G('dp (remainders 0,1,2)', view(), [[2, 2, 'done']])]);
+  ANIM['Paths in Matrix Whose Sum Is Divisible by K'] = W('Push forward', C_DIVK, r.steps);
+}
+
+const C_MPSG = `
+for (int c = add; c <= k; c++) {
+    int from = -1;
+    if (i > 0) from = Math.max(from, best[i - 1][j][c - add]);
+    if (j > 0) from = Math.max(from, best[i][j - 1][c - add]);
+    if (from >= 0) best[i][j][c] = from + cell;
+}`;
+{
+  const g = [[0, 1], [2, 0], [1, 2]], k = 3, m = 3, n = 2, r = recorder(), best = Array.from({ length: m }, () => Array.from({ length: n }, () => Array(k + 1).fill(-1)));
+  best[0][0][0] = 0;
+  const view = () => best.map(row => row.map(c => `[${c.join(',')}]`));
+  r.step(0, 'grid [[0,1],[2,0],[1,2]], k = 3. Each cell holds the best score for cost 0..3 (−1 = unreachable).', [G('grid', g), G('best by cost', view(), [[0, 0, 'active']])]);
+  for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) { if (!i && !j) continue; const cell = g[i][j], add = cell > 0 ? 1 : 0; for (let c = add; c <= k; c++) { let from = -1; if (i) from = Math.max(from, best[i - 1][j][c - add]); if (j) from = Math.max(from, best[i][j - 1][c - add]); if (from >= 0) best[i][j][c] = from + cell; } r.step(ln(C_MPSG, 'best[i][j][c] ='), `(${i},${j}) value ${cell}: costs ${add} → ${JSON.stringify(best[i][j])}.`, [G('best by cost', view(), [[i, j, 'active']])]); }
+  const ans = Math.max(...best[m - 1][n - 1]);
+  r.step(0, `Answer: best over all costs ≤ 3 at the end = <b>${ans}</b>.`, [G('best by cost', view(), [[m - 1, n - 1, 'done']])]);
+  ANIM['Maximum Path Score in a Grid'] = W('3-D table', C_MPSG, r.steps);
+}
+
+const C_ROB = `
+int take = from + v;                        // collect the cell
+if (v < 0 && t > 0) take = Math.max(take, skipFrom(t - 1));   // or neutralise it
+dp[i][j][t] = take;`;
+{
+  const g = [[0, 1, -1], [1, -2, 3], [2, -3, 4]], m = 3, n = 3, NEG = -1e9, r = recorder(), dp = g.map(row => row.map(() => [NEG, NEG, NEG]));
+  r.step(0, 'coins [[0,1,−1],[1,−2,3],[2,−3,4]]. dp[i][j][t]: best with t neutralisations used (t = 0, 1, 2).', [G('coins', g)]);
+  for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) { for (let t = 0; t < 3; t++) { const v = g[i][j]; let from = i === 0 && j === 0 ? 0 : NEG; if (i) from = Math.max(from, dp[i - 1][j][t]); if (j) from = Math.max(from, dp[i][j - 1][t]); let b = from === NEG ? NEG : from + v; if (v < 0 && t > 0) { let sk = i === 0 && j === 0 ? 0 : NEG; if (i) sk = Math.max(sk, dp[i - 1][j][t - 1]); if (j) sk = Math.max(sk, dp[i][j - 1][t - 1]); if (sk !== NEG) b = Math.max(b, sk); } dp[i][j][t] = b; } if (g[i][j] < 0 || (i === 0 && j === 0) || (i === m - 1 && j === n - 1)) r.step(ln(C_ROB, 'dp[i][j][t] = take'), `(${i},${j}) coin ${g[i][j]}: [t0, t1, t2] = [${dp[i][j].map(x => x <= NEG / 2 ? '·' : x)}].`, [G('best [t0,t1,t2]', dp.map(row => row.map(c => `[${c.map(x => x <= NEG / 2 ? '·' : x).join(',')}]`)), [[i, j, 'active']])]); }
+  const ans = Math.max(...dp[2][2]);
+  r.step(0, `Answer = max over t at the end = <b>${ans}</b>.`, [G('best [t0,t1,t2]', dp.map(row => row.map(c => `[${c.map(x => x <= NEG / 2 ? '·' : x).join(',')}]`)), [[2, 2, 'done']])]);
+  ANIM['Maximum Amount of Money Robot Can Earn'] = W('Layers by charges used', C_ROB, r.steps);
+}
+
+const C_VP = `
+ok[0][0][1] = true;
+for (i, j, b with ok[i][j][b]) {
+    if (i + 1 < m) step(ok[i + 1][j], b, grid[i + 1][j]);
+    if (j + 1 < n) step(ok[i][j + 1], b, grid[i][j + 1]);
+}
+return ok[m - 1][n - 1][0];`;
+{
+  const g = [['(', '(', '('], [')', '(', ')'], ['(', '(', ')'], ['(', '(', ')']], m = 4, n = 3, r = recorder(), ok = g.map(row => row.map(() => new Set()));
+  ok[0][0].add(1);
+  const view = () => ok.map(row => row.map(s => s.size ? [...s].sort((x, y) => x - y).join(',') : '·'));
+  r.step(0, 'grid rows "(((" ")()" "(()" "(()". Each cell lists the balances reachable there. Start: "(" → balance 1.', [G('grid', g), G('balances', view(), [[0, 0, 'active']])]);
+  for (let i = 0; i < m; i++) { for (let j = 0; j < n; j++) for (const b of [...ok[i][j]]) { for (const [ni, nj] of [[i + 1, j], [i, j + 1]]) if (ni < m && nj < n) { const nb = g[ni][nj] === '(' ? b + 1 : b - 1; if (nb >= 0) ok[ni][nj].add(nb); } } r.step(ln(C_VP, 'step(ok[i + 1][j]'), `Row ${i} pushed into row ${i + 1} and to the right.`, [G('balances', view(), range(0, n - 1).map(j => [i, j, 'active']))]); }
+  r.step(ln(C_VP, 'return'), `Balance 0 reachable at the end: <b>${ok[m - 1][n - 1].has(0)}</b>.`, [G('balances', view(), [[m - 1, n - 1, ok[m - 1][n - 1].has(0) ? 'done' : 'bad']])]);
+  ANIM['Check if There Is a Valid Parentheses String Path'] = W('Balance table', C_VP, r.steps);
+}
+
+const C_NNP = `
+mx = max(hi[prev] * cell, lo[prev] * cell) over up and left
+mn = min(hi[prev] * cell, lo[prev] * cell) over up and left
+hi[i][j] = mx; lo[i][j] = mn;
+return hi[m - 1][n - 1] < 0 ? -1 : hi % MOD;`;
+{
+  const g = [[1, -2, 1], [1, -2, 1], [3, -4, 1]], m = 3, n = 3, r = recorder(), hi = g.map(x => x.map(() => '')), lo = g.map(x => x.map(() => ''));
+  hi[0][0] = lo[0][0] = 1;
+  r.step(0, 'grid [[1,−2,1],[1,−2,1],[3,−4,1]]. Track the largest (hi) and smallest (lo) product reaching each cell.', [G('grid', g), G('hi', cp(hi)), G('lo', cp(lo))]);
+  for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) { if (!i && !j) continue; const c = []; if (i) c.push(hi[i - 1][j] * g[i][j], lo[i - 1][j] * g[i][j]); if (j) c.push(hi[i][j - 1] * g[i][j], lo[i][j - 1] * g[i][j]); hi[i][j] = Math.max(...c); lo[i][j] = Math.min(...c); if (j === n - 1 || i === 0) r.step(ln(C_NNP, 'hi[i][j] = mx'), `(${i},${j}) cell ${g[i][j]}: hi ${hi[i][j]}, lo ${lo[i][j]}${g[i][j] < 0 ? ' (negative cell swaps the roles)' : ''}.`, [G('hi', cp(hi), [[i, j, 'active']]), G('lo', cp(lo), [[i, j, 'active']])]); }
+  r.step(ln(C_NNP, 'return'), `hi at the end = <b>${hi[2][2]}</b> (not negative), so the answer is ${hi[2][2]}.`, [G('hi', cp(hi), [[2, 2, 'done']])]);
+  ANIM['Maximum Non Negative Product in a Matrix'] = W('hi / lo tables', C_NNP, r.steps);
+}
+
+const C_PMS = `
+for (int[] mv : moves) {
+    int pi = i + mv[0], pj = j + mv[1];
+    if (score[pi][pj] > best) { best = score[pi][pj]; cnt = ways[pi][pj]; }
+    else if (score[pi][pj] == best) cnt += ways[pi][pj];
+}
+score[i][j] = best + digit; ways[i][j] = cnt;`;
+{
+  const b = ['E23', '2X2', '12S'], n = 3, r = recorder(), sc = b.map(() => Array(n).fill(-1)), wy = b.map(() => Array(n).fill(0)); sc[2][2] = 0; wy[2][2] = 1;
+  const view = () => sc.map((row, i) => row.map((v, j) => b[i][j] === 'X' ? 'X' : v < 0 ? '·' : `${v}×${wy[i][j]}`));
+  r.step(0, 'board "E23","2X2","12S". Each cell stores best-score × number-of-ways, filled from S towards E.', [G('score×ways', view(), [[2, 2, 'active']])]);
+  for (let i = n - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) { const c = b[i][j]; if (c === 'X' || (i === 2 && j === 2)) continue; let best = -1, cnt = 0; for (const [di, dj] of [[1, 0], [0, 1], [1, 1]]) { const pi = i + di, pj = j + dj; if (pi >= n || pj >= n || sc[pi][pj] < 0) continue; if (sc[pi][pj] > best) { best = sc[pi][pj]; cnt = wy[pi][pj]; } else if (sc[pi][pj] === best) cnt += wy[pi][pj]; } if (best < 0) continue; sc[i][j] = best + (c === 'E' ? 0 : +c); wy[i][j] = cnt; r.step(ln(C_PMS, 'score[i][j] = best'), `(${i},${j}) '${c}': best neighbour ${best} with ${cnt} way${cnt > 1 ? 's' : ''} → score ${sc[i][j]}.`, [G('score×ways', view(), [[i, j, 'active']])]); }
+  r.step(0, `Answer <b>[${sc[0][0]}, ${wy[0][0]}]</b>: the best score is ${sc[0][0]}, reached one way.`, [G('score×ways', view(), [[0, 0, 'done']])]);
+  ANIM['Number of Paths with Max Score'] = W('Score + ways', C_PMS, r.steps);
+}
+
+const C_INC = `
+Arrays.sort(order);                       // cells by value
+for (long code : order) {
+    long w = 1;
+    for (4 neighbours) if (grid[r][c] < grid[i][j]) w += ways[r * n + c];
+    ways[id] = w % MOD;
+    total += ways[id];
+}`;
+{
+  const g = [[1, 1], [3, 4]], r = recorder(), ways = g.map(x => x.map(() => '')); let total = 0;
+  const cells = [[0, 0], [0, 1], [1, 0], [1, 1]].sort((a, b) => g[a[0]][a[1]] - g[b[0]][b[1]]);
+  r.step(ln(C_INC, 'Arrays.sort'), 'grid [[1,1],[3,4]]. Cells in value order: 1, 1, 3, 4.', [G('grid', g), G('ways ending here', cp(ways))]);
+  for (const [i, j] of cells) { let w = 1; for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = i + di, b = j + dj; if (a >= 0 && a < 2 && b >= 0 && b < 2 && g[a][b] < g[i][j]) w += ways[a][b]; } ways[i][j] = w; total += w; r.step(ln(C_INC, 'ways[id]'), `Cell (${i},${j}) = ${g[i][j]}: itself + smaller neighbours → ${w}. Running total ${total}.`, [G('ways ending here', cp(ways), [[i, j, 'active']])]); }
+  r.step(0, `Answer <b>${total}</b>.`, [R('total', [total], { done: [0] })]);
+  ANIM['Number of Increasing Paths in a Grid'] = W('Sorted cells', C_INC, r.steps);
+}
+
+const C_01 = `
+// pass 1: top-left to bottom-right
+if (i > 0) dist[i][j] = Math.min(dist[i][j], dist[i - 1][j] + 1);
+if (j > 0) dist[i][j] = Math.min(dist[i][j], dist[i][j - 1] + 1);
+// pass 2: bottom-right to top-left
+if (i < m - 1) dist[i][j] = Math.min(dist[i][j], dist[i + 1][j] + 1);
+if (j < n - 1) dist[i][j] = Math.min(dist[i][j], dist[i][j + 1] + 1);`;
+{
+  const g = [[0, 0, 0], [0, 1, 0], [1, 1, 1]], m = 3, n = 3, INF = 6, r = recorder(), d = g.map(row => row.map(v => v ? INF : 0));
+  r.step(0, 'mat [[0,0,0],[0,1,0],[1,1,1]]. Ones start at "infinity" (6).', [G('dist', cp(d))]);
+  for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) { if (g[i][j]) { if (i) d[i][j] = Math.min(d[i][j], d[i - 1][j] + 1); if (j) d[i][j] = Math.min(d[i][j], d[i][j - 1] + 1); } }
+  r.step(ln(C_01, 'dist[i - 1][j] + 1'), 'Pass 1 (top-left → bottom-right): distances to zeros above or to the left.', [G('dist', cp(d), idx(m).flatMap(i => idx(n).filter(j => g[i][j]).map(j => [i, j, 'active'])))]);
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) { if (i < m - 1) d[i][j] = Math.min(d[i][j], d[i + 1][j] + 1); if (j < n - 1) d[i][j] = Math.min(d[i][j], d[i][j + 1] + 1); }
+  r.step(ln(C_01, 'dist[i + 1][j] + 1'), 'Pass 2 (bottom-right → top-left): fixes cells whose nearest zero is below or to the right.', [G('dist', cp(d), idx(m).flatMap(i => idx(n).filter(j => g[i][j]).map(j => [i, j, 'done'])))]);
+  r.step(0, `Answer <b>${JSON.stringify(d)}</b>.`, [G('dist', cp(d))]);
+  ANIM['01 Matrix'] = W('Two passes', C_01, r.steps);
+}
+
+const C_TEL = `
+for (int t = 0; t <= k; t++) {
+    pm[v] = min f over cells with value == v; then prefix min over v   // teleport options
+    for (i, j from the end)
+        g[i][j] = min(pm[grid[i][j]], g[i + 1][j] + grid[i + 1][j], g[i][j + 1] + grid[i][j + 1]);
+    f = g;
+}`;
+{
+  const gr = [[1, 3, 3], [2, 5, 2], [1, 4, 1]], m = 3, n = 3, K = 1, r = recorder(); let f = null;
+  r.step(0, 'grid [[1,3,3],[2,5,2],[1,4,1]], k = 1. f_t = cheapest cost to the end with t teleports allowed.', [G('grid', gr)]);
+  for (let t = 0; t <= K; t++) { const pm = Array(6).fill(1e9); if (t > 0) for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) pm[gr[i][j]] = Math.min(pm[gr[i][j]], f[i][j]); for (let v = 1; v < 6; v++) pm[v] = Math.min(pm[v], pm[v - 1]); const g = gr.map(x => x.map(() => 0)); for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) { if (i === m - 1 && j === n - 1) continue; let b = t > 0 ? pm[gr[i][j]] : 1e9; if (i + 1 < m) b = Math.min(b, g[i + 1][j] + gr[i + 1][j]); if (j + 1 < n) b = Math.min(b, g[i][j + 1] + gr[i][j + 1]); g[i][j] = b; } f = g; r.step(ln(C_TEL, 'f = g'), t === 0 ? 'Layer 0: no teleports, just walk right/down paying each destination cell.' : `Layer ${t}: a cell may also teleport to a cell of value ≤ its own and continue with the layer ${t - 1} cost there.`, [G(`f_${t}`, cp(f), [[0, 0, t === K ? 'done' : 'active']])]); }
+  r.step(0, `Answer <b>${f[0][0]}</b>.`, [G(`f_${K}`, cp(f), [[0, 0, 'done']])]);
+  ANIM['Minimum Cost Path with Teleportations'] = W('Layered DP + prefix min', C_TEL, r.steps);
+}
+
+const C_FRU = `
+for (int i = 0; i < n; i++) { total += f[i][i]; f[i][i] = 0; }   // child 1
+return total + upperChild(f) + upperChild(transpose(f));
+// upperChild: row i, columns j >= max(i, n - 1 - i)
+cur[j] = best(prev[j - 1], prev[j], prev[j + 1]) + f[i][j];`;
+{
+  const f = [[1, 2, 3, 4], [5, 6, 8, 7], [9, 10, 11, 12], [13, 14, 15, 16]], n = 4, r = recorder(); let total = 0; const f0 = f.map(x => x.slice());
+  r.step(0, 'fruits 4 × 4. Child 1 (top-left) is forced onto the main diagonal.', [G('fruits', f0, idx(n).map(i => [i, i, 'active']))]);
+  for (let i = 0; i < n; i++) { total += f0[i][i]; f0[i][i] = 0; }
+  r.step(ln(C_FRU, 'total += f[i][i]'), `Diagonal 1 + 6 + 11 + 16 = ${total}; those cells are now empty.`, [G('fruits left', cp(f0), idx(n).map(i => [i, i, 'done']))]);
+  const up = g => { let prev = Array(n).fill(-1e9); prev[n - 1] = g[0][n - 1]; const hist = [prev.slice()]; for (let i = 1; i < n; i++) { const cur = Array(n).fill(-1e9); for (let j = Math.max(i, n - 1 - i); j < n; j++) { let b = prev[j]; if (j) b = Math.max(b, prev[j - 1]); if (j + 1 < n) b = Math.max(b, prev[j + 1]); if (b > -1e8) cur[j] = b + g[i][j]; } prev = cur; hist.push(prev.slice()); } return hist; };
+  const h2 = up(f0), t0 = f0.map((row, i) => row.map((_, j) => f0[j][i])), h3 = up(t0);
+  h2.forEach((row, i) => { if (i) r.step(ln(C_FRU, 'cur[j]'), `Child 2, row ${i}: best fruits so far in each reachable column = [${row.map(v => v < -1e8 ? '·' : v)}].`, [A('child 2', row.map(v => v < -1e8 ? '·' : v), { active: row.map((v, j) => v > -1e8 ? j : -1).filter(j => j >= 0) })]); });
+  r.step(0, `Child 2 collects <b>${h2[n - 1][n - 1]}</b>.`, [A('child 2', h2[n - 1].map(v => v < -1e8 ? '·' : v), { done: [n - 1] })]);
+  r.step(0, `Child 3 on the transposed grid collects <b>${h3[n - 1][n - 1]}</b>. Total ${total} + ${h2[n - 1][n - 1]} + ${h3[n - 1][n - 1]} = <b>${total + h2[n - 1][n - 1] + h3[n - 1][n - 1]}</b>.`, [R('totals', [total, h2[n - 1][n - 1], h3[n - 1][n - 1]], { done: [0, 1, 2] })]);
+  ANIM['Find the Maximum Number of Fruits Collected'] = W('Diagonal + two triangles', C_FRU, r.steps);
+}
+
+const META = [{"name": "Unique Paths", "hook": "Every cell is reached from <b>above or from the left</b>, so its count is the sum of those two.", "mantra": "ways[i][j] = ways[i−1][j] + ways[i][j−1]", "statement": "A robot starts at the top-left of an m × n grid and moves only right or down. Count the paths to the bottom-right.", "recall": [["Why fill with 1?", "The first row (and, via ways[0] staying 1, the first column) has one path."], ["Why divide inside the loop?", "res * (total − small + i) / i stays an exact integer at every step."]], "links": [["Unique Paths II", 1], ["Minimum Path Sum", 2]]}, {"name": "Unique Paths II", "hook": "Same recurrence, but a cell with an <b>obstacle gets 0</b> ways.", "mantra": "ways[j] = 0 IF BLOCKED ELSE ways[j] + ways[j−1]", "statement": "Some cells are obstacles (1). Count right/down paths from the top-left to the bottom-right that avoid them.", "recall": [["Why not touch ways[0] otherwise?", "The first column only inherits from above, which is already in ways[0]."], ["Blocked start?", "ways[0] = 0 at once, so the answer is 0."]], "links": [["Unique Paths", 0], ["Minimum Path Sum", 2]]}, {"name": "Minimum Path Sum", "hook": "Walk in from the <b>cheaper</b> of the two neighbours.", "mantra": "dp[i][j] = grid[i][j] + min(up, left)", "statement": "Find a right/down path from the top-left to the bottom-right with the smallest sum of cell values.", "recall": [["Border cells?", "Only one neighbour exists, so there is no min to take."], ["Negative values?", "Still correct; the DP does not assume non-negative costs."]], "links": [["Unique Paths", 0], ["Triangle", 3], ["Dungeon Game", 7]]}, {"name": "Triangle", "hook": "Start at the <b>bottom row</b> and fold upwards: each cell adds the smaller child.", "mantra": "dp[j] = tri[i][j] + min(dp[j], dp[j+1])", "statement": "In a triangle you may move to the adjacent number in the row below. Return the minimum top-to-bottom sum.", "recall": [["Why bottom-up?", "It ends at one cell, dp[0], and needs no boundary checks."], ["Why n + 1 cells?", "dp[n] and the bottom row stay 0 as the virtual row below."]], "links": [["Minimum Path Sum", 2], ["Minimum Falling Path Sum", 4]]}, {"name": "Minimum Falling Path Sum", "hook": "Each cell reads the <b>three cells above it</b>: straight, left and right.", "mantra": "dp[i][j] = a[i][j] + min(dp[i−1][j−1..j+1])", "statement": "A falling path picks one element per row, each in a column differing by at most 1 from the one above. Return the minimum sum.", "recall": [["Answer where?", "The minimum of the last row."], ["In place?", "Yes, matrix[i][j] += min(...) works if mutating the input is allowed."]], "links": [["Triangle", 3], ["Minimum Falling Path Sum II", 5]]}, {"name": "Minimum Falling Path Sum II", "hook": "Any column except the same one: use the <b>smallest</b> of the previous row, or the <b>second smallest</b> if it sits in your own column.", "mantra": "cost = a[i][j] + (j == col1 ? min2 : min1)", "statement": "Choose one element per row so that no two adjacent rows use the same column. Return the minimum total.", "recall": [["Why is min2 enough?", "Only one column is forbidden, and min2 is the best among the others."], ["Ties for the minimum?", "min2 then equals min1 and is still correct."]], "links": [["Minimum Falling Path Sum", 4]]}, {"name": "Maximum Number of Points with Cost", "hook": "The penalty is the distance, so the best previous cell is found with <b>two linear sweeps</b> that lose 1 per step.", "mantra": "left[j] = max(prev[j], left[j−1] − 1); right the same backwards", "statement": "Pick one cell per row; you gain its value but lose the horizontal distance between consecutive picks. Return the maximum score.", "recall": [["Why not O(m · n²)?", "The inner max over k is replaced by the decaying sweeps."], ["Why long?", "Sums reach about 10⁵ · 10⁵."]], "links": [["Minimum Falling Path Sum II", 5]]}, {"name": "Dungeon Game", "hook": "Forward DP fails (health must never drop to 0), so ask the <b>reverse question</b>: how much health do I need on entering this cell?", "mantra": "need = max(1, min(need_right, need_down) − cell)", "statement": "A knight crosses a dungeon grid moving right or down, gaining or losing health in each room. Return the minimum initial health so it never reaches 0 or below.", "recall": [["Why not forward?", "Both the running sum and its minimum matter, which one number cannot track."], ["Why max with 1?", "Health must stay positive, even in a healing room."]], "links": [["Minimum Path Sum", 2]]}, {"name": "Cherry Pickup II", "hook": "Move both robots <b>one row at a time together</b>, so the state is just their two columns.", "mantra": "dp[r][c1][c2] = grid[r][c1] + grid[r][c2] + best of the 9 previous column pairs", "statement": "Two robots start at the top-left and top-right of a grid and move down one row per step, shifting column by −1, 0 or +1. Return the maximum cherries collected (a shared cell counts once).", "recall": [["Why simultaneous?", "Different time offsets would need the position of both along the path; same row means same time."], ["Same cell?", "Add the value once when c1 == c2."]], "links": [["Minimum Falling Path Sum", 4], ["Find the Maximum Number of Fruits Collected", 18]]}, {"name": "Paths in Matrix Whose Sum Is Divisible by K", "hook": "Count paths <b>by remainder</b> instead of by sum: sums are huge, remainders are only k.", "mantra": "dp[i][j][r] → dp[next][(r + cell) % k]", "statement": "Count right/down paths from the top-left to the bottom-right whose sum of values is divisible by k, mod 10⁹ + 7.", "recall": [["Why remainder only?", "Divisibility depends on sum mod k, so the sum itself is irrelevant."], ["Start state?", "dp[0][0][grid[0][0] % k] = 1."]], "links": [["Unique Paths", 0], ["Number of Paths with Max Score", 14]]}, {"name": "Maximum Path Score in a Grid", "hook": "Add a third axis for the <b>budget spent so far</b>: best[i][j][c].", "mantra": "best[i][j][c] = cell + max(best[up][c − cost], best[left][c − cost])", "statement": "Cells hold 0, 1 or 2. Each non-zero cell adds its value to the score and costs 1. Return the highest score of a right/down path with total cost at most k, or −1.", "recall": [["Why −1 for unreachable?", "Scores are never negative, so −1 is safe."], ["Cap k?", "k above m + n − 1 can be lowered to that."]], "links": [["Maximum Amount of Money Robot Can Earn", 11], ["Paths in Matrix Whose Sum Is Divisible by K", 9]]}, {"name": "Maximum Amount of Money Robot Can Earn", "hook": "A cell may be <b>taken or neutralised</b>; the second option costs one of at most two charges.", "mantra": "dp[i][j][t] = max(take, neutralise IF coin < 0 AND t > 0)", "statement": "The robot walks right/down collecting coins; negative cells are robbers. It can neutralise up to 2 robbers. Return the maximum coins at the end.", "recall": [["Why three layers?", "Using 0, 1 or 2 charges."], ["Why not always neutralise?", "Only negative cells benefit, and only two are allowed."]], "links": [["Maximum Path Score in a Grid", 10], ["Maximum Non Negative Product in a Matrix", 13]]}, {"name": "Check if There Is a Valid Parentheses String Path", "hook": "Track which <b>open-bracket balances</b> can exist at each cell.", "mantra": "ok[i][j][b] → ok[next][b ± 1]", "statement": "A grid holds ( and ). Is there a right/down path from the top-left to the bottom-right whose characters form a valid parentheses string?", "recall": [["Quick rejects?", "Odd length, a start of ) or an end of (."], ["Why balance ≤ m + n?", "A path has only m + n − 1 characters."]], "links": [["Paths in Matrix Whose Sum Is Divisible by K", 9]]}, {"name": "Maximum Non Negative Product in a Matrix", "hook": "A negative cell flips the order, so keep <b>both the largest and the smallest</b> product into each cell.", "mantra": "new max/min = best/worst of (hi, lo) × cell from both neighbours", "statement": "Find the right/down path with the maximum non-negative product. Return it modulo 10⁹ + 7, or −1 if every product is negative.", "recall": [["Why mod only at the end?", "Comparing needs the exact values; the grid is small enough for long."], ["When −1?", "hi at the end is negative: no non-negative product exists."]], "links": [["Minimum Path Sum", 2]]}, {"name": "Number of Paths with Max Score", "hook": "Carry <b>two numbers per cell</b>: the best score and how many paths reach it.", "mantra": "LONGER → copy count · EQUAL → add counts", "statement": "Start at S (bottom-right), reach E (top-left) moving up, left or diagonally; digits add to the score and X blocks. Return the max score and the number of paths achieving it mod 10⁹ + 7 (or [0, 0]).", "recall": [["Why score −1 for blocked?", "It marks unreachable, since reachable scores are ≥ 0."], ["Where does E count?", "E adds 0."]], "links": [["Unique Paths II", 1]]}, {"name": "Number of Increasing Paths in a Grid", "hook": "Process cells from <b>small value to large</b>: every smaller neighbour is already final.", "mantra": "ways[c] = 1 + Σ ways[smaller neighbour]", "statement": "Count strictly increasing paths of any length (including single cells) in a grid, moving in 4 directions, mod 10⁹ + 7.", "recall": [["Why sort instead of DFS?", "DFS depth can reach m · n and overflow the Java stack."], ["Answer?", "The sum of ways over all cells."]], "links": [["01 Matrix", 16]]}, {"name": "01 Matrix", "hook": "A distance only comes from <b>four directions</b>; sweep from the top-left and then from the bottom-right to cover all of them.", "mantra": "PASS 1: min(up, left) + 1 · PASS 2: min(down, right) + 1", "statement": "For every cell find the distance to the nearest 0 (4-directional moves).", "recall": [["Why INF = m + n?", "No distance in the grid is larger."], ["Why does BFS work?", "All sources start at distance 0, so cells are reached in distance order."]], "links": [["Number of Increasing Paths in a Grid", 15], ["Minimum Path Sum", 2]]}, {"name": "Minimum Cost Path with Teleportations", "hook": "Do the DP <b>once per teleport</b> and replace \"try every landing cell\" by a <b>prefix minimum over cell values</b>.", "mantra": "f_t = min(walk, min f_(t−1) over cells with value ≤ grid[i][j])", "statement": "Move right or down paying the destination cell's value, or teleport for free to any cell whose value is at most the current cell's, at most k times. Return the minimum cost to the bottom-right.", "recall": [["Why does teleporting use layer t − 1?", "One teleport is consumed, so the remaining path has t − 1 left."], ["Why not brute force the landing cell?", "It is O((m · n)²) per layer."]], "links": [["Number of Increasing Paths in a Grid", 15]]}, {"name": "Find the Maximum Number of Fruits Collected", "hook": "Child 1 has <b>no choice</b>: n − 1 moves force the main diagonal. The other two walk in separate triangles.", "mantra": "DIAGONAL FIRST; THEN TRIANGLE DP FOR CHILD 2, TRANSPOSE FOR CHILD 3", "statement": "Three children start at (0,0), (0,n−1) and (n−1,0) and must reach (n−1,n−1) in exactly n − 1 moves. A room's fruits are collected once. Return the maximum total.", "recall": [["Why can child 1 only use the diagonal?", "It needs n − 1 moves to cover n − 1 rows and columns, so every move is diagonal."], ["Why a transpose?", "Child 3 moving right is child 2 moving down with rows and columns swapped."]], "links": [["Cherry Pickup II", 8], ["Minimum Falling Path Sum", 4]]}];
+mount({
+  title: "Grid Paths Animations",
+  sub: "A cell's answer comes from the cells you could have <b>stepped from</b>.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

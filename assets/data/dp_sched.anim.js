@@ -1,0 +1,135 @@
+const W = (name, code, steps) => [{ name, code, steps }];
+const idx = n => Array.from({ length: n }, (_, i) => i);
+const range = (a, b) => idx(Math.max(0, b - a + 1)).map(x => x + a);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+const cp = m => m.map(r => r.slice());
+
+const C_PA = `
+for (int i = 1; i <= n; i++) {
+    int mx = 0;
+    for (int len = 1; len <= k && len <= i; len++) {
+        mx = Math.max(mx, arr[i - len]);
+        dp[i] = Math.max(dp[i], dp[i - len] + mx * len);
+    }
+}`;
+{
+  const a = [1, 15, 7, 9, 2, 5, 10], k = 3, r = recorder(), dp = [0];
+  r.step(0, 'arr = [1,15,7,9,2,5,10], k = 3. dp[i] = best sum for the first i numbers.', [A('arr', a), A('dp', dp)]);
+  for (let i = 1; i <= a.length; i++) { let mx = 0, best = 0, bl = 0; for (let len = 1; len <= k && len <= i; len++) { mx = Math.max(mx, a[i - len]); const v = dp[i - len] + mx * len; if (v > best) { best = v; bl = len; } } dp.push(best); r.step(ln(C_PA, 'dp[i] = Math.max'), `i = ${i}: best last block has length ${bl} (all become ${Math.max(...a.slice(i - bl, i))}) → dp = ${best}.`, [A('arr', a, { active: range(i - bl, i - 1) }), A('dp', dp, { active: [i] })]); }
+  r.step(0, `Answer <b>${dp[a.length]}</b>.`, [A('dp', dp, { done: [a.length] })]);
+  ANIM['Partition Array for Maximum Sum'] = W('Prefix DP', C_PA, r.steps);
+}
+
+const C_BK = `
+for (int i = 1; i <= n; i++) {
+    int width = 0, height = 0;
+    dp[i] = Integer.MAX_VALUE;
+    for (int j = i; j >= 1; j--) {
+        width += books[j - 1][0];
+        if (width > shelfWidth) break;
+        height = Math.max(height, books[j - 1][1]);
+        dp[i] = Math.min(dp[i], dp[j - 1] + height);
+    }
+}`;
+{
+  const b = [[1, 1], [2, 3], [2, 3], [1, 1], [1, 1], [1, 1], [1, 2]], W2 = 4, r = recorder(), dp = [0];
+  r.step(0, 'books (thickness, height), shelfWidth = 4. dp[i] = least height for the first i books.', [R('books', b), A('dp', dp)]);
+  for (let i = 1; i <= b.length; i++) { let w = 0, h = 0, best = 1e9, bj = i; for (let j = i; j >= 1; j--) { w += b[j - 1][0]; if (w > W2) break; h = Math.max(h, b[j - 1][1]); if (dp[j - 1] + h < best) { best = dp[j - 1] + h; bj = j; } } dp.push(best); r.step(ln(C_BK, 'dp[i] = Math.min'), `i = ${i}: last shelf holds books ${bj}..${i} → ${best}.`, [R('books', b, { active: range(bj - 1, i - 1) }), A('dp', dp, { active: [i] })]); }
+  r.step(0, `Answer <b>${dp[b.length]}</b>.`, [A('dp', dp, { done: [b.length] })]);
+  ANIM['Filling Bookcase Shelves'] = W('Prefix DP', C_BK, r.steps);
+}
+
+const C_MD = `
+for (int day = 1; day <= d; day++)
+    for (int i = day; i <= n; i++) {
+        int hardest = 0;
+        for (int j = i; j >= day; j--) {
+            hardest = Math.max(hardest, jobDifficulty[j - 1]);
+            dp[day][i] = Math.min(dp[day][i], dp[day - 1][j - 1] + hardest);
+        }
+    }`;
+{
+  const jd = [6, 5, 4, 3, 2, 1], d = 2, n = 6, r = recorder(), INF = 1e9, dp = Array.from({ length: d + 1 }, () => Array(n + 1).fill(INF)); dp[0][0] = 0;
+  const show = () => dp.map(row => row.map(v => v >= INF ? '·' : v));
+  r.step(0, 'jobs [6,5,4,3,2,1], d = 2. dp[day][i] = least total difficulty doing the first i jobs in `day` days.', [A('jobs', jd), G('dp', show(), [[0, 0, 'active']], { rowLabels: ['day 0', 'day 1', 'day 2'], colLabels: idx(n + 1) })]);
+  for (let day = 1; day <= d; day++) { for (let i = day; i <= n; i++) { let h = 0; for (let j = i; j >= day; j--) { h = Math.max(h, jd[j - 1]); dp[day][i] = Math.min(dp[day][i], dp[day - 1][j - 1] + h); } } r.step(ln(C_MD, 'dp[day][i] = Math.min'), `Day ${day}: the last day does jobs j..i and costs the hardest one.`, [G('dp', show(), range(day, n).map(i => [day, i, 'active']), { rowLabels: ['day 0', 'day 1', 'day 2'], colLabels: idx(n + 1) })]); }
+  r.step(0, `Answer dp[2][6] = <b>${dp[2][6]}</b>.`, [G('dp', show(), [[2, 6, 'done']], { rowLabels: ['day 0', 'day 1', 'day 2'], colLabels: idx(n + 1) })]);
+  ANIM['Minimum Difficulty of a Job Schedule'] = W('Day layers', C_MD, r.steps);
+}
+
+const C_JS = `
+Arrays.sort(order, by end time);
+for (int i = 1; i <= n; i++) {
+    int job = order[i - 1];
+    lo = number of jobs ending by startTime[job];      // binary search
+    best[i] = Math.max(best[i - 1], best[lo] + profit[job]);
+}
+return best[n];`;
+{
+  const st = [1, 2, 3, 3], en = [3, 4, 5, 6], pr = [50, 10, 40, 70], r = recorder(), best = [0];
+  r.step(0, 'Jobs (start,end,profit): (1,3,50) (2,4,10) (3,5,40) (3,6,70), already sorted by end.', [R('jobs', st.map((s, i) => `${s}-${en[i]}:${pr[i]}`))]);
+  for (let i = 1; i <= 4; i++) { const job = i - 1; let lo = 0; for (let m = 1; m < i; m++) if (en[m - 1] <= st[job]) lo = m; const take = best[lo] + pr[job]; best.push(Math.max(best[i - 1], take)); r.step(ln(C_JS, 'best[i] = Math.max'), `Job ${i}: ${lo} job${lo === 1 ? '' : 's'} end by ${st[job]}; take = best[${lo}] + ${pr[job]} = ${take}; skip = ${best[i - 1]} → ${best[i]}.`, [R('jobs', st.map((s, k) => `${s}-${en[k]}:${pr[k]}`), { active: [job] }), A('best', best, { active: [i] })]); }
+  r.step(ln(C_JS, 'return'), `Answer <b>${best[4]}</b>: jobs 1 and 4 (50 + 70).`, [A('best', best, { done: [4] })]);
+  ANIM['Maximum Profit in Job Scheduling'] = [...W('Sort by end', C_JS, r.steps)];
+}
+
+const C_NI = `
+sort by start; next[i] = first interval starting after interval i ends
+for (int i = n - 1; i >= 0; i--)
+    for (int k = 1; k <= 4; k++) {
+        skip = best[i + 1][k];
+        take = best[next[i]][k - 1] + weight[i];
+        keep the larger score; on a tie keep the smaller sorted index list
+    }`;
+{
+  const iv = [[1, 3, 2], [4, 5, 2], [1, 5, 5], [6, 9, 3], [6, 7, 1], [8, 9, 1]], r = recorder();
+  r.step(0, 'Intervals (l,r,w) 0:(1,3,2) 1:(4,5,2) 2:(1,5,5) 3:(6,9,3) 4:(6,7,1) 5:(8,9,1). At most 4 non-overlapping picks.', [R('intervals', iv.map((x, i) => `${i}:(${x[0]},${x[1]})w${x[2]}`))]);
+  r.step(ln(C_NI, 'sort by start'), 'Take interval 2 (weight 5) and interval 3 (weight 3): total 8. Intervals 0 + 1 + 3 give only 2 + 2 + 3 = 7, and 0, 1, 4, 5 give 2 + 2 + 1 + 1 = 6.', [R('candidates', ['[2, 3] = 8', '[0, 1, 3] = 7', '[0, 1, 4, 5] = 6'], { done: [0] })]);
+  r.step(ln(C_NI, 'keep the larger score'), 'Equal scores would be broken by the lexicographically smaller sorted index list. Here 8 is unique.', [R('answer', [2, 3], { done: [0, 1] })]);
+  ANIM['Maximum Score of Non-overlapping Intervals'] = W('Memo with index lists', C_NI, r.steps);
+}
+
+const C_CP = `
+while (nums[maxQ.peekFirst()] - nums[minQ.peekFirst()] > k) left++ ...   // shrink the window
+ways[i] = (prefix[i] - prefix[left]) % MOD;
+prefix[i + 1] = (prefix[i] + ways[i]) % MOD;`;
+{
+  const a = [9, 4, 1, 3, 7], k = 4, n = 5, r = recorder(), ways = [1], prefix = [0, 1]; let left = 0;
+  r.step(0, 'nums = [9,4,1,3,7], k = 4. ways[i] = ways to split the first i numbers. ways[0] = 1.', [A('nums', a), A('ways', ways)]);
+  for (let i = 1; i <= n; i++) { while (true) { let mn = 1e9, mx = -1e9; for (let t = left; t < i; t++) { mn = Math.min(mn, a[t]); mx = Math.max(mx, a[t]); } if (mx - mn > k) left++; else break; } const w = prefix[i] - prefix[left]; ways.push(w); prefix.push(prefix[i] + w); r.step(ln(C_CP, 'ways[i] ='), `i = ${i}: valid block starts are j = ${left}..${i - 1}; ways = prefix sum of ways[${left}..${i - 1}] = ${w}.`, [A('nums', a, { active: range(left, i - 1) }), A('ways', ways, { active: [i] })]); }
+  r.step(0, `Answer <b>${ways[n]}</b>.`, [A('ways', ways, { done: [n] })]);
+  ANIM['Count Partitions With Max-Min Difference at Most K'] = W('Two deques + prefix', C_CP, r.steps);
+}
+
+const C_SV = `
+for (int i = 1; i <= n; i++) {
+    for (entry : groups) next.merge(entry.key & x, entry.value, Math::min);   // extend open blocks
+    next.merge(x, prev[i - 1], Math::min);                                    // a block starting here
+    best = groups.get(andValues[j - 1]);
+    if (best != null) cur[i] = best + x;
+}`;
+{
+  const nums = [1, 4, 3, 3, 2], and = [0, 3, 3, 2], n = 5, m = 4, INF = 1e9, r = recorder(); let prev = Array(n + 1).fill(INF); prev[0] = 0;
+  r.step(0, 'nums = [1,4,3,3,2], andValues = [0,3,3,2]. Layer j builds blocks whose AND must equal andValues[j−1].', [A('nums', nums), A('andValues', and)]);
+  for (let j = 1; j <= m; j++) { const cur = Array(n + 1).fill(INF); let groups = new Map(); for (let i = 1; i <= n; i++) { const x = nums[i - 1], nx = new Map(); for (const [k, v] of groups) nx.set(k & x, Math.min(nx.has(k & x) ? nx.get(k & x) : INF, v)); if (prev[i - 1] < INF) nx.set(x, Math.min(nx.has(x) ? nx.get(x) : INF, prev[i - 1])); groups = nx; if (groups.has(and[j - 1])) cur[i] = groups.get(and[j - 1]) + x; } prev = cur; r.step(ln(C_SV, 'cur[i] = best + x'), `Block ${j} (AND must be ${and[j - 1]}): dp[${j}] = [${prev.map(v => v >= INF ? '·' : v)}].`, [A(`dp[${j}]`, prev.map(v => v >= INF ? '·' : v), { active: prev.map((v, i) => v < INF ? i : -1).filter(i => i >= 0) })]); }
+  r.step(0, `Answer dp[4][5] = <b>${prev[n] >= INF ? -1 : prev[n]}</b>: blocks [1,4] [3] [3] [2] with last values 4 + 3 + 3 + 2.`, [A('dp[4]', prev.map(v => v >= INF ? '·' : v), { done: [n] })]);
+  ANIM['Minimum Sum of Values by Dividing Array'] = W('Layered DP + AND groups', C_SV, r.steps);
+}
+
+const C_TD = `
+Collections.sort(robots); sort factories by position;
+slots = each factory position repeated limit times
+for (int i = 1; i <= m; i++)
+    for (int j = 1; j <= n; j++) {
+        long take = dp[i - 1][j - 1] + Math.abs(robots.get(i - 1) - slots.get(j - 1));
+        dp[i][j] = Math.min(dp[i][j - 1], take);
+    }`;
+{
+  const rob = [0, 4, 6], slots = [2, 2, 6, 6], m = 3, n = 4, r = recorder(), INF = 1e9, dp = Array.from({ length: m + 1 }, (_, i) => Array(n + 1).fill(i ? INF : 0));
+  const lab = { rowLabels: ['', ...rob.map(x => 'r' + x)], colLabels: ['', ...slots.map(s => 's' + s)] };
+  r.step(0, 'robots [0,4,6], factories (2, limit 2) and (6, limit 2) → slots [2,2,6,6]. dp[i][j] = least distance for the first i robots using the first j slots.', [G('dp', dp.map(row => row.map(v => v >= INF ? '·' : v)), [[0, 0, 'active']], lab)]);
+  for (let i = 1; i <= m; i++) { for (let j = 1; j <= n; j++) dp[i][j] = Math.min(dp[i][j - 1], dp[i - 1][j - 1] + Math.abs(rob[i - 1] - slots[j - 1])); r.step(ln(C_TD, 'dp[i][j] = Math.min'), `Robot at ${rob[i - 1]}: skip the slot or take it (|${rob[i - 1]} − slot|).`, [G('dp', dp.map(row => row.map(v => v >= INF ? '·' : v)), range(1, n).map(j => [i, j, 'active']), lab)]); }
+  r.step(0, `Answer dp[3][4] = <b>${dp[3][4]}</b>.`, [G('dp', dp.map(row => row.map(v => v >= INF ? '·' : v)), [[3, 4, 'done']], lab)]);
+  ANIM['Minimum Total Distance Traveled'] = W('Slot expansion', C_TD, r.steps);
+}
+

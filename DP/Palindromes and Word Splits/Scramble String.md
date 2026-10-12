@@ -70,4 +70,4 @@ n² starts × n lengths.
 
 ## Connected
 - [Interleaving String](../Strings%20and%20Subsequences/Interleaving%20String.md)
-- Burst Balloons
+- [Burst Balloons](../Interval%20DP/Burst%20Balloons.md)

@@ -81,5 +81,5 @@ A glass shows at most 1 cup.
 
 
 ## Connected
-- Triangle
+- [Triangle](../Grid%20Paths/Triangle.md)
 - Pascal's Triangle

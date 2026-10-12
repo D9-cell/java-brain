@@ -60,5 +60,5 @@ Arithmetic Slices II uses a hashmap per index.
 
 
 ## Connected
-- Arithmetic Slices II - Subsequence
+- [Arithmetic Slices II - Subsequence](../LIS%20and%20Variants/Arithmetic%20Slices%20II%20-%20Subsequence.md)
 - [Longest Turbulent Subarray](Longest%20Turbulent%20Subarray.md)

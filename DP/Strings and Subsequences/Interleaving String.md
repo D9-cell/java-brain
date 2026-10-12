@@ -82,4 +82,4 @@ When both strings offer the same letter, the wrong choice may fail later.
 
 ## Connected
 - [Longest Common Subsequence](Longest%20Common%20Subsequence.md)
-- Unique Paths
+- [Unique Paths](../Grid%20Paths/Unique%20Paths.md)

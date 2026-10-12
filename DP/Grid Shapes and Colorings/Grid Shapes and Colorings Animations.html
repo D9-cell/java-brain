@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid Shapes and Colorings Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../../assets/theme.css">
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const idx = n => Array.from({ length: n }, (_, i) => i);
+const range = (a, b) => idx(Math.max(0, b - a + 1)).map(x => x + a);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+const cp = m => m.map(r => r.slice());
+
+const C_MS = `
+for (char[] row : matrix) {
+    int diag = 0;
+    for (int j = 1; j <= n; j++) {
+        int up = dp[j];
+        dp[j] = row[j - 1] == '1' ? 1 + Math.min(diag, Math.min(dp[j - 1], up)) : 0;
+        best = Math.max(best, dp[j]);
+        diag = up;
+    }
+}
+return best * best;`;
+{
+  const g = ['10100', '10111', '11111', '10010'], m = 4, n = 5, r = recorder(), d = g.map(x => [...x].map(() => 0)); let best = 0;
+  r.step(0, 'matrix rows 10100 / 10111 / 11111 / 10010. dp = side of the largest square ending at each cell.', [G('matrix', g.map(x => [...x]))]);
+  for (let i = 0; i < m; i++) { for (let j = 0; j < n; j++) { if (g[i][j] === '1') { d[i][j] = 1 + (i && j ? Math.min(d[i - 1][j - 1], d[i - 1][j], d[i][j - 1]) : 0); best = Math.max(best, d[i][j]); } } r.step(ln(C_MS, 'dp[j] = row[j - 1]'), `Row ${i}: a 1 becomes 1 + min(up, left, up-left); best side so far ${best}.`, [G('dp', cp(d), range(0, n - 1).filter(j => g[i][j] === '1').map(j => [i, j, d[i][j] === best ? 'done' : 'active']))]); }
+  r.step(ln(C_MS, 'return'), `Answer ${best} × ${best} = <b>${best * best}</b>.`, [G('dp', cp(d), idx(m).flatMap(i => idx(n).filter(j => d[i][j] === best).map(j => [i, j, 'done'])))]);
+  ANIM['Maximal Square'] = W('Rolling row', C_MS, r.steps);
+}
+
+const C_CS = `
+for (int i = 0; i < m; i++)
+    for (int j = 0; j < n; j++) {
+        if (matrix[i][j] == 0) continue;
+        dp[i][j] = (i == 0 || j == 0) ? 1 : 1 + Math.min(dp[i - 1][j - 1], Math.min(dp[i - 1][j], dp[i][j - 1]));
+        total += dp[i][j];
+    }`;
+{
+  const g = [[0, 1, 1, 1], [1, 1, 1, 1], [0, 1, 1, 1]], m = 3, n = 4, r = recorder(), d = g.map(x => x.map(() => 0)); let total = 0;
+  r.step(0, 'matrix [[0,1,1,1],[1,1,1,1],[0,1,1,1]]. dp = number of squares whose bottom-right corner is the cell.', [G('matrix', g)]);
+  for (let i = 0; i < m; i++) { for (let j = 0; j < n; j++) { if (!g[i][j]) continue; d[i][j] = (i && j) ? 1 + Math.min(d[i - 1][j - 1], d[i - 1][j], d[i][j - 1]) : 1; total += d[i][j]; } r.step(ln(C_CS, 'total += dp'), `Row ${i}: running total ${total}.`, [G('dp', cp(d), range(0, n - 1).filter(j => g[i][j]).map(j => [i, j, 'active']))]); }
+  r.step(0, `Answer <b>${total}</b> squares (${d.flat().filter(v => v === 1).length} of side 1 and larger ones).`, [G('dp', cp(d), [])]);
+  ANIM['Count Square Submatrices with All Ones'] = W('Table + sum', C_CS, r.steps);
+}
+
+const C_PLUS = `
+for (int i = 0; i < n; i++) {
+    for (int j = 0, k = n - 1; j < n; j++, k--) {
+        left = mine[i][j] ? 0 : left + 1;   arm[i][j] = min(arm[i][j], left);
+        right = mine[i][k] ? 0 : right + 1; arm[i][k] = min(arm[i][k], right);
+        up = mine[j][i] ? 0 : up + 1;       arm[j][i] = min(arm[j][i], up);
+        down = mine[k][i] ? 0 : down + 1;   arm[k][i] = min(arm[k][i], down);
+    }
+}
+return max of arm;`;
+{
+  const n = 5, mines = [[4, 2]], mine = Array.from({ length: n }, () => Array(n).fill(false)); mines.forEach(([a, b]) => mine[a][b] = true);
+  const arm = Array.from({ length: n }, () => Array(n).fill(n)), r = recorder();
+  const show = () => arm.map((row, i) => row.map((v, j) => mine[i][j] ? 'X' : v));
+  r.step(0, 'n = 5, one mine at (4,2). arm = shortest run of 1s among the four directions.', [G('arm', show())]);
+  
+  const dirs = [['left', (i, j) => [i, j]], ['right', (i, j) => [i, n - 1 - j]], ['up', (i, j) => [j, i]], ['down', (i, j) => [n - 1 - j, i]]];
+  for (const [nm, f] of dirs) { for (let i = 0; i < n; i++) { let run = 0; for (let j = 0; j < n; j++) { const [a, b] = f(i, j); run = mine[a][b] ? 0 : run + 1; arm[a][b] = Math.min(arm[a][b], run); } } r.step(ln(C_PLUS, nm === 'left' ? 'left = mine' : nm === 'right' ? 'right = mine' : nm === 'up' ? 'up = mine' : 'down = mine'), `After the ${nm} runs: each cell keeps the minimum run so far.`, [G('arm', show())]); }
+  const best = Math.max(...arm.flat()), at = []; arm.forEach((row, i) => row.forEach((v, j) => { if (v === best && !mine[i][j]) at.push([i, j, 'done']); }));
+  r.step(ln(C_PLUS, 'return'), `Largest arm value = <b>${best}</b>, so the order of the largest plus is ${best}.`, [G('arm', show(), at)]);
+  ANIM['Largest Plus Sign'] = W('Four sweeps', C_PLUS, r.steps);
+}
+
+const C_RSQ = `
+for (int i = 0; i < m; i++)
+    for (int j = 0; j < n; j++)
+        pre[i + 1][j + 1] = matrix[i][j] + pre[i][j + 1] + pre[i + 1][j] - pre[i][j];
+// query
+return pre[r2 + 1][c2 + 1] - pre[r1][c2 + 1] - pre[r2 + 1][c1] + pre[r1][c1];`;
+{
+  const a = [[3, 0, 1, 4], [5, 6, 3, 2], [1, 2, 0, 1], [4, 1, 0, 1]], m = 4, n = 4, r = recorder(), pre = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  r.step(0, 'matrix 4 × 4. pre has an extra zero row and column on top and left.', [G('matrix', a), G('pre', cp(pre))]);
+  for (let i = 0; i < m; i++) { for (let j = 0; j < n; j++) pre[i + 1][j + 1] = a[i][j] + pre[i][j + 1] + pre[i + 1][j] - pre[i][j]; r.step(ln(C_RSQ, 'pre[i + 1][j + 1]'), `Row ${i} of pre filled: value + above + left − diagonal.`, [G('pre', cp(pre), range(1, n).map(j => [i + 1, j, 'active']))]); }
+  const r1 = 1, c1 = 1, r2 = 2, c2 = 2, q = pre[r2 + 1][c2 + 1] - pre[r1][c2 + 1] - pre[r2 + 1][c1] + pre[r1][c1];
+  r.step(ln(C_RSQ, 'return pre'), `Query (1,1)-(2,2): ${pre[r2 + 1][c2 + 1]} − ${pre[r1][c2 + 1]} − ${pre[r2 + 1][c1]} + ${pre[r1][c1]} = <b>${q}</b> (6 + 3 + 2 + 0).`, [G('pre', cp(pre), [[r2 + 1, c2 + 1, 'done'], [r1, c2 + 1, 'bad'], [r2 + 1, c1, 'bad'], [r1, c1, 'warn']])]);
+  ANIM['Range Sum Query 2D - Immutable'] = W('Prefix table', C_RSQ, r.steps);
+}
+
+const C_PZ = `
+for (int cuts = 1; cuts < k; cuts++)
+    for (i, j) {
+        for (int r = i + 1; r < m; r++) if (apples[i][j] - apples[r][j] > 0) total += dp[cuts - 1][r][j];
+        for (int c = j + 1; c < n; c++) if (apples[i][j] - apples[i][c] > 0) total += dp[cuts - 1][i][c];
+        dp[cuts][i][j] = total % MOD;
+    }
+return dp[k - 1][0][0];`;
+{
+  const pz = ['A..', 'AAA', '...'], m = 3, n = 3, k = 3, r = recorder();
+  const ap = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0)); for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) ap[i][j] = (pz[i][j] === 'A' ? 1 : 0) + ap[i + 1][j] + ap[i][j + 1] - ap[i + 1][j + 1];
+  const dp = [Array.from({ length: m }, (_, i) => Array.from({ length: n }, (_, j) => ap[i][j] > 0 ? 1 : 0))];
+  r.step(0, 'pizza "A..","AAA","..." with k = 3. apples[i][j] = apples in the rectangle from (i,j) to the bottom-right. Layer 0: one piece left.', [G('pizza', pz.map(x => [...x])), G('layer 0', cp(dp[0]))]);
+  for (let c = 1; c < k; c++) { const cur = Array.from({ length: m }, () => Array(n).fill(0)); for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) { let t = 0; for (let rr = i + 1; rr < m; rr++) if (ap[i][j] - ap[rr][j] > 0) t += dp[c - 1][rr][j]; for (let cc = j + 1; cc < n; cc++) if (ap[i][j] - ap[i][cc] > 0) t += dp[c - 1][i][cc]; cur[i][j] = t; } dp.push(cur); r.step(ln(C_PZ, 'dp[cuts][i][j]'), `Layer ${c}: ways to cut the bottom-right rectangle at (i,j) into ${c + 1} pieces.`, [G(`layer ${c}`, cp(cur), [[0, 0, c === k - 1 ? 'done' : 'active']])]); }
+  r.step(ln(C_PZ, 'return'), `Answer dp[${k - 1}][0][0] = <b>${dp[k - 1][0][0]}</b>.`, [G(`layer ${k - 1}`, cp(dp[k - 1]), [[0, 0, 'done']])]);
+  ANIM['Number of Ways of Cutting a Pizza'] = W('Suffix sums + layered DP', C_PZ, r.steps);
+}
+
+const C_N3 = `
+long aba = 6, abc = 6;
+for (int i = 2; i <= n; i++) {
+    long nextAba = (3 * aba + 2 * abc) % MOD;
+    long nextAbc = (2 * aba + 2 * abc) % MOD;
+    aba = nextAba; abc = nextAbc;
+}
+return (aba + abc) % MOD;`;
+{
+  let aba = 6, abc = 6; const r = recorder();
+  r.step(ln(C_N3, 'long aba = 6'), 'One row: 6 colourings of type ABA (two colours) and 6 of type ABC (three colours).', [R('[ABA, ABC]', [aba, abc], { active: [0, 1] })]);
+  for (let i = 2; i <= 4; i++) { const na = 3 * aba + 2 * abc, nb = 2 * aba + 2 * abc; aba = na; abc = nb; r.step(ln(C_N3, 'long nextAba'), `Row ${i}: ABA = 3·ABA + 2·ABC, ABC = 2·ABA + 2·ABC → [${aba}, ${abc}].`, [R('[ABA, ABC]', [aba, abc], { active: [0, 1] })]); }
+  r.step(ln(C_N3, 'return'), `n = 4: <b>${aba + abc}</b> colourings. (n = 2 gives 54, n = 3 gives 246.)`, [R('total', [aba + abc], { done: [0] })]);
+  ANIM['Number of Ways to Paint N × 3 Grid'] = W('Two running counts', C_N3, r.steps);
+}
+
+const C_PG = `
+build(m, new int[m], 0, cols);                       // every valid column
+for (a, b) if (compatible(cols[a], cols[b])) next[a].add(b);
+dp = all ones;
+for (int col = 1; col < n; col++)
+    for (a) for (b : next[a]) nd[b] += dp[a];
+return Σ dp;`;
+{
+  const m = 2, n = 3, cols = []; for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) if (a !== b) cols.push([a, b]);
+  const name = c => c.map(x => 'RGB'[x]).join(''), ok = (x, y) => x.every((v, i) => v !== y[i]), r = recorder(); let dp = cols.map(() => 1);
+  r.step(ln(C_PG, 'build('), 'm = 2: valid columns have different colours top and bottom: RG RB GR GB BR BG (6 patterns).', [R('patterns', cols.map(name))]);
+  r.step(ln(C_PG, 'compatible'), 'Two columns can touch if they differ in both rows. RG is compatible with GR, GB, BR.', [R('RG →', cols.filter(c => ok(cols[0], c)).map(name), { done: [0, 1, 2] })]);
+  r.step(ln(C_PG, 'dp = all ones'), 'First column: every pattern once.', [R('dp', dp, { active: idx(6) })]);
+  for (let col = 1; col < n; col++) { const nd = cols.map(() => 0); cols.forEach((a, ia) => cols.forEach((b, ib) => { if (ok(a, b)) nd[ib] += dp[ia]; })); dp = nd; r.step(ln(C_PG, 'nd[b]'), `Column ${col + 1}: each pattern sums the dp of the compatible previous patterns → [${dp}].`, [R('dp', dp, { active: idx(6) })]); }
+  r.step(ln(C_PG, 'return'), `Answer <b>${dp.reduce((s, v) => s + v, 0)}</b> colourings of a 2 × 3 grid.`, [R('dp', dp, { done: idx(6) })]);
+  ANIM['Painting a Grid With Three Different Colors'] = W('Patterns + transitions', C_PG, r.steps);
+}
+
+const C_VD = `
+for each 1, for d in 0..3: best = max(best, 1 + walk(i, j, d, 1, 2));
+
+int walk(int i, int j, int d, int canTurn, int want) {
+    step to (r, c) in direction d; if outside or grid[r][c] != want return 0;
+    int next = want == 2 ? 0 : 2;
+    int best = 1 + walk(r, c, d, canTurn, next);
+    if (canTurn == 1) best = Math.max(best, 1 + walk(r, c, (d + 1) % 4, 0, next));
+    return best;
+}`;
+{
+  const g = [[2, 2, 1, 2, 2], [2, 0, 2, 2, 0], [2, 0, 1, 1, 0], [1, 0, 2, 2, 2], [2, 0, 0, 2, 2]], r = recorder();
+  const path = [[0, 2], [1, 3], [2, 4], [3, 3], [4, 2]];
+  r.step(0, 'Start at a 1 and follow 2, 0, 2, 0 along a diagonal. Here: start (0,2) = 1, heading down-right.', [G('grid', g, [[0, 2, 'active']])]);
+  const names = ['1', '2', '0', '2', '0'];
+  for (let k = 1; k < 3; k++) r.step(ln(C_VD, 'int best = 1 + walk'), `Step ${k}: cell (${path[k]}) holds ${g[path[k][0]][path[k][1]]}, expected ${names[k]} → continue.`, [G('grid', g, path.slice(0, k + 1).map(([a, b]) => [a, b, 'active']))]);
+  r.step(ln(C_VD, 'if (canTurn == 1)'), 'At (2,4) the next down-right cell is outside the grid. Turn clockwise once (now heading down-left): the next cell (3,3) must hold 2, because 2 follows 0.', [G('grid', g, path.slice(0, 3).map(([a, b]) => [a, b, 'active']).concat([[3, 3, 'warn']]))]);
+  r.step(ln(C_VD, 'if (canTurn == 1)'), 'Turned segment: (3,3) = 2 ✓, (4,2) = 0 ✓. The turn is now used.', [G('grid', g, path.map(([a, b]) => [a, b, 'done']))]);
+  r.step(0, 'Total length <b>5</b>: 1, 2, 0 down-right, then 2, 0 down-left after the single turn.', [G('grid', g, path.map(([a, b]) => [a, b, 'done']))]);
+  ANIM['Length of Longest V-Shaped Diagonal Segment'] = W('Memoised walk', C_VD, r.steps);
+}
+
+const C_OPS = `
+for (int col = 0; col < n; col++)
+    for (a, b with dp[a][b] valid)
+        for (int c = 0; c <= n; c++) {
+            int top = Math.max(a, c);
+            long gain = top > b ? pre[col][top] - pre[col][b] : 0;
+            next[b][c] = Math.max(next[b][c], dp[a][b] + gain);
+        }`;
+{
+  const g = [[0, 0, 0], [0, 0, 5], [4, 0, 0]], n = 3, r = recorder();
+  const score = h => { let s = 0; for (let c = 0; c < n; c++) for (let rr = h[c]; rr < n; rr++) if ((c > 0 && rr < h[c - 1]) || (c + 1 < n && rr < h[c + 1])) s += g[rr][c]; return s; };
+  r.step(0, 'grid [[0,0,0],[0,0,5],[4,0,0]]. Choose a black height for each column (0 = none). A white cell scores if a side neighbour is black.', [G('grid', g)]);
+  const tryH = h => { const s = score(h); r.step(ln(C_OPS, 'long gain'), `Heights [${h}]: scores ${s}.`, [G('grid', g, g.flatMap((row, i) => row.map((v, j) => { if (i < h[j]) return [i, j, 'bad']; if ((j > 0 && i < h[j - 1]) || (j + 1 < n && i < h[j + 1])) return [i, j, 'done']; return null; })).filter(Boolean))]); return s; };
+  tryH([0, 0, 0]); tryH([3, 0, 0]); tryH([0, 3, 0]); tryH([3, 0, 3]);
+  const best = Math.max(...[0, 1, 2, 3].flatMap(a => [0, 1, 2, 3].flatMap(b => [0, 1, 2, 3].map(c => score([a, b, c])))));
+  r.step(0, `Trying every height triple (the DP does this column by column) gives the best score <b>${best}</b>.`, [R('answer', [best], { done: [0] })]);
+  ANIM['Maximum Score From Grid Operations'] = W('Heights DP', C_OPS, r.steps);
+}
+
+const META = [{"name": "Maximal Square", "hook": "A square of side s ending at a cell needs squares of side s − 1 ending at its <b>three neighbours</b>.", "mantra": "dp[i][j] = 1 + min(dp[i−1][j], dp[i][j−1], dp[i−1][j−1]) IF cell = 1", "statement": "Find the largest square containing only 1s in a binary matrix and return its area.", "recall": [["Why min of three?", "Any shorter arm breaks the square."], ["Return?", "The area: best × best."]], "links": [["Count Square Submatrices with All Ones", 1], ["Largest Plus Sign", 2]]}, {"name": "Count Square Submatrices with All Ones", "hook": "The side of the largest square ending at a cell <b>is also the number of squares ending there</b>.", "mantra": "ANSWER = Σ dp[i][j]", "statement": "Count all square submatrices that contain only 1s.", "recall": [["Why is the side the count?", "If a side-s square fits, so do squares of side 1..s − 1 at the same corner."], ["Border cells?", "dp is 1 for any 1 on the first row or column."]], "links": [["Maximal Square", 0]]}, {"name": "Largest Plus Sign", "hook": "A plus is limited by its <b>shortest arm</b>: sweep the four directions and keep the minimum.", "mantra": "arm[i][j] = min(left, right, up, down) RUN OF 1s", "statement": "An n × n grid is all 1s except the given mines (0). Return the order (arm length including the centre) of the largest axis-aligned plus of 1s.", "recall": [["Why min of four?", "All arms must have the same length."], ["Order vs arm?", "Order counts the centre, so a plus with arms of 1 has order 2."]], "links": [["Maximal Square", 0]]}, {"name": "Range Sum Query 2D - Immutable", "hook": "pre[i][j] stores the sum of everything <b>above and to the left</b>; any rectangle is four corners.", "mantra": "sum = D − B − C + A", "statement": "Preprocess a matrix so that sumRegion(r1, c1, r2, c2) returns the sum of the rectangle in O(1).", "recall": [["Why add pre[r1][c1]?", "The corner was subtracted twice."], ["Why a padded row and column?", "It removes the edge cases for r1 = 0 or c1 = 0."]], "links": [["Number of Ways of Cutting a Pizza", 4]]}, {"name": "Number of Ways of Cutting a Pizza", "hook": "Each cut keeps the <b>bottom-right piece</b>, so the state is just its top-left corner plus the cuts left.", "mantra": "dp[cuts][r][c] = Σ dp[cuts−1][next corner] FOR EACH CUT THAT GIVES AN APPLE TO THE PIECE CUT OFF", "statement": "Cut a pizza with apples into k pieces using k − 1 horizontal or vertical cuts, giving the top or left part away each time. Count the ways so every piece has at least one apple (mod 10⁹ + 7).", "recall": [["Why only the bottom-right?", "The piece you keep is always a bottom-right rectangle."], ["Base layer?", "One piece left: ways = 1 if the rectangle has an apple."]], "links": [["Range Sum Query 2D - Immutable", 3]]}, {"name": "Number of Ways to Paint N × 3 Grid", "hook": "Only <b>two row shapes</b> matter: ABA (two colours) and ABC (three colours); counts per shape transition by fixed multipliers.", "mantra": "ABA' = 3·ABA + 2·ABC · ABC' = 2·ABA + 2·ABC", "statement": "Paint an n × 3 grid with 3 colours so no two adjacent cells (horizontally or vertically) share a colour. Return the count mod 10⁹ + 7.", "recall": [["Why start at 6 and 6?", "There are 6 colourings of each shape for the first row."], ["Check n = 1?", "6 + 6 = 12 colourings of a single row."]], "links": [["Painting a Grid With Three Different Colors", 6]]}, {"name": "Painting a Grid With Three Different Colors", "hook": "m ≤ 5, so list every valid <b>column coloring</b> (at most 48) and count walks of length n over compatible columns.", "mantra": "dp[col][pattern] = Σ dp[col−1][compatible pattern]", "statement": "Paint an m × n grid with 3 colours so no two adjacent cells match. Return the count mod 10⁹ + 7.", "recall": [["Why is P small?", "m ≤ 5 gives at most 3 · 16 = 48 patterns."], ["Starting vector?", "Every pattern has 1 way for the first column."]], "links": [["Number of Ways to Paint N × 3 Grid", 5]]}, {"name": "Length of Longest V-Shaped Diagonal Segment", "hook": "State = <b>(cell, direction, turn still available?)</b>. The required value is forced by the cell: 1 → 2 → 0 → 2 → 0.", "mantra": "KEEP GOING · OR TURN CLOCKWISE ONCE", "statement": "A V-shaped segment starts at a 1, follows 2, 0, 2, 0, ... along a diagonal and may make one clockwise 90° turn to another diagonal. Return the longest length (0 if no 1).", "recall": [["Why memo shared across starts?", "The future depends only on the cell, direction and turn flag."], ["Why (d + 1) % 4?", "DIRS are listed in clockwise order."]], "links": [["Maximal Square", 0]]}, {"name": "Maximum Score From Grid Operations", "hook": "Each column ends up black from the top down to some <b>height</b>. A white cell scores iff the column beside it is taller.", "mantra": "score(col) = Σ cells from h[col] to max(h[col−1], h[col+1]) − 1", "statement": "An n × n grid starts white. An operation blackens a column from row 0 down to a chosen row. A white cell scores its value if a left or right neighbour is black. Return the maximum score.", "recall": [["Why not O(n³)?", "A running maximum over the previous height shaves a factor, but O(n⁴) is fine for n ≤ 100."], ["Why heights 0..n?", "n means a fully black column, 0 means untouched."]], "links": [["Largest Plus Sign", 2]]}];
+mount({
+  title: "Grid Shapes and Colorings Animations",
+  sub: "The DP looks at a <b>shape or a pattern</b> at each cell, not at a path.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

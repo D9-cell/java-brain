@@ -4,153 +4,285 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Java Brain Hub</title>
-<link rel="stylesheet" href="assets/brain-anim.css">
-<style>
-.hub { padding: 24px 32px 64px; }
-.top { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; }
-.top h1 { margin: 0; }
-.overall { min-width: 280px; flex: 1; max-width: 520px; }
-.bar { height: 10px; border-radius: 99px; background: var(--line); overflow: hidden; }
-.bar > i { display: block; height: 100%; background: var(--good); width: 0; transition: width .3s; }
-.overall .num { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); margin-top: 6px; }
-.overall .num b { color: var(--ink); }
-.profiles { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
-.profiles a { color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 4px 12px; text-decoration: none; font-weight: 600; }
-.controls-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
-.search { flex: 1; min-width: 220px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; }
-.chip { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; }
-.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.tool { border: 1px solid var(--line); background: var(--panel); color: var(--muted); padding: 8px 12px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; }
-details.how { font-size: 14px; color: var(--muted); margin: 6px 0 4px; }
-details.how code { background: var(--code-bg); padding: 1px 6px; border-radius: 5px; }
-.group h2 { font-size: 18px; margin: 26px 0 10px; display: flex; gap: 12px; align-items: baseline; }
-.group h2 small { font-size: 13px; color: var(--muted); font-weight: 500; }
-.topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
-.topic { margin: 0; display: flex; flex-direction: column; }
-.topic h3 { margin: 0 0 6px; font-size: 16px; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.topic h3 a { color: var(--ink); text-decoration: none; }
-.topic h3 a:hover { color: var(--accent); }
-.topic .count { color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; }
-.topic .bar { height: 6px; margin-bottom: 10px; }
-.topic ol { margin: 0; padding-left: 0; list-style: none; max-height: 320px; overflow-y: auto; }
-.topic li { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; font-size: 14px; }
-.topic li input { margin-top: 3px; accent-color: var(--good); cursor: pointer; flex: none; }
-.topic li .n { color: var(--muted); min-width: 24px; text-align: right; font-variant-numeric: tabular-nums; }
-.topic li a.p { color: var(--ink); text-decoration: none; }
-.topic li a.p:hover { color: var(--accent); text-decoration: underline; }
-.topic li.solved a.p { color: var(--good); }
-.topic li a.plat { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 6px; margin-left: 4px; text-decoration: none; white-space: nowrap; }
-.connect { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; align-items: end; margin-top: 10px; }
-.connect label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.connect label.wide { grid-column: span 2; }
-.connect input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; }
-.connect button { height: 38px; }
-#syncmsg { white-space: pre-line; color: var(--ink); font-weight: 600; }
-.bm ol { margin: 6px 0; padding-left: 20px; }
-a.bmk { display: inline-block; margin: 4px 4px 0 0; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: #fff !important; font-weight: 600; text-decoration: none; cursor: grab; }
-.bm textarea { width: 100%; margin-top: 6px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; font: 12px monospace; }
-.fine { font-size: 12px; }
-.hidden { display: none !important; }
-@media (max-width: 640px) { .hub { padding: 16px; } .topics { grid-template-columns: 1fr; } }
-</style>
+<meta name="description" content="Java Brain: DSA in Java with step-by-step animations, solved-problem tracking and LeetCode and GfG sync. Everything stays in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/theme.css">
+<link rel="stylesheet" href="assets/hub.css">
 </head>
 <body>
-<div class="hub">
-  <div class="top">
-    <div><h1>Java Brain</h1><p class="sub" id="sub" style="margin:4px 0 0"></p></div>
-    <div class="overall"><div class="bar"><i id="allbar"></i></div><div class="num"><span id="allnum"></span><span id="synced"></span></div></div>
-  </div>
-  <div class="profiles" id="profiles"></div>
-  <details class="how" id="conn"><summary>Connect your profiles and sync the problems you already solved</summary>
-    <div class="connect">
-      <label>LeetCode username or profile link <input id="u-leetcode" placeholder="e.g. john_doe"></label>
-      <label>GfG handle or profile link <input id="u-gfg" placeholder="e.g. johndoe123"></label>
-      <label>CodeChef handle or profile link <input id="u-codechef" placeholder="e.g. john_d"></label>
-      <button class="chip on" id="savebtn">Save</button>
+<header class="site-header">
+  <div class="inner">
+    <div class="brand">
+      <div class="brand-dots" aria-hidden="true"><span style="background:var(--blue)"></span><span style="background:var(--red)"></span><span style="background:var(--yellow)"></span><span style="background:var(--green)"></span></div>
+      <div class="brand-name">Java Brain<span>.</span></div>
     </div>
-    <div class="bm">
-      <p><b>One-click sync.</b> Drag these two buttons onto your bookmarks bar once (show it with Ctrl+Shift+B):
-        <a class="bmk" id="bm-lc">⟳ Java Brain · LeetCode</a> <a class="bmk" id="bm-gfg">⟳ Java Brain · GfG</a></p>
-      <ol>
-        <li>Open <a href="https://leetcode.com" target="_blank" rel="noopener">leetcode.com</a> while logged in and click <b>⟳ Java Brain · LeetCode</b>. You come straight back here with every problem you have solved ticked (your full history).</li>
-        <li>Do the same on <a href="https://www.geeksforgeeks.org" target="_blank" rel="noopener">geeksforgeeks.org</a> with <b>⟳ Java Brain · GfG</b>.</li>
+    <nav class="main-nav" aria-label="Main">
+      <a href="#top" class="jb-nav" aria-current="page">Hub</a>
+      <a href="#sync-h" class="jb-nav">Sync</a>
+      <a href="#topics-h" class="jb-nav">Topics</a>
+    </nav>
+    <div class="head-actions">
+      <button class="btn btn-ghost jb-btn" type="button" id="imp">Import progress</button>
+      <button class="btn btn-primary jb-btn" type="button" id="exp">Export progress</button>
+      <input type="file" id="impfile" accept=".json" class="hidden" aria-label="Choose a progress backup file">
+    </div>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero" aria-label="Overview">
+    <div class="hero-copy jb-up">
+      <div class="eyebrow">
+        <span class="dots" aria-hidden="true"><span class="jb-dot" style="background:var(--blue)"></span><span class="jb-dot" style="background:var(--red);animation-delay:.15s"></span><span class="jb-dot" style="background:var(--yellow);animation-delay:.3s"></span><span class="jb-dot" style="background:var(--green);animation-delay:.45s"></span></span>
+        <span id="eyebrow">DSA in Java</span>
+      </div>
+      <h1><span class="c-blue">Practice.</span> <span class="c-red">Animate.</span><br><span class="c-green">Remember.</span></h1>
+      <p class="hero-sub">Step through Java code line by line, tick off what you solve, and sync the problems you already finished on LeetCode and GfG.</p>
+    </div>
+
+    <div class="progress-card jb-up">
+      <span class="deco deco-a jb-float" aria-hidden="true"></span>
+      <span class="deco deco-b jb-float" aria-hidden="true"></span>
+      <div class="progress-top">
+        <div class="ring-wrap">
+          <svg aria-hidden="true" width="112" height="112" viewBox="0 0 112 112">
+            <circle cx="56" cy="56" r="46" fill="none" stroke="#F1F3F4" stroke-width="12"></circle>
+            <circle id="ring" class="jb-ring" cx="56" cy="56" r="46" fill="none" stroke="#34A853" stroke-width="12" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="289"></circle>
+          </svg>
+          <div class="ring-pct" id="pct">0%</div>
+        </div>
+        <div class="progress-text" role="status" aria-live="polite">
+          <div class="lbl">Your progress</div>
+          <div class="big"><span id="solved">0</span> <small>/ <span id="total">0</span></small></div>
+          <div class="foot">problems solved<span id="synced"></span></div>
+        </div>
+      </div>
+      <div class="tiles">
+        <div class="tile tile-yellow"><div class="lbl">LeetCode</div><div class="num" id="n-lc">0</div></div>
+        <div class="tile tile-green"><div class="lbl">GfG</div><div class="num" id="n-gfg">0</div></div>
+        <div class="tile tile-blue"><div class="lbl">CodeChef</div><div class="num" id="n-cc">0</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sync-card jb-up" id="conn" aria-labelledby="sync-h">
+    <div class="sync-left">
+      <div>
+        <h2 id="sync-h">Connect your profiles</h2>
+        <p class="muted-14" style="margin-top:4px">Sync the problems you already solved.</p>
+      </div>
+      <div class="field">
+        <label for="u-leetcode"><i style="background:var(--yellow)" aria-hidden="true"></i>LeetCode username or profile link</label>
+        <input id="u-leetcode" type="text" placeholder="leetcode.com/u/your-handle" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="u-gfg"><i style="background:var(--green)" aria-hidden="true"></i>GfG handle or profile link</label>
+        <input id="u-gfg" type="text" placeholder="geeksforgeeks.org/profile/your-handle" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="u-codechef"><i style="background:var(--blue)" aria-hidden="true"></i>CodeChef handle or profile link</label>
+        <input id="u-codechef" type="text" placeholder="codechef.com/users/your-handle" autocomplete="off">
+      </div>
+      <div class="save-row">
+        <button class="btn btn-primary jb-btn" type="button" id="savebtn">Save</button>
+        <div class="profiles" id="profiles"></div>
+      </div>
+      <p class="status" id="syncmsg" role="status" aria-live="polite"></p>
+    </div>
+
+    <div class="sync-right">
+      <h3>Sync in two steps</h3>
+      <p class="muted-14">Drag both buttons to your bookmarks bar. Press <kbd>Ctrl+Shift+B</kbd> to show it.</p>
+      <div class="bm-row">
+        <a class="bmk bmk-lc jb-chip jb-spin" id="bm-lc"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>Java Brain · LeetCode</a>
+        <a class="bmk bmk-gfg jb-chip jb-spin" id="bm-gfg"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>Java Brain · GfG</a>
+      </div>
+      <ol class="steps">
+        <li><span class="n n-y" aria-hidden="true">1</span><span>Open <a href="https://leetcode.com" target="_blank" rel="noopener">leetcode.com</a> while logged in and click the LeetCode bookmark. It brings you back here with your full solved history ticked.</span></li>
+        <li><span class="n n-g" aria-hidden="true">2</span><span>Do the same on <a href="https://www.geeksforgeeks.org" target="_blank" rel="noopener">geeksforgeeks.org</a> with the GfG bookmark.</span></li>
       </ol>
-      <p class="fine">Clicking the buttons here does nothing: they only work from the bookmarks bar while you are on those sites. Can't drag? Right-click a button, choose <i>Copy link address</i>, add a new bookmark and paste it as the URL.</p>
-      <p class="fine">The bookmarks only read your own solved list on those sites and pass it back in the link. Nothing is uploaded anywhere: usernames, ticks and synced lists stay in this browser. CodeChef does not publish solved problems, so tick those by hand. Re-run a bookmark whenever you solve more.</p>
-      <details><summary>The bookmark copied data instead of bringing me back?</summary>
-        <textarea id="pastebox" rows="3" placeholder="Paste here"></textarea> <button class="tool" id="pastebtn">Import pasted data</button>
-      </details>
+      <div class="info">
+        <div><b>Private by design.</b> The bookmarks only read your own solved list on those sites and pass it back in the link. Nothing is uploaded: usernames, ticks and synced lists stay in this browser.</div>
+        <div><b>CodeChef</b> does not publish solved problems, so tick those by hand. Re-run a bookmark whenever you solve more.</div>
+        <div>The buttons do nothing on this page. Can't drag? Right-click a button, choose Copy link address, add a new bookmark and paste it as the URL.</div>
+      </div>
+      <div class="link-row">
+        <details class="paste">
+          <summary>Bookmark copied data instead?</summary>
+          <label class="sr-only" for="pastebox">Pasted sync data</label>
+          <textarea id="pastebox" rows="3" placeholder="Paste here"></textarea>
+          <button class="linkish" type="button" id="pastebtn">Import pasted data</button>
+        </details>
+        <button class="linkish danger" type="button" id="resetbtn">Forget everything stored in this browser</button>
+      </div>
     </div>
-    <p id="syncmsg"></p>
-    <p><button class="tool" id="resetbtn">Forget everything stored in this browser</button></p>
-  </details>
-  <div class="controls-row" style="margin-top:12px">
-    <input class="search" id="q" type="search" placeholder="Filter problems, e.g. 'stack', '42', 'parentheses'">
-    <button class="chip on" data-f="all">All</button><button class="chip" data-f="todo">Unsolved</button><button class="chip" data-f="done">Solved</button>
-    <button class="tool" id="exp">Export progress</button><button class="tool" id="imp">Import progress</button><input type="file" id="impfile" accept=".json" class="hidden">
-  </div>
-  <div id="groups"></div>
-</div>
+  </section>
+
+  <section class="topics-sec" aria-labelledby="topics-h">
+    <div class="sec-head">
+      <div>
+        <h2 id="topics-h">Topics</h2>
+        <p class="muted-14" style="margin-top:4px">Pick a topic to open its problems and animations.</p>
+      </div>
+      <div class="tools">
+        <div class="search">
+          <label class="sr-only" for="q">Search problems</label>
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5F6368" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+          <input id="q" type="search" placeholder="Search problems" autocomplete="off">
+        </div>
+        <div class="segmented" role="group" aria-label="Filter">
+          <button type="button" class="jb-seg" data-f="all" aria-pressed="true">All</button>
+          <button type="button" class="jb-seg" data-f="todo" aria-pressed="false">Unsolved</button>
+          <button type="button" class="jb-seg" data-f="done" aria-pressed="false">Solved</button>
+        </div>
+      </div>
+    </div>
+    <div class="topic-grid" id="topicgrid"></div>
+  </section>
+
+  <section class="list-card jb-up" id="problems" aria-labelledby="prob-h">
+    <div class="list-head">
+      <div class="list-title">
+        <div class="line"><h2 id="prob-h"></h2><span class="cnt" id="listcnt"></span></div>
+        <div class="track"><i class="jb-bar" id="listbar"></i></div>
+      </div>
+      <a href="#" class="btn btn-danger jb-btn" id="openanim"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>Open animations</a>
+    </div>
+    <div class="scroll-x">
+      <div class="list-body" id="list"></div>
+      <div class="empty hidden" id="empty">No problems match this filter.</div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <span>Progress lives in your browser's localStorage. No account, no server.</span>
+    <span class="plats-note"><span class="c-y">LeetCode</span> · <span class="c-g">GfG</span> · <span class="c-b">CSES</span></span>
+  </footer>
+</main>
+
 <script src="assets/problem-links.js"></script>
 <script src="assets/solved.js"></script>
 <script src="assets/progress.js"></script>
 <script>
 const P = BrainProgress, esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const url = h => h.split('/').map(encodeURIComponent).join('/');
-const pages = Object.keys(BrainLinks), groups = {};
-for (const h of pages) (groups[h.includes('/', h.indexOf('/') + 1) ? h.split('/')[0] : 'Core'] ||= []).push(h);
+const pages = Object.keys(BrainLinks);
 const total = pages.reduce((n, h) => n + BrainLinks[h].length, 0);
-let filter = 'all';
-document.getElementById('sub').textContent = `${pages.length} animated topics · ${total} problems. Click a problem to open its animation, a badge to solve it, the box to mark it solved.`;
+const ABBR = { Backtracking: 'BT', 'Binary Lifting': 'BL', Bit_Magic: 'BM', DP: 'DP', Design: 'DS', Graph: 'GR', Greedy: 'GD', HashMap: 'HM', HashSet: 'HS', Heap: 'HP', 'Line Sweep': 'LS', 'Linked List': 'LL', 'Meet In The Middle': 'MM', Queue: 'QU', Recursion: 'RC', 'Segment Tree': 'ST', 'Sliding Window': 'SW', Stack: 'SK', Tree: 'TR', Trie: 'TI' };
+const TITLES = { DP: 'Dynamic Programming' };
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const platClass = n => /^LeetCode/i.test(n) ? 'plat-lc' : /^GfG/i.test(n) ? 'plat-gfg' : 'plat-cc';
+let filter = 'all', active = null;
+
+// Groups the animation pages by their top-level folder into topics with flat problem rows
+const topics = [];
+for (const h of pages) {
+  const key = h.split('/')[0];
+  let t = topics.find(x => x.key === key);
+  if (!t) topics.push(t = { key, name: TITLES[key] || key.replace(/_/g, ' '), abbr: ABBR[key] || key.slice(0, 2).toUpperCase(), pages: [], rows: [] });
+  t.pages.push(h);
+  BrainLinks[h].forEach(([title, us], i) => t.rows.push({ h, i, title, us, s: (title + ' ' + us.map(u => u[0]).join(' ') + ' ' + h).toLowerCase(), lc: us.some(u => /^LeetCode/i.test(u[0])), gfg: us.some(u => /^GfG/i.test(u[0])), cc: us.some(u => /^(CodeChef|CSES)/i.test(u[0])) || (P.synced.codechef || []).includes(title.toLowerCase().trim()), ok: false, show: true }));
+}
+document.getElementById('eyebrow').textContent = `DSA in Java · ${topics.length} topics · ${total} problems`;
+document.getElementById('total').textContent = total;
+document.getElementById('synced').textContent = P.synced.updated ? ' · synced ' + P.synced.updated : '';
+
 // Pulls a bare username out of whatever was typed: a handle, a profile URL or "@handle"
 const handle = v => { v = String(v || '').trim(); const m = v.match(/(?:\/u\/|\/profile\/|\/user\/|\/users\/)([^/?#\s]+)/); return (m ? m[1] : v.replace(/^@/, '').replace(/\/+$/, '').split('/').pop()).trim(); };
 const prof = Object.fromEntries(Object.entries(P.synced.profiles || {}).map(([k, v]) => [k, handle(v)])), base = { leetcode: 'https://leetcode.com/u/', gfg: 'https://www.geeksforgeeks.org/profile/', codechef: 'https://www.codechef.com/users/' }, names = { leetcode: 'LeetCode', gfg: 'GfG', codechef: 'CodeChef' };
 const linked = Object.keys(base).filter(k => prof[k]);
-document.getElementById('profiles').innerHTML = linked.length ? 'My profiles: ' + linked.map(k => `<a href="${base[k]}${encodeURIComponent(prof[k])}/" target="_blank" rel="noopener">${names[k]}: ${esc(prof[k])}</a>`).join('') : 'No profiles connected yet. Open the panel below to add yours.';
-document.getElementById('synced').textContent = P.synced.updated ? 'synced ' + P.synced.updated : '';
+document.getElementById('profiles').innerHTML = linked.length ? linked.map(k => `<a href="${base[k]}${encodeURIComponent(prof[k])}/" target="_blank" rel="noopener">${names[k]}: ${esc(prof[k])}</a>`).join('') : 'No profiles connected yet.';
 
-// Renders every group, topic card and problem row
-function render() {
-  document.getElementById('groups').innerHTML = Object.entries(groups).map(([g, hs]) => `<section class="group" data-g="${esc(g)}"><h2>${esc(g)} <small></small></h2><div class="topics">${hs.map(h => `
-    <div class="card topic" data-h="${esc(h)}"><h3><a href="${url(h)}">${esc(h.split('/').pop().replace(/ Animations\.html$/, ''))}</a><span class="count"></span></h3><div class="bar"><i></i></div><ol>
-    ${BrainLinks[h].map(([t, us], i) => `<li data-s="${esc((t + ' ' + us.map(u => u[0]).join(' ') + ' ' + h).toLowerCase())}" data-i="${i}"><input type="checkbox" title="Mark solved"><span class="n">${i + 1}.</span><span><a class="p" href="${url(h)}#p=${i}">${esc(t)}</a>${us.map(([n, u]) => `<a class="plat" href="${esc(u)}" target="_blank" rel="noopener">${esc(n)}</a>`).join('')}</span></li>`).join('')}</ol></div>`).join('')}</div></section>`).join('');
-  document.querySelectorAll('.topic li input').forEach(box => box.onchange = () => {
-    const li = box.closest('li'), [t, us] = BrainLinks[box.closest('.topic').dataset.h][+li.dataset.i];
-    box.checked = P.toggle(t, us);
+// Builds the topic card grid once; refresh() keeps the counts and bars current
+function renderCards() {
+  document.getElementById('topicgrid').innerHTML = topics.map((t, i) => `
+    <a href="#problems" class="topic-card jb-card jb-up h${i % 4}" data-k="${i}" style="animation-delay:${i * 40}ms">
+      <div class="top"><span class="badge" aria-hidden="true">${esc(t.abbr)}</span><span class="meta"></span></div>
+      <div class="name">${esc(t.name)}</div>
+      <div class="track"><i class="jb-grow jb-bar" style="animation-delay:${300 + i * 40}ms"></i></div>
+    </a>`).join('');
+  document.querySelectorAll('.topic-card').forEach(a => a.onclick = e => {
+    e.preventDefault();
+    showTopic(topics[+a.dataset.k]);
     refresh();
+    document.getElementById('problems').scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth', block: 'start' });
   });
-  refresh();
 }
 
-// Applies solved state, counts and the search / status filters
+// Renders the problem list card for one topic, grouped by animation page
+function showTopic(t) {
+  active = t;
+  const multi = t.pages.length > 1, anim = document.getElementById('openanim');
+  document.getElementById('prob-h').textContent = t.name;
+  anim.classList.toggle('hidden', multi);
+  if (!multi) anim.href = url(t.pages[0]);
+  document.getElementById('list').innerHTML = t.pages.map(h => {
+    const rows = t.rows.map((r, k) => [r, k]).filter(([r]) => r.h === h);
+    return `<div class="pg" data-h="${esc(h)}">${multi ? `<div class="pg-head"><span>${esc(h.split('/').pop().replace(/ Animations\.html$/, ''))}<small></small></span><a href="${url(h)}" aria-label="Open animations: ${esc(h.split('/').pop().replace(/ Animations\.html$/, ''))}">Open animations</a></div>` : ''}<ul class="plist">${rows.map(([r, k]) => `
+      <li class="jb-row" data-k="${k}"><button type="button" class="check jb-btn" aria-pressed="false" aria-label="Mark solved: ${esc(r.title)}"><span class="box"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span></button><span class="idx">${String(r.i + 1).padStart(2, '0')}</span><a class="ptitle" href="${url(h)}#p=${r.i}">${esc(r.title)}</a><span class="plats">${r.us.map(([n, u]) => `<a class="plat jb-chip ${platClass(n)}" href="${esc(u)}" target="_blank" rel="noopener">${esc(n)}</a>`).join('')}</span></li>`).join('')}</ul></div>`;
+  }).join('');
+}
+
+// Applies solved state, counts, bars and the search / status filters everywhere
 function refresh() {
   const q = document.getElementById('q').value.trim().toLowerCase();
-  let all = 0;
-  document.querySelectorAll('.group').forEach(gEl => {
-    let gs = 0, gt = 0;
-    gEl.querySelectorAll('.topic').forEach(c => {
-      const list = BrainLinks[c.dataset.h]; let s = 0, any = false;
-      c.querySelectorAll('li').forEach(li => {
-        const [t, us] = list[+li.dataset.i], ok = P.isSolved(t, us);
-        li.classList.toggle('solved', ok); li.querySelector('input').checked = ok; s += ok;
-        const show = (!q || li.dataset.s.includes(q)) && (filter === 'all' || (filter === 'done') === ok);
-        li.classList.toggle('hidden', !show); any ||= show;
-      });
-      c.querySelector('.count').textContent = `${s} / ${list.length}`;
-      c.querySelector('.bar i').style.width = (100 * s / list.length) + '%';
-      c.classList.toggle('hidden', !any);
-      gs += s; gt += list.length;
-    });
-    gEl.querySelector('h2 small').textContent = `${gs} / ${gt} solved`;
-    gEl.classList.toggle('hidden', !gEl.querySelector('.topic:not(.hidden)'));
-    all += gs;
+  let all = 0, lc = 0, gfg = 0, cc = 0;
+  topics.forEach((t, i) => {
+    let s = 0, any = false;
+    for (const r of t.rows) {
+      r.ok = P.isSolved(r.title, r.us);
+      r.show = (!q || r.s.includes(q)) && (filter === 'all' || (filter === 'done') === r.ok);
+      if (r.ok) { s++; if (r.lc) lc++; if (r.gfg) gfg++; if (r.cc) cc++; }
+      any ||= r.show;
+    }
+    t.solved = s; t.any = any; all += s;
+    const card = document.querySelector(`.topic-card[data-k="${i}"]`);
+    card.classList.toggle('hidden', !any);
+    card.querySelector('.meta').textContent = `${s} / ${t.rows.length}`;
+    card.querySelector('.track i').style.width = (100 * s / t.rows.length) + '%';
   });
-  document.getElementById('allnum').innerHTML = `<b>${all}</b> / ${total} solved (${Math.round(100 * all / total)}%)`;
-  document.getElementById('allbar').style.width = (100 * all / total) + '%';
+  if (!active.any) { const next = topics.find(t => t.any); if (next) showTopic(next); }
+  document.querySelectorAll('.topic-card').forEach(c => topics[+c.dataset.k] === active ? c.setAttribute('aria-current', 'true') : c.removeAttribute('aria-current'));
+  let visible = 0;
+  document.querySelectorAll('#list .jb-row').forEach(li => {
+    const r = active.rows[+li.dataset.k], b = li.querySelector('.check');
+    li.classList.toggle('solved', r.ok);
+    li.classList.toggle('hidden', !r.show);
+    b.setAttribute('aria-pressed', r.ok);
+    b.setAttribute('aria-label', (r.ok ? 'Mark unsolved: ' : 'Mark solved: ') + r.title);
+    visible += r.show;
+  });
+  document.querySelectorAll('#list .pg').forEach(pg => {
+    const rows = [...pg.querySelectorAll('.jb-row')], done = rows.filter(li => active.rows[+li.dataset.k].ok).length;
+    pg.classList.toggle('hidden', rows.every(li => li.classList.contains('hidden')));
+    const small = pg.querySelector('small');
+    if (small) small.textContent = `${done} / ${rows.length}`;
+  });
+  document.getElementById('empty').classList.toggle('hidden', visible > 0);
+  document.getElementById('listcnt').textContent = `${active.solved} / ${active.rows.length} solved`;
+  document.getElementById('listbar').style.width = (100 * active.solved / active.rows.length) + '%';
+  const pct = total ? Math.round(100 * all / total) : 0, frac = Math.max(total ? all / total : 0, all ? 0.02 : 0);
+  document.getElementById('solved').textContent = all;
+  document.getElementById('pct').textContent = pct + '%';
+  document.getElementById('ring').style.strokeDashoffset = Math.round(289 * (1 - frac));
+  document.getElementById('n-lc').textContent = lc;
+  document.getElementById('n-gfg').textContent = gfg;
+  document.getElementById('n-cc').textContent = cc;
 }
 
+document.getElementById('list').onclick = e => {
+  const b = e.target.closest('.check');
+  if (!b) return;
+  const r = active.rows[+b.closest('.jb-row').dataset.k];
+  const now = P.toggle(r.title, r.us);
+  refresh();
+  const tick = b.querySelector('svg');
+  tick.classList.remove('jb-pop');
+  if (now) { void tick.getBoundingClientRect(); tick.classList.add('jb-pop'); }
+};
 document.getElementById('q').oninput = refresh;
-document.querySelectorAll('.chip').forEach(b => b.onclick = () => { filter = b.dataset.f; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); refresh(); });
+document.querySelectorAll('.jb-seg').forEach(b => b.onclick = () => { filter = b.dataset.f; document.querySelectorAll('.jb-seg').forEach(x => x.setAttribute('aria-pressed', x === b)); refresh(); });
 document.getElementById('exp').onclick = () => P.exportTicks();
 document.getElementById('imp').onclick = () => document.getElementById('impfile').click();
 document.getElementById('impfile').onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { P.importTicks(t); refresh(); }); };
@@ -177,7 +309,6 @@ function bookmarklet(body) {
     document.getElementById('bm-gfg').href = bookmarklet(`if(!/(^|\\.)geeksforgeeks\\.org$/.test(location.hostname)){alert('Open geeksforgeeks.org and click this bookmark there.');return}const h=${JSON.stringify(val('gfg'))}||prompt('Your GfG handle (from geeksforgeeks.org/profile/<handle>)');if(!h)return;const d=await(await fetch('https://practiceapi.geeksforgeeks.org/api/v1/user/problems/submissions/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({handle:h,requestType:'',year:'',month:''})})).json();if(d.status!=='success'){alert('GfG says: '+(d.message||'no data'));return}const g=[];for(const lv of Object.values(d.result||{}))for(const p of Object.values(lv))g.push(p.slug);go({gfg:g,gfgUser:h});`);
   };
   wire();
-  if (!keys.some(k => prof[k])) document.getElementById('conn').open = true;
   document.getElementById('savebtn').onclick = () => {
     const p = {}; keys.forEach(k => { p[k] = val(k); });
     P.saveProfiles(p); wire();
@@ -198,11 +329,15 @@ function bookmarklet(body) {
     try { take(raw, raw.includes('"leetcode"') ? 'LeetCode' : 'GfG'); return; } catch (e) { msg.textContent = 'Could not read the synced data: ' + e; }
   }
   const note = sessionStorage.getItem('jb-msg');
-  if (note) { sessionStorage.removeItem('jb-msg'); msg.textContent = note; document.getElementById('conn').open = true; }
+  if (note) { sessionStorage.removeItem('jb-msg'); msg.textContent = note; document.getElementById('conn').scrollIntoView({ block: 'center' }); }
   document.getElementById('pastebtn').onclick = () => { try { take(document.getElementById('pastebox').value, 'Pasted'); } catch (e) { msg.textContent = 'That does not look like Java Brain sync data.'; } };
   document.getElementById('resetbtn').onclick = () => { if (confirm('Remove your usernames, ticks and synced lists from this browser?')) { P.resetAll(); location.reload(); } };
 })();
-render();
+
+renderCards();
+showTopic(topics[0]);
+void document.getElementById('ring').getBoundingClientRect();
+refresh();
 </script>
 </body>
 </html>

@@ -78,5 +78,5 @@ LIS with binary search on tails.
 
 
 ## Connected
-- Longest Increasing Subsequence
+- [Longest Increasing Subsequence](../LIS%20and%20Variants/Longest%20Increasing%20Subsequence.md)
 - [Count Good Triplets in an Array](../../Segment%20Tree/Count%20Good%20Triplets%20in%20an%20Array.md)

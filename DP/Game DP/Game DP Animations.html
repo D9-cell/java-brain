@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game DP Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../../assets/theme.css">
+<link rel="stylesheet" href="../../assets/brain-anim.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const idx = n => Array.from({ length: n }, (_, i) => i);
+const range = (a, b) => idx(Math.max(0, b - a + 1)).map(x => x + a);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+const cp = m => m.map(r => r.slice());
+const upperTri = (dp, n) => dp.map((row, i) => row.map((v, j) => j < i ? '' : v));
+
+const C_PW = `
+for (int i = n - 2; i >= 0; i--)
+    for (int j = i + 1; j < n; j++)
+        dp[j] = Math.max(nums[i] - dp[j], nums[j] - dp[j - 1]);
+return dp[n - 1] >= 0;`;
+{
+  const a = [1, 5, 233, 7], n = 4, r = recorder(), dp = Array.from({ length: n }, () => Array(n).fill(0)); a.forEach((v, i) => dp[i][i] = v);
+  const lab = { rowLabels: a, colLabels: a };
+  r.step(0, 'nums = [1,5,233,7]. dp[i][j] = best lead of the mover on nums[i..j]. A single number is its own lead.', [G('lead', upperTri(dp, n), idx(n).map(i => [i, i, 'active']), lab)]);
+  for (let len = 2; len <= n; len++) { for (let i = 0; i + len <= n; i++) { const j = i + len - 1; dp[i][j] = Math.max(a[i] - dp[i + 1][j], a[j] - dp[i][j - 1]); } r.step(ln(C_PW, 'dp[j] = Math.max'), `Windows of ${len}: take an end and subtract the opponent's lead on the rest.`, [G('lead', upperTri(dp, n), idx(n).flatMap(i => idx(n).filter(j => j - i === len - 1).map(j => [i, j, 'active'])), lab)]); }
+  r.step(ln(C_PW, 'return'), `dp[0][3] = <b>${dp[0][3]}</b> ${dp[0][3] >= 0 ? '≥ 0 → Player 1 wins' : '< 0 → Player 2 wins'}.`, [G('lead', upperTri(dp, n), [[0, 3, dp[0][3] >= 0 ? 'done' : 'bad']], lab)]);
+  ANIM['Predict the Winner'] = W('Lead DP', C_PW, r.steps);
+}
+
+const C_SG = `
+dp[i][j] = Math.max(piles[i] - dp[i + 1][j], piles[j] - dp[i][j - 1]);
+return dp[0][n - 1] > 0;`;
+{
+  const a = [5, 3, 4, 5], n = 4, r = recorder(), dp = Array.from({ length: n }, () => Array(n).fill(0)); a.forEach((v, i) => dp[i][i] = v);
+  const lab = { rowLabels: a, colLabels: a };
+  r.step(0, 'piles = [5,3,4,5]: even count, odd total (17). Alice takes all even-indexed piles (5 + 4) or all odd-indexed (3 + 5) and chooses the better: 9 vs 8.', [R('piles', a, { active: [0, 2] }), G('lead', upperTri(dp, n), [], lab)]);
+  for (let len = 2; len <= n; len++) { for (let i = 0; i + len <= n; i++) { const j = i + len - 1; dp[i][j] = Math.max(a[i] - dp[i + 1][j], a[j] - dp[i][j - 1]); } r.step(ln(C_SG, 'dp[i][j] = Math.max'), `Windows of ${len}.`, [G('lead', upperTri(dp, n), idx(n).flatMap(i => idx(n).filter(j => j - i === len - 1).map(j => [i, j, 'active'])), lab)]); }
+  r.step(ln(C_SG, 'return'), `Lead ${dp[0][3]} > 0 → <b>Alice wins</b>, as the parity argument promised.`, [G('lead', upperTri(dp, n), [[0, 3, 'done']], lab)]);
+  ANIM['Stone Game'] = W('Lead DP', C_SG, r.steps);
+}
+
+const C_OS = `
+for (int len = 1; len <= n; len++)
+    for (int i = 0; i + len <= n; i++) {
+        int j = i + len - 1;
+        int takeLeft = coins[i] + Math.min(dp[i + 2][j], dp[i + 1][j - 1]);
+        int takeRight = coins[j] + Math.min(dp[i + 1][j - 1], dp[i][j - 2]);
+        dp[i][j] = Math.max(takeLeft, takeRight);
+    }`;
+{
+  const c = [8, 15, 3, 7], n = 4, r = recorder(), dp = Array.from({ length: n + 2 }, () => Array(n + 2).fill(0));
+  const get = (i, j) => (i <= j && i >= 0 && j >= 0 && i < n && j < n) ? dp[i][j] : 0;
+  const lab = { rowLabels: [...c, '', ''], colLabels: [...c, '', ''] };
+  r.step(0, 'coins [8,15,3,7]. dp[i][j] = most the first mover collects from coins i..j.', [G('dp', cp(dp), [], lab)]);
+  for (let len = 1; len <= n; len++) { for (let i = 0; i + len <= n; i++) { const j = i + len - 1; const L = c[i] + Math.min(get(i + 2, j), get(i + 1, j - 1)), Rr = c[j] + Math.min(get(i + 1, j - 1), get(i, j - 2)); dp[i][j] = Math.max(L, Rr); } r.step(ln(C_OS, 'dp[i][j] = Math.max'), `Windows of ${len}: take an end, then the opponent leaves us the worse of two windows.`, [G('dp', cp(dp), idx(n).flatMap(i => idx(n).filter(j => j - i === len - 1).map(j => [i, j, 'active'])), lab)]); }
+  r.step(0, `Answer dp[0][3] = <b>${dp[0][3]}</b>: take 7 first, the opponent takes 8 or 3, then we take 15.`, [G('dp', cp(dp), [[0, 3, 'done']], lab)]);
+  ANIM['Optimal Strategy For A Game'] = W('Own-total DP', C_OS, r.steps);
+}
+
+const C_S7 = `
+for (int len = 2; len <= n; len++)
+    for (int i = 0; i + len <= n; i++) {
+        int j = i + len - 1;
+        dp[i][j] = Math.max(pre[j + 1] - pre[i + 1] - dp[i + 1][j],
+                            pre[j] - pre[i] - dp[i][j - 1]);
+    }`;
+{
+  const a = [5, 3, 1, 4, 2], n = 5, r = recorder(), pre = [0]; a.forEach(v => pre.push(pre[pre.length - 1] + v)); const dp = Array.from({ length: n }, () => Array(n).fill(0)), lab = { rowLabels: a, colLabels: a };
+  r.step(0, 'stones [5,3,1,4,2]. Removing an end scores the sum of the stones that remain.', [A('prefix sums', pre), G('lead', upperTri(dp, n), [], lab)]);
+  for (let len = 2; len <= n; len++) { for (let i = 0; i + len <= n; i++) { const j = i + len - 1; dp[i][j] = Math.max(pre[j + 1] - pre[i + 1] - dp[i + 1][j], pre[j] - pre[i] - dp[i][j - 1]); } r.step(ln(C_S7, 'dp[i][j] = Math.max'), `Windows of ${len}.`, [G('lead', upperTri(dp, n), idx(n).flatMap(i => idx(n).filter(j => j - i === len - 1).map(j => [i, j, 'active'])), lab)]); }
+  r.step(0, `Alice's best lead: dp[0][4] = <b>${dp[0][4]}</b>.`, [G('lead', upperTri(dp, n), [[0, 4, 'done']], lab)]);
+  ANIM['Stone Game VII'] = W('Lead DP + prefix sums', C_S7, r.steps);
+}
+
+const C_S3 = `
+for (int i = n - 1; i >= 0; i--) {
+    int take = 0, best = Integer.MIN_VALUE;
+    for (int k = 0; k < 3 && i + k < n; k++) {
+        take += stoneValue[i + k];
+        best = Math.max(best, take - dp[i + k + 1]);
+    }
+    dp[i] = best;
+}`;
+{
+  const v = [1, 2, 3, 7], n = 4, r = recorder(), dp = [0, 0, 0, 0, 0];
+  r.step(0, 'stoneValue [1,2,3,7]. dp[i] = mover\'s best lead taking 1, 2 or 3 stones from i. dp[4] = 0.', [A('stones', v), A('dp', dp)]);
+  for (let i = n - 1; i >= 0; i--) { let take = 0, best = -1e9; const opts = []; for (let k = 0; k < 3 && i + k < n; k++) { take += v[i + k]; opts.push(`take ${k + 1}: ${take} − ${dp[i + k + 1]}`); best = Math.max(best, take - dp[i + k + 1]); } dp[i] = best; r.step(ln(C_S3, 'dp[i] = best'), `i = ${i}: ${opts.join(' · ')} → dp = ${best}.`, [A('stones', v, { active: [i] }), A('dp', dp, { active: [i] })]); }
+  r.step(0, `dp[0] = ${dp[0]} < 0 → <b>Bob</b> wins.`, [A('dp', dp, { done: [0] })]);
+  ANIM['Stone Game III'] = W('1-D lead DP', C_S3, r.steps);
+}
+
+const C_S2 = `
+for (int i = n - 1; i >= 0; i--)
+    for (int M = 1; M <= n; M++) {
+        if (i + 2 * M >= n) { dp[i][M] = suffix[i]; continue; }
+        for (int X = 1; X <= 2 * M; X++)
+            best = Math.max(best, suffix[i] - dp[i + X][Math.max(M, X)]);
+        dp[i][M] = best;
+    }
+return dp[0][1];`;
+{
+  const p = [2, 7, 9, 4, 4], n = 5, r = recorder(), suf = Array(n + 1).fill(0); for (let i = n - 1; i >= 0; i--) suf[i] = suf[i + 1] + p[i];
+  const dp = Array.from({ length: n + 1 }, () => Array(n + 1).fill(0));
+  r.step(0, 'piles [2,7,9,4,4], suffix sums ' + JSON.stringify(suf) + '. dp[i][M] = most stones the mover collects from piles i...', [A('suffix', suf), G('dp[i][M]', dp.slice(0, n).map(row => row.slice(1, 4)), [], { rowLabels: idx(n), colLabels: ['M=1', 'M=2', 'M=3'] })]);
+  for (let i = n - 1; i >= 0; i--) { for (let M = 1; M <= n; M++) { if (i + 2 * M >= n) { dp[i][M] = suf[i]; continue; } let best = 0; for (let X = 1; X <= 2 * M; X++) best = Math.max(best, suf[i] - dp[i + X][Math.max(M, X)]); dp[i][M] = best; } r.step(ln(C_S2, 'dp[i][M] = best'), `Row i = ${i}: either take everything left (when 2M covers it) or the best X.`, [G('dp[i][M]', dp.slice(0, n).map(row => row.slice(1, 4)), [[i, 0, 'active'], [i, 1, 'active'], [i, 2, 'active']], { rowLabels: idx(n), colLabels: ['M=1', 'M=2', 'M=3'] })]); }
+  r.step(ln(C_S2, 'return'), `Answer dp[0][1] = <b>${dp[0][1]}</b>.`, [G('dp[i][M]', dp.slice(0, n).map(row => row.slice(1, 4)), [[0, 0, 'done']], { rowLabels: idx(n), colLabels: ['M=1', 'M=2', 'M=3'] })]);
+  ANIM['Stone Game II'] = W('2-D DP over (i, M)', C_S2, r.steps);
+}
+
+const C_S8 = `
+int best = pre[n - 1];
+for (int i = n - 2; i >= 1; i--)
+    best = Math.max(best, pre[i] - best);
+return best;`;
+{
+  const s = [-1, 2, -3, 4, -5], n = 5, r = recorder(), pre = []; s.forEach((v, i) => pre.push((pre[i - 1] || 0) + v));
+  r.step(0, 'stones [−1,2,−3,4,−5]. Prefix sums = ' + JSON.stringify(pre) + '. A move jumps to some prefix index ≥ 1.', [A('stones', s), A('pre', pre)]);
+  let best = pre[n - 1];
+  r.step(ln(C_S8, 'int best'), `Start: the last move takes everything and ends the game: best = ${best}.`, [A('pre', pre, { done: [n - 1] }), R('best', [best])]);
+  for (let i = n - 2; i >= 1; i--) { const nb = Math.max(best, pre[i] - best); r.step(ln(C_S8, 'best = Math.max'), `i = ${i}: max(${best}, pre[${i}] − ${best}) = max(${best}, ${pre[i] - best}) = ${nb}.`, [A('pre', pre, { active: [i] }), R('best', [nb])]); best = nb; }
+  r.step(ln(C_S8, 'return'), `Alice's lead: <b>${best}</b>.`, [R('best', [best], { done: [0] })]);
+  ANIM['Stone Game VIII'] = W('Prefix sums, one pass', C_S8, r.steps);
+}
+
+const C_S4 = `
+boolean[] win = new boolean[n + 1];
+for (int i = 1; i <= n; i++)
+    for (int s = 1; s * s <= i && !win[i]; s++)
+        win[i] = !win[i - s * s];
+return win[n];`;
+{
+  const n = 7, r = recorder(), win = [false]; 
+  r.step(0, 'n = 7. win[i] = the mover wins with i stones. win[0] = false (no move).', [A('win', win)]);
+  for (let i = 1; i <= n; i++) { let w = false, via = null; for (let s = 1; s * s <= i && !w; s++) if (!win[i - s * s]) { w = true; via = s * s; } win.push(w); r.step(ln(C_S4, 'win[i] = !win[i - s * s]'), w ? `i = ${i}: remove ${via} → ${i - via} stones is a losing spot for the opponent → win.` : `i = ${i}: every square leaves the opponent winning → lose.`, [A('win', win.map(b => b ? 'W' : 'L'), { active: [i], done: win.map((b, k) => b ? k : -1).filter(k => k >= 0 && k !== i), bad: win.map((b, k) => !b ? k : -1).filter(k => k >= 0 && k !== i) })]); }
+  r.step(ln(C_S4, 'return'), `win[7] = <b>${win[7]}</b>: Alice loses.`, [A('win', win.map(b => b ? 'W' : 'L'), { bad: [7] })]);
+  ANIM['Stone Game IV'] = W('Boolean DP', C_S4, r.steps);
+}
+
+const C_S5 = `
+for (int len = 2; len <= n; len++)
+    for (int l = 0; l + len <= n; l++) {
+        int r = l + len - 1, best = 0;
+        for (int k = l; k < r; k++) {
+            int left = pre[k + 1] - pre[l], right = pre[r + 1] - pre[k + 1];
+            if (left < right) best = Math.max(best, left + dp[l][k]);
+            else if (left > right) best = Math.max(best, right + dp[k + 1][r]);
+            else best = Math.max(best, left + Math.max(dp[l][k], dp[k + 1][r]));
+        }
+        dp[l][r] = best;
+    }`;
+{
+  const v = [6, 2, 3, 4, 5, 5], n = 6, r = recorder(), pre = [0]; v.forEach(x => pre.push(pre[pre.length - 1] + x)); const dp = Array.from({ length: n }, () => Array(n).fill(0)), lab = { rowLabels: v, colLabels: v };
+  r.step(0, 'stones [6,2,3,4,5,5]. Alice splits, Bob discards the larger half, Alice scores the remaining half and continues on it.', [A('stones', v), G('best score', upperTri(dp, n), [], lab)]);
+  for (let len = 2; len <= n; len++) { for (let l = 0; l + len <= n; l++) { const rr = l + len - 1; let best = 0; for (let k = l; k < rr; k++) { const L = pre[k + 1] - pre[l], R2 = pre[rr + 1] - pre[k + 1]; if (L < R2) best = Math.max(best, L + dp[l][k]); else if (L > R2) best = Math.max(best, R2 + dp[k + 1][rr]); else best = Math.max(best, L + Math.max(dp[l][k], dp[k + 1][rr])); } dp[l][rr] = best; } r.step(ln(C_S5, 'dp[l][r] = best'), `Rows of ${len} stones: try every split, keep the smaller half.`, [G('best score', upperTri(dp, n), idx(n).flatMap(i => idx(n).filter(j => j - i === len - 1).map(j => [i, j, 'active'])), lab)]); }
+  r.step(0, `Alice's best score: dp[0][5] = <b>${dp[0][5]}</b>.`, [G('best score', upperTri(dp, n), [[0, 5, 'done']], lab)]);
+  ANIM['Stone Game V'] = W('Interval DP', C_S5, r.steps);
+}
+
+const C_S9 = `
+int[] cnt = new int[3];
+for (int s : stones) cnt[s % 3]++;
+if (cnt[0] % 2 == 0) return cnt[1] >= 1 && cnt[2] >= 1;
+return Math.abs(cnt[1] - cnt[2]) >= 3;`;
+{
+  const cases = [[[2, 1], 'Alice picks 1, Bob must pick 2 (sum 3 → he loses).'], [[2], 'Alice\'s only move makes the sum 2; Bob has no stones, so Bob wins automatically... Alice loses.'], [[5, 1, 2, 4, 3], 'one zero (odd), c1 = 2, c2 = 2: difference 0 < 3.']];
+  const r = recorder();
+  cases.forEach(([st, note]) => { const cnt = [0, 0, 0]; st.forEach(s => cnt[s % 3]++); const res = cnt[0] % 2 === 0 ? cnt[1] >= 1 && cnt[2] >= 1 : Math.abs(cnt[1] - cnt[2]) >= 3; r.step(ln(C_S9, 'cnt[s % 3]++'), `stones [${st}] → residue counts [c0, c1, c2] = [${cnt}]. ${note}`, [R('stones', st), R('[c0, c1, c2]', cnt, { active: [0, 1, 2] })]); r.step(ln(C_S9, cnt[0] % 2 === 0 ? 'if (cnt[0] % 2 == 0)' : 'return Math.abs'), cnt[0] % 2 === 0 ? `c0 = ${cnt[0]} is even: Alice needs a 1 and a 2 → <b>${res}</b>.` : `c0 = ${cnt[0]} is odd: Alice needs |c1 − c2| ≥ 3; |${cnt[1]} − ${cnt[2]}| = ${Math.abs(cnt[1] - cnt[2])} → <b>${res}</b>.`, [R('Alice wins?', [String(res)], { done: res ? [0] : [], bad: res ? [] : [0] })]); });
+  ANIM['Stone Game IX'] = W('Counting residues', C_S9, r.steps);
+}
+
+const C_KP = `
+dist[i][j] = knight BFS distance between points i and j (index 0 = knight, 1..n = pawns)
+int play(int at, int mask) {
+    boolean alice = (n - Integer.bitCount(mask)) % 2 == 0;
+    for each pawn i in mask:
+        total = dist[at][i + 1] + play(i + 1, mask ^ (1 << i));
+        best = alice ? max(best, total) : min(best, total);
+    return memo[at][mask] = best;
+}`;
+{
+  const r = recorder(), pts = [[0, 2], [1, 1], [2, 2], [3, 3]], names = ['K', 'P1', 'P2', 'P3'], n = 3;
+  const bfs = src => { const d = new Map([[src.join(), 0]]), q = [src]; while (q.length) { const [x, y] = q.shift(); for (const [dx, dy] of [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]]) { const a = x + dx, b = y + dy; if (a >= 0 && a < 50 && b >= 0 && b < 50 && !d.has(a + ',' + b)) { d.set(a + ',' + b, d.get(x + ',' + y) + 1); q.push([a, b]); } } } return pts.map(p => d.get(p.join())); };
+  const dist = pts.map(bfs), memo = {};
+  const play = (at, mask) => { if (!mask) return 0; const key = at + ',' + mask; if (key in memo) return memo[key]; const alice = (n - [...Array(n).keys()].filter(i => mask >> i & 1).length) % 2 === 0; let best = alice ? -1 : 1e9; for (let i = 0; i < n; i++) if (mask >> i & 1) { const t = dist[at][i + 1] + play(i + 1, mask ^ (1 << i)); best = alice ? Math.max(best, t) : Math.min(best, t); } return memo[key] = best; };
+  r.step(0, 'Knight at (0,2), pawns P1 (1,1), P2 (2,2), P3 (3,3). A BFS from every point gives all knight distances.', [R('points', ['K(0,2)', 'P1(1,1)', 'P2(2,2)', 'P3(3,3)'])]);
+  r.step(ln(C_KP, 'dist[i][j]'), `Distances from K: ${[1, 2, 3].map(i => `${names[i]} ${dist[0][i]}`).join(', ')}. Between pawns: P1P2 ${dist[1][2]}, P1P3 ${dist[1][3]}, P2P3 ${dist[2][3]}.`, [R('K →', [1, 2, 3].map(i => dist[0][i])), R('P1P2, P1P3, P2P3', [dist[1][2], dist[1][3], dist[2][3]])]);
+  r.step(ln(C_KP, 'boolean alice'), 'Alice moves with 3 pawns left (maximise), Bob with 2 (minimise), Alice with 1.', [R('mover', ['Alice (3 left)', 'Bob (2 left)', 'Alice (1 left)'])]);
+  const opts = [0, 1, 2].map(i => `${names[i + 1]} first: ${dist[0][i + 1] + play(i + 1, 7 ^ (1 << i))}`);
+  r.step(ln(C_KP, 'return memo'), `Alice's options: ${opts.join(' · ')}. She takes the largest: <b>${play(0, 7)}</b>.`, [R('answer', [play(0, 7)], { done: [0] })]);
+  ANIM['Maximum Number of Moves to Kill All Pawns'] = W('BFS + mask minimax', C_KP, r.steps);
+}
+
+const META = [{"name": "Predict the Winner", "hook": "Track the <b>lead</b> (mover minus opponent). Taking an end gains it and gives the opponent the lead on what is left.", "mantra": "dp[i][j] = max(a[i] − dp[i+1][j], a[j] − dp[i][j−1])", "statement": "Two players alternately take a number from either end of nums. Player 1 starts. Return true if player 1 can win (a tie counts as a win).", "recall": [["Why subtract dp of the rest?", "The opponent is the mover there, so their lead counts against us."], ["Why ≥ 0?", "A tied total goes to player 1 in this problem."]], "links": [["Stone Game", 1], ["Stone Game VII", 3], ["Optimal Strategy For A Game", 2]]}, {"name": "Stone Game", "hook": "With an <b>even number of piles and an odd total</b>, Alice can lock in all even-indexed or all odd-indexed piles. She picks the larger group.", "mantra": "RETURN true", "statement": "Alice and Bob take piles from either end; the number of piles is even and the total is odd. Alice starts. Return true if Alice wins.", "recall": [["What if the total could be even?", "Then a tie is possible and the DP must be used."], ["Why does Alice control parity?", "After her pick the remaining ends have the same parity, so Bob always exposes the other parity."]], "links": [["Predict the Winner", 0]]}, {"name": "Optimal Strategy For A Game", "hook": "Take an end, then the opponent takes the <b>best</b> end of what is left, which leaves us the worse option.", "mantra": "dp[i][j] = max(a[i] + min(dp[i+2][j], dp[i+1][j−1]), a[j] + min(dp[i+1][j−1], dp[i][j−2]))", "statement": "Coins in a row, two players take from either end alternately. Return the maximum amount the first player can collect.", "recall": [["Why min?", "The opponent plays perfectly, so we get the worse of the two leftovers."], ["Same as lead DP?", "Yes; total = (sum + lead) / 2."]], "links": [["Predict the Winner", 0], ["Stone Game VII", 3]]}, {"name": "Stone Game VII", "hook": "Removing an end <b>scores the sum of what remains</b>, so the gain is a range sum.", "mantra": "dp[i][j] = max(sum(i+1..j) − dp[i+1][j], sum(i..j−1) − dp[i][j−1])", "statement": "Players alternately remove the leftmost or rightmost stone and score the sum of the remaining stones. Alice wants to maximise and Bob to minimise the score difference. Return Alice's best lead.", "recall": [["Why prefix sums?", "Each gain is a range sum, needed in O(1)."], ["Why a lead and not a score?", "Only the difference matters, which is one number per state."]], "links": [["Predict the Winner", 0], ["Stone Game", 1]]}, {"name": "Stone Game III", "hook": "Take 1, 2 or 3 stones from the front. The lead from here is the <b>best of three prefix gains minus the opponent's lead</b>.", "mantra": "dp[i] = max over k = 1..3 of (sum of k stones − dp[i+k])", "statement": "Stones in a row with values (possibly negative). Each turn take 1 to 3 stones from the front. Return \"Alice\", \"Bob\" or \"Tie\".", "recall": [["Why track a lead?", "It handles negative stones and ties with a single number."], ["Base?", "dp[n] = 0 with no stones left."]], "links": [["Stone Game II", 5], ["Stone Game VIII", 6]]}, {"name": "Stone Game II", "hook": "The state is <b>(start, M)</b>: the mover can take 1..2M piles and M becomes max(M, taken).", "mantra": "dp[i][M] = max over X ≤ 2M of suffix[i] − dp[i+X][max(M, X)]", "statement": "Piles in a row. On a turn a player takes the first X piles with 1 ≤ X ≤ 2M, then M = max(M, X); M starts at 1. Return the most stones Alice can collect.", "recall": [["Why is M at most n?", "More than n piles can never be taken."], ["Why suffix sums?", "The total that remains is needed to turn the opponent's take into ours."]], "links": [["Stone Game III", 4], ["Predict the Winner", 0]]}, {"name": "Stone Game VIII", "hook": "Taking x stones leaves their <b>prefix sum</b> as the new first stone, so a move is \"jump to prefix i\".", "mantra": "best = max(best, pre[i] − best), WALKING i FROM THE END", "statement": "Players alternately remove x &gt; 1 stones from the left, score their sum and put a stone with that sum back on the left. The game ends with one stone. Return Alice's lead.", "recall": [["Why start from pre[n−1]?", "The last allowed move takes everything and ends the game."], ["Why is x &gt; 1 shown as i ≥ 1?", "pre[0] would mean taking just one stone."]], "links": [["Stone Game III", 4], ["Stone Game VII", 3]]}, {"name": "Stone Game IV", "hook": "A position is <b>winning</b> if some square move leaves the opponent in a losing one.", "mantra": "win[i] = ∃ s: !win[i − s²]", "statement": "Players alternately remove a non-zero square number of stones from a pile of n. A player who cannot move loses. Return true if Alice wins.", "recall": [["Why is win[0] false?", "The player to move has no stones to remove."], ["Early exit?", "The loop stops as soon as one winning move is found."]], "links": [["Stone Game III", 4]]}, {"name": "Stone Game V", "hook": "Alice splits, Bob throws the <b>larger</b> half; Alice keeps the smaller half's sum and continues on it.", "mantra": "dp[l][r] = max over k of min-half sum + dp[that half] (tie: either)", "statement": "Alice splits a row of stones into two non-empty parts. Bob discards the part with the larger sum (Alice chooses on a tie) and Alice scores the sum of the remaining part. The game continues on that part. Return Alice's maximum score.", "recall": [["Why no minimising player?", "Bob's choice is forced by the rule, only ties give Alice a choice."], ["Optimise?", "Monotonic split points bring it to O(n²) or O(n log n)."]], "links": [["Stone Game VII", 3]]}, {"name": "Stone Game IX", "hook": "Only <b>stone % 3</b> matters. Zeros act as passes, so parity of the zero count decides the shape.", "mantra": "zeros even → need both 1s and 2s · zeros odd → |c1 − c2| ≥ 3", "statement": "Players remove stones in turn; whoever makes the sum of removed stones divisible by 3 loses. If all stones are gone Bob wins. Alice starts. Return true if Alice wins.", "recall": [["Why do zeros matter only by parity?", "A zero never changes the sum mod 3, only whose turn it is."], ["How was it checked?", "Against a full game search on small multisets."]], "links": [["Stone Game IV", 7]]}, {"name": "Maximum Number of Moves to Kill All Pawns", "hook": "Precompute <b>knight distances</b> between all points, then play a minimax game over (where the knight is, pawns left).", "mantra": "Alice: max of d + play(next) · Bob: min of d + play(next)", "statement": "A knight and up to 15 pawns sit on a 50 × 50 board. Players alternate; the mover picks any remaining pawn and captures it by a shortest knight path (other pawns passed on the way stay). Alice maximises the total number of moves, Bob minimises it. Return the total with optimal play.", "recall": [["Why does the mask give the turn?", "Each turn removes exactly one pawn, so the parity of removed pawns is the turn."], ["Why a BFS per point?", "The board is fixed at 50 × 50 and there are at most 16 points."]], "links": [["Stone Game III", 4]]}];
+mount({
+  title: "Game DP Animations",
+  sub: "Two perfect players: define <b>dp = the mover's best result</b> and subtract the opponent's best from the rest.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

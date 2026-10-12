@@ -82,8 +82,27 @@ Each topic folder has `<Topic> Animations.html`; the Java lives in each problem 
 | Scans and Counting | 17 | `Greedy/Scans and Counting/…` |
 | Strings and Digits | 26 | `Greedy/Strings and Digits/…` |
 
+**DP: ✅ done** (211 notes in 14 pages). Problems that Greedy, Heap, Graph or Recursion already cover are not repeated here (Furthest Building, Fractional Knapsack, Freedom Trail, Constrained Subsequence Sum, Minimum Number of Taps, Maximum Length of a Concatenated String). Every solution was checked against a brute-force search or the published samples.
+
+| Topic | Problems | Page |
+| --- | --- | --- |
+| Stairs and Robbers | 21 | `DP/Stairs and Robbers/…` |
+| Counting Walks and Moves | 24 | `DP/Counting Walks and Moves/…` |
+| Jumps and Reach | 15 | `DP/Jumps and Reach/…` |
+| Stock and Kadane States | 14 | `DP/Stock and Kadane States/…` |
+| Knapsack Series | 19 | `DP/Knapsack Series/…` |
+| Strings and Subsequences | 16 | `DP/Strings and Subsequences/…` |
+| Palindromes and Word Splits | 13 | `DP/Palindromes and Word Splits/…` |
+| LIS and Variants | 21 | `DP/LIS and Variants/…` |
+| Grid Paths | 19 | `DP/Grid Paths/…` |
+| Grid Shapes and Colorings | 9 | `DP/Grid Shapes and Colorings/…` |
+| Interval DP | 12 | `DP/Interval DP/…` |
+| Game DP | 11 | `DP/Game DP/…` |
+| Scheduling and Partitions | 8 | `DP/Scheduling and Partitions/…` |
+| Bitmask Digit and Tree DP | 9 | `DP/Bitmask Digit and Tree DP/…` |
+
 ### Still to do ⏳
-Mathematical 83 · strings 112 · DP 212 · Arrays 383
+Mathematical 83 · strings 112 · Arrays 383 · Design (33 C++ files, check overlap with the Design topic)
 
 ## Bugs found in the originals while porting
 - **Array Pair Sum Divisibility** (HashSet): the set-based approach returns false for `[1,1,3,3], k=4`. Fixed with remainder counts.

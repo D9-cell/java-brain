@@ -80,4 +80,4 @@ Integer Break and Coin Change.
 ## Connected
 - [Maximize The Cut Segments](Maximize%20The%20Cut%20Segments.md)
 - [Integer Break](../Stairs%20and%20Robbers/Integer%20Break.md)
-- Minimum Cost to Cut a Stick
+- [Minimum Cost to Cut a Stick](../Interval%20DP/Minimum%20Cost%20to%20Cut%20a%20Stick.md)

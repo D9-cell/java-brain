@@ -61,5 +61,5 @@ Differences of two ints can overflow: compute with long.
 
 
 ## Connected
-- Longest Increasing Subsequence
+- [Longest Increasing Subsequence](../LIS%20and%20Variants/Longest%20Increasing%20Subsequence.md)
 - [Jump Game II](Jump%20Game%20II.md)

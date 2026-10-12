@@ -60,4 +60,4 @@ graph LR
 ## Connections to other folders
 - [Strings and Subsequences - Pattern Map](../Strings%20and%20Subsequences/Strings%20and%20Subsequences%20-%20Pattern%20Map.md) for DP over two strings
 - [Word Break II](../../Backtracking/Word%20Break%20II.md) (Backtracking) to list every sentence
-- Interval DP - Pattern Map for range DP beyond palindromes
+- [Interval DP - Pattern Map](../Interval%20DP/Interval%20DP%20-%20Pattern%20Map.md) for range DP beyond palindromes
