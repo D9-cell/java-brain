@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Binary Search Basics Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="../../assets/theme.js?v=ce4f40b5"></script>
+<link rel="stylesheet" href="../../assets/theme.css?v=2cbf3e72">
+<link rel="stylesheet" href="../../assets/brain-anim.css?v=e07110a9">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js?v=f94ac422"></script>
+<script src="../../assets/solved.js?v=c282a395"></script>
+<script src="../../assets/progress.js?v=bc9e66cc"></script>
+<script src="../../assets/brain-anim.js?v=b6ab0e15"></script>
+<script src="../../assets/tree-kit.js?v=33d554bc"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const range = (a, b) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+const P = (lo, mid, hi, n) => { const p = {}; if (lo < n) p[lo] = 'lo'; if (hi >= 0 && hi < n) p[hi] = (p[hi] ? p[hi] + '/' : '') + 'hi'; if (mid !== null && mid >= 0 && mid < n) p[mid] = (p[mid] ? p[mid] + '/' : '') + 'mid'; return p; };
+const BA = (name, a, lo, mid, hi, o = {}) => A(name, a, { ptr: P(lo, mid, hi, a.length), ghost: range(0, a.length - 1).filter(i => i < lo || i > hi), ...o });
+
+const C_BS = `
+while (lo <= hi) {
+    int mid = lo + (hi - lo) / 2;
+    if (nums[mid] == target) return mid;
+    if (nums[mid] < target) lo = mid + 1;
+    else hi = mid - 1;
+}
+return -1;`;
+{
+  const a = [-1, 0, 3, 5, 9, 12], t = 9, r = recorder(); let lo = 0, hi = a.length - 1;
+  while (lo <= hi) { const mid = lo + Math.floor((hi - lo) / 2); if (a[mid] === t) { r.step(ln(C_BS, 'return mid'), `nums[${mid}] = ${t} → <b>${mid}</b>.`, [BA('nums', a, lo, mid, hi, { done: [mid] })], { lo, mid, hi }); break; } const right = a[mid] < t; r.step(ln(C_BS, right ? 'lo = mid + 1' : 'hi = mid - 1'), `nums[${mid}] = ${a[mid]} ${right ? '<' : '>'} ${t} → drop the ${right ? 'left' : 'right'} half.`, [BA('nums', a, lo, mid, hi, { active: [mid] })], { lo, mid, hi }); if (right) lo = mid + 1; else hi = mid - 1; }
+  ANIM['Binary Search'] = W('Closed range', C_BS, r.steps);
+}
+
+const C_GN = `
+int g = guess(mid);
+if (g == 0) return mid;
+if (g < 0) hi = mid - 1;
+else lo = mid + 1;`;
+{
+  const n = 10, pick = 6, r = recorder(), a = range(1, n); let lo = 1, hi = n;
+  while (lo <= hi) { const mid = lo + Math.floor((hi - lo) / 2), g = Math.sign(pick - mid); r.step(ln(C_GN, g === 0 ? 'return mid' : g < 0 ? 'hi = mid - 1' : 'lo = mid + 1'), `guess(${mid}) = ${g}${g === 0 ? ' → found <b>' + mid + '</b>' : g < 0 ? ' (too high)' : ' (too low)'}.`, [BA('1..10', a, lo - 1, mid - 1, hi - 1, g === 0 ? { done: [mid - 1] } : { active: [mid - 1] })], { lo, mid, hi }); if (!g) break; if (g < 0) hi = mid - 1; else lo = mid + 1; }
+  ANIM['Guess Number Higher or Lower'] = W('Binary search', C_GN, r.steps);
+}
+
+const C_SL = `
+while (lo < hi) {
+    int mid = (lo + hi) / 2;
+    if (letters[mid] <= target) lo = mid + 1;
+    else hi = mid;
+}
+return letters[lo % letters.length];`;
+{
+  const L = ['c', 'f', 'j'], r = recorder();
+  for (const t of ['c', 'k']) { let lo = 0, hi = L.length; while (lo < hi) { const mid = (lo + hi) >> 1; const right = L[mid] <= t; r.step(ln(C_SL, right ? 'lo = mid + 1' : 'hi = mid;'), `target '${t}': letters[${mid}] = '${L[mid]}' ${right ? '≤' : '>'} target.`, [A('letters', L, { ptr: P(lo, mid, hi, 3), active: [mid] })], { lo, hi }); if (right) lo = mid + 1; else hi = mid; } r.step(ln(C_SL, 'return'), `lo = ${lo} → '${L[lo % 3]}'${lo === 3 ? ' (wrapped around)' : ''}.`, [A('letters', L, { done: [lo % 3] })]); }
+  ANIM['Find Smallest Letter Greater Than Target'] = W('Upper bound', C_SL, r.steps);
+}
+
+const C_FL = `
+int first = lowerBound(nums, target);
+if (first == nums.length || nums[first] != target) return new int[]{-1, -1};
+return new int[]{first, lowerBound(nums, target + 1) - 1};`;
+{
+  const a = [5, 7, 7, 8, 8, 10], r = recorder(), lb = x => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < x) lo = m + 1; else hi = m; } return lo; };
+  r.step(ln(C_FL, 'int first'), `lowerBound(8) = ${lb(8)}: first value ≥ 8.`, [A('nums', a, { active: [lb(8)] })], { first: lb(8) });
+  r.step(ln(C_FL, 'lowerBound(nums, target + 1)'), `lowerBound(9) = ${lb(9)}: first value ≥ 9, so the last 8 is at ${lb(9) - 1}.`, [A('nums', a, { active: [lb(9)], done: [lb(8), lb(9) - 1] })]);
+  r.step(ln(C_FL, 'return new int[]{first'), `Answer <b>[${lb(8)}, ${lb(9) - 1}]</b>.`, [A('nums', a, { done: range(lb(8), lb(9) - 1) })]);
+  ANIM['Find First and Last Position of Element in Sorted Array'] = W('Two lower bounds', C_FL, r.steps);
+}
+
+const C_25 = `
+for (int pos : new int[]{n / 4, n / 2, 3 * n / 4}) {
+    int x = arr[pos];
+    if (lowerBound(arr, x + 1) - lowerBound(arr, x) > n / 4) return x;
+}`;
+{
+  const a = [1, 2, 2, 6, 6, 6, 6, 7, 10], n = a.length, r = recorder(), lb = x => a.findIndex(v => v >= x) === -1 ? n : a.findIndex(v => v >= x);
+  r.step(0, `n = ${n}: a run longer than ${Math.floor(n / 4)} must cover index ${Math.floor(n / 4)}, ${Math.floor(n / 2)} or ${Math.floor(3 * n / 4)}.`, [A('arr', a, { warn: [Math.floor(n / 4), Math.floor(n / 2), Math.floor(3 * n / 4)] })]);
+  for (const pos of [Math.floor(n / 4), Math.floor(n / 2)]) { const x = a[pos], len = lb(x + 1) - lb(x); r.step(ln(C_25, 'lowerBound(arr, x + 1)'), `Candidate ${x} at ${pos}: run length ${len} ${len > Math.floor(n / 4) ? `> ${Math.floor(n / 4)} → <b>${x}</b>` : '— too short'}.`, [A('arr', a, len > Math.floor(n / 4) ? { done: range(lb(x), lb(x + 1) - 1) } : { active: range(lb(x), lb(x + 1) - 1) })]); if (len > Math.floor(n / 4)) break; }
+  ANIM['Element Appearing More Than 25% In Sorted Array'] = W('Quarter points', C_25, r.steps);
+}
+
+const C_KM = `
+while (lo < hi) {
+    int mid = (lo + hi) / 2;
+    if (arr[mid] - mid - 1 < k) lo = mid + 1;
+    else hi = mid;
+}
+return lo + k;`;
+{
+  const a = [2, 3, 4, 7, 11], k = 5, r = recorder(), miss = a.map((v, i) => v - i - 1); let lo = 0, hi = a.length;
+  r.step(0, 'Missing numbers before each index: arr[i] − i − 1.', [A('arr', a), A('missing', miss)]);
+  while (lo < hi) { const mid = (lo + hi) >> 1; const right = miss[mid] < k; r.step(ln(C_KM, right ? 'lo = mid + 1' : 'hi = mid;'), `missing[${mid}] = ${miss[mid]} ${right ? '<' : '≥'} k = ${k}.`, [A('missing', miss, { ptr: P(lo, mid, Math.min(hi, 4), 5), active: [mid] })], { lo, hi }); if (right) lo = mid + 1; else hi = mid; }
+  r.step(ln(C_KM, 'return lo + k'), `lo = ${lo} → answer ${lo} + ${k} = <b>${lo + k}</b>.`, [R('answer', [lo + k], { done: [0] })]);
+  ANIM['Kth Missing Positive Number'] = W('Binary search on missing count', C_KM, r.steps);
+}
+
+const C_SE = `
+int mid = (lo + hi) / 2;
+if (mid % 2 == 1) mid--;
+if (nums[mid] == nums[mid + 1]) lo = mid + 2;
+else hi = mid;`;
+{
+  const a = [1, 1, 2, 3, 3, 4, 4, 8, 8], r = recorder(); let lo = 0, hi = a.length - 1;
+  while (lo < hi) { let mid = (lo + hi) >> 1; if (mid % 2) mid--; const intact = a[mid] === a[mid + 1]; r.step(ln(C_SE, intact ? 'lo = mid + 2' : 'hi = mid;'), `mid = ${mid} (even): ${a[mid]} ${intact ? '=' : '≠'} ${a[mid + 1]} → single is ${intact ? 'to the right' : 'here or to the left'}.`, [BA('nums', a, lo, mid, hi, { active: [mid, mid + 1] })], { lo, hi }); if (intact) lo = mid + 2; else hi = mid; }
+  r.step(0, `Single element <b>${a[lo]}</b>.`, [A('nums', a, { done: [lo] })]);
+  ANIM['Single Element in a Sorted Array'] = W('Even-index search', C_SE, r.steps);
+}
+
+const C_PK = `
+while (lo < hi) {
+    int mid = (lo + hi) / 2;
+    if (arr[mid] < arr[mid + 1]) lo = mid + 1;
+    else hi = mid;
+}`;
+{
+  const a = [0, 2, 5, 8, 6, 3, 1], r = recorder(); let lo = 0, hi = a.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1, up = a[mid] < a[mid + 1]; r.step(ln(C_PK, up ? 'lo = mid + 1' : 'hi = mid;'), `arr[${mid}] = ${a[mid]} ${up ? '<' : '>'} arr[${mid + 1}] = ${a[mid + 1]} → ${up ? 'rising, peak is right' : 'falling, peak is here or left'}.`, [BA('arr', a, lo, mid, hi, { active: [mid, mid + 1] })], { lo, hi }); if (up) lo = mid + 1; else hi = mid; }
+  r.step(0, `Peak at <b>${lo}</b>.`, [A('arr', a, { done: [lo] })]);
+  ANIM['Peak Index in a Mountain Array'] = W('Slope search', C_PK, r.steps);
+}
+
+const C_MA = `
+int peak = lo;
+int left = search(m, target, 0, peak, true);
+return left != -1 ? left : search(m, target, peak + 1, n - 1, false);`;
+{
+  const a = [1, 2, 3, 4, 5, 3, 1], r = recorder();
+  r.step(ln(C_MA, 'int peak'), 'Slope search finds the peak at index 4.', [A('mountain', a, { warn: [4] })], { peak: 4 });
+  r.step(ln(C_MA, 'int left'), 'Search target 3 in the rising part [0..4] → found at 2.', [A('mountain', a, { done: [2], ghost: [5, 6] })], { left: 2 });
+  r.step(ln(C_MA, 'return left'), 'Left side found it, so return <b>2</b> (index 5 also holds 3 but is larger).', [A('mountain', a, { done: [2], warn: [5] })]);
+  ANIM['Find in Mountain Array'] = W('Three searches', C_MA, r.steps);
+}
+
+const C_AP = `
+int n = arr.length, d = (arr[n - 1] - arr[0]) / n;
+while (lo < hi) {
+    int mid = (lo + hi) / 2;
+    if (arr[mid] == arr[0] + mid * d) lo = mid + 1;
+    else hi = mid;
+}
+return arr[0] + lo * d;`;
+{
+  const a = [5, 7, 11, 13], r = recorder(), d = (13 - 5) / 4; let lo = 0, hi = 3;
+  r.step(ln(C_AP, 'int n'), `d = (13 − 5) / 4 = ${d}. Expected: ${a.map((_, i) => 5 + i * d).join(', ')}.`, [A('arr', a), A('expected', a.map((_, i) => 5 + i * d))]);
+  while (lo < hi) { const mid = (lo + hi) >> 1, ok = a[mid] === 5 + mid * d; r.step(ln(C_AP, ok ? 'lo = mid + 1' : 'hi = mid;'), `arr[${mid}] = ${a[mid]} ${ok ? '= expected → gap is right' : `≠ ${5 + mid * d} → gap is here or left`}.`, [BA('arr', a, lo, mid, hi, { active: [mid] })], { lo, hi }); if (ok) lo = mid + 1; else hi = mid; }
+  r.step(ln(C_AP, 'return'), `Missing <b>${5 + lo * d}</b>.`, [R('answer', [5 + lo * d], { done: [0] })]);
+  ANIM['Missing Number In Arithmetic Progression'] = W('Binary search', C_AP, r.steps);
+}
+
+const C_2D = `
+int mid = (lo + hi) / 2, v = matrix[mid / n][mid % n];
+if (v == target) return true;
+if (v < target) lo = mid + 1;
+else hi = mid - 1;`;
+{
+  const m = [[1, 3, 5, 7], [10, 11, 16, 20], [23, 30, 34, 60]], t = 3, r = recorder(); let lo = 0, hi = 11;
+  while (lo <= hi) { const mid = (lo + hi) >> 1, v = m[Math.floor(mid / 4)][mid % 4]; r.step(ln(C_2D, v === t ? 'return true' : v < t ? 'lo = mid + 1' : 'hi = mid - 1'), `k = ${mid} → cell (${Math.floor(mid / 4)}, ${mid % 4}) = ${v}${v === t ? ' → <b>true</b>' : v < t ? ' < 3' : ' > 3'}.`, [G('matrix', m, [[Math.floor(mid / 4), mid % 4, v === t ? 'done' : 'active']])], { lo, mid, hi }); if (v === t) break; if (v < t) lo = mid + 1; else hi = mid - 1; }
+  ANIM['Search a 2D Matrix'] = W('Flattened search', C_2D, r.steps);
+}
+
+const C_KW = `
+for (int i = 0; i < m; i++) rows[i] = new int[]{soldiers(mat[i]), i};
+Arrays.sort(rows, (a, b) -> a[0] != b[0] ? a[0] - b[0] : a[1] - b[1]);`;
+{
+  const mat = [[1, 1, 0, 0, 0], [1, 1, 1, 1, 0], [1, 0, 0, 0, 0], [1, 1, 0, 0, 0], [1, 1, 1, 1, 1]], r = recorder(), cnt = mat.map(row => row.indexOf(0) === -1 ? 5 : row.indexOf(0));
+  r.step(ln(C_KW, 'soldiers(mat[i])'), `First 0 in each row (binary search): ${cnt.join(', ')}.`, [G('mat', mat, mat.map((_, i) => [i, Math.min(cnt[i], 4), 'warn']))], {});
+  const order = [0, 1, 2, 3, 4].sort((p, q) => cnt[p] - cnt[q] || p - q);
+  r.step(ln(C_KW, 'Arrays.sort'), `Sort by (count, index): ${order.map(i => `row ${i} (${cnt[i]})`).join(', ')}. k = 3 → <b>[${order.slice(0, 3)}]</b>.`, [R('weakest', order, { done: [0, 1, 2] })]);
+  ANIM['The K Weakest Rows in a Matrix'] = W('Count + sort', C_KW, r.steps);
+}
+
+const C_SD = `
+int j = Collections.binarySearch(p, q[0]);
+int ins = -j - 1, best = Integer.MAX_VALUE;
+if (ins < p.size()) best = p.get(ins) - q[0];
+if (ins > 0) best = Math.min(best, q[0] - p.get(ins - 1));`;
+{
+  const colors = [1, 1, 2, 1, 3, 2, 2, 3, 3], r = recorder(), pos = { 1: [], 2: [], 3: [] }; colors.forEach((c, i) => pos[c].push(i));
+  r.step(0, `Positions: 1 → [${pos[1]}], 2 → [${pos[2]}], 3 → [${pos[3]}].`, [A('colors', colors)]);
+  r.step(ln(C_SD, 'int ins'), 'Query (1, 3): insert 1 into [4, 7, 8] at 0 → only the right neighbour 4 → distance <b>3</b>.', [A('colors', colors, { active: [1], done: [4] })]);
+  r.step(ln(C_SD, 'best = Math.min'), 'Query (2, 2): 2 is in [2, 5, 6] → distance <b>0</b>.', [A('colors', colors, { done: [2] })]);
+  ANIM['Shortest Distance to Target Color'] = W('Lists + binary search', C_SD, r.steps);
+}
+
+const C_KC = `
+while (lo < hi) {
+    int mid = (lo + hi) / 2;
+    if (x - arr[mid] > arr[mid + k] - x) lo = mid + 1;
+    else hi = mid;
+}`;
+{
+  const a = [1, 2, 3, 4, 5, 6, 7, 8], k = 3, x = 6, r = recorder(); let lo = 0, hi = a.length - k;
+  while (lo < hi) { const mid = (lo + hi) >> 1, right = x - a[mid] > a[mid + k] - x; r.step(ln(C_KC, right ? 'lo = mid + 1' : 'hi = mid;'), `Window at ${mid}: x − ${a[mid]} = ${x - a[mid]} vs ${a[mid + k]} − x = ${a[mid + k] - x} → ${right ? 'slide right' : 'keep or slide left'}.`, [A('arr', a, { active: range(mid, mid + k - 1), warn: [mid + k] })], { lo, hi }); if (right) lo = mid + 1; else hi = mid; }
+  r.step(0, `Window starts at ${lo} → <b>[${a.slice(lo, lo + k)}]</b>.`, [A('arr', a, { done: range(lo, lo + k - 1) })]);
+  ANIM['Find K Closest Elements'] = W('Window start search', C_KC, r.steps);
+}
+
+const META = [{"name": "Binary Search", "hook": "Keep a <b>closed range [lo, hi]</b>: compare the middle, throw away the half that cannot hold the target.", "mantra": "lo ≤ hi · mid = lo + (hi − lo)/2 · == → mid · < → lo = mid + 1 · > → hi = mid − 1", "statement": "Given a sorted array of distinct integers and a target, return its index or -1, in O(log n).", "recall": [["Why lo ≤ hi?", "With a closed range a single element (lo == hi) still needs checking."], ["Why not (lo + hi) / 2?", "lo + hi can overflow when both are near 2³¹."]], "links": [["Find First and Last Position of Element in Sorted Array", 3], ["Guess Number Higher or Lower", 1]]}, {"name": "Guess Number Higher or Lower", "hook": "Same search, but the comparison comes from <b>guess(mid)</b>: −1 go left, 1 go right, 0 found.", "mantra": "g = guess(mid) · 0 → mid · −1 → hi = mid − 1 · 1 → lo = mid + 1", "statement": "A number was picked from 1..n. guess(num) returns -1 if num is higher than the pick, 1 if lower, 0 if equal. Find the pick.", "recall": [["Which way on −1?", "Our guess is too high, search left."], ["Why lo + (hi − lo) / 2?", "n can be Integer.MAX_VALUE."]], "links": [["Binary Search", 0]]}, {"name": "Find Smallest Letter Greater Than Target", "hook": "Find the <b>first letter &gt; target</b> (upper bound). If none, <b>wrap around</b> to letters[0].", "mantra": "first i with letters[i] > target · lo % n", "statement": "letters is sorted. Return the smallest letter strictly greater than target, wrapping around to the first letter if there is none.", "recall": [["Why ≤ in the check?", "Equal letters are not greater, so skip them."], ["Why % n?", "Index n means \"none\", which wraps to 0."]], "links": [["Find First and Last Position of Element in Sorted Array", 3]]}, {"name": "Find First and Last Position of Element in Sorted Array", "hook": "One helper, <b>lowerBound(x)</b> = first index with value ≥ x. First = lowerBound(t), last = lowerBound(t + 1) − 1.", "mantra": "first = lb(t) · missing → [−1, −1] · last = lb(t + 1) − 1", "statement": "Return the first and last index of target in a sorted array (with duplicates), or [-1, -1], in O(log n).", "recall": [["Why t + 1?", "The first value above t starts right after the last t (integers only)."], ["Why check nums[first] == target?", "lowerBound returns an insertion point even when t is absent."]], "links": [["Binary Search", 0], ["Element Appearing More Than 25% In Sorted Array", 4]]}, {"name": "Element Appearing More Than 25% In Sorted Array", "hook": "A run longer than n/4 must cover index <b>n/4, n/2 or 3n/4</b>. Measure each candidate's run with <b>two lower bounds</b>.", "mantra": "FOR pos in n/4, n/2, 3n/4: lb(x + 1) − lb(x) > n/4 → x", "statement": "Exactly one integer occurs more than 25% of the time in a sorted array. Return it.", "recall": [["Why those three positions?", "They are n/4 apart, so a longer run cannot fit between them."], ["Simple version?", "Check arr[i] == arr[i + n/4] in one pass, O(n)."]], "links": [["Find First and Last Position of Element in Sorted Array", 3]]}, {"name": "Kth Missing Positive Number", "hook": "Before index i, <b>arr[i] − (i + 1)</b> numbers are missing. Find the first index with at least k missing; the answer is <b>lo + k</b>.", "mantra": "first i: arr[i] − i − 1 ≥ k · RETURN lo + k", "statement": "arr is strictly increasing positive integers. Return the k-th positive integer missing from it.", "recall": [["Why lo + k?", "lo array elements and k missing numbers lie at or below the answer."], ["Linear version?", "Walk and count gaps, O(n)."]], "links": [["Missing Number In Arithmetic Progression", 9]]}, {"name": "Single Element in a Sorted Array", "hook": "Before the single element, pairs start at <b>even</b> indexes. Snap mid to even: if nums[mid] == nums[mid + 1] the single is to the right.", "mantra": "mid even · pair intact → lo = mid + 2 · ELSE hi = mid", "statement": "Every element appears twice except one, in a sorted array. Find it in O(log n).", "recall": [["Why snap mid to even?", "Pairs before the single start at even indexes."], ["XOR version?", "O(n), ignores sortedness."]], "links": [["Peak Index in a Mountain Array", 7]]}, {"name": "Peak Index in a Mountain Array", "hook": "On the rising side <b>arr[mid] &lt; arr[mid + 1]</b>. The peak is the first index where that is false.", "mantra": "rising → lo = mid + 1 · ELSE hi = mid", "statement": "arr strictly increases then strictly decreases. Return the index of the peak in O(log n).", "recall": [["Why compare with mid + 1?", "It tells which slope mid is on."], ["Find Peak Element?", "The same test works on any array with local peaks."]], "links": [["Find in Mountain Array", 8], ["Single Element in a Sorted Array", 6]]}, {"name": "Find in Mountain Array", "hook": "<b>Find the peak</b>, then search the <b>rising half</b> (normal order), then the <b>falling half</b> (reversed order). Left first, so the smaller index wins.", "mantra": "peak = slope search · search(0..peak, up) · ELSE search(peak+1..n−1, down)", "statement": "Find the minimum index of target in a mountain array accessed through get(i), using at most 100 calls.", "recall": [["Why search the left half first?", "The minimum index is wanted."], ["Call budget?", "About 3·14 = 42 for n = 10⁴."]], "links": [["Peak Index in a Mountain Array", 7], ["Binary Search", 0]]}, {"name": "Missing Number In Arithmetic Progression", "hook": "The step is <b>(last − first) / n</b>. The first index where arr[i] ≠ first + i·d marks the gap.", "mantra": "d = (last − first)/n · first i: arr[i] ≠ arr[0] + i·d · RETURN arr[0] + lo·d", "statement": "One value (not the first or last) was removed from an arithmetic progression. Return it.", "recall": [["Why divide by n and not n − 1?", "The original sequence had n + 1 numbers, so n steps."], ["Decreasing progressions?", "d is negative and the same formula works."]], "links": [["Kth Missing Positive Number", 5]]}, {"name": "Search a 2D Matrix", "hook": "Rows are sorted and each row starts after the previous ends, so treat the matrix as <b>one sorted list</b>: index k → (k / n, k % n).", "mantra": "lo = 0, hi = m·n − 1 · v = matrix[mid / n][mid % n]", "statement": "Each row is sorted and each row's first value exceeds the last value of the previous row. Return whether target is in the matrix.", "recall": [["Index to cell?", "row = k / n, col = k % n."], ["Search a 2D Matrix II?", "Start top-right and step left or down."]], "links": [["Binary Search", 0], ["The K Weakest Rows in a Matrix", 11]]}, {"name": "The K Weakest Rows in a Matrix", "hook": "Soldiers (1s) come first in a row, so the <b>first 0</b> gives the count. Sort rows by <b>(count, index)</b>.", "mantra": "count = first 0 index · sort (count, row) · take k", "statement": "Rows of a binary matrix have all 1s before 0s. Return the indexes of the k weakest rows (fewest soldiers, ties by smaller index).", "recall": [["Why binary search the row?", "The 1s are all in front."], ["Heap alternative?", "Max-heap of size k on (count, index)."]], "links": [["Search a 2D Matrix", 10]]}, {"name": "Shortest Distance to Target Color", "hook": "Store <b>sorted positions per color</b>. For a query, binary search the insertion point and compare the <b>neighbours on both sides</b>.", "mantra": "pos[color] · ins = binarySearch · min(right − i, i − left)", "statement": "colors holds values 1..3. For each query (i, c) return the distance from index i to the nearest index with color c, or -1.", "recall": [["Decoding the insertion point?", "ins = −result − 1."], ["Linear alternative?", "Precompute nearest-left and nearest-right per color: O(3n)."]], "links": [["Find K Closest Elements", 13]]}, {"name": "Find K Closest Elements", "hook": "Binary search the <b>start of the k-window</b> in [0, n − k]: if x is farther from arr[mid] than from arr[mid + k], shift right.", "mantra": "x − arr[mid] > arr[mid + k] − x → lo = mid + 1 · ELSE hi = mid", "statement": "Return the k integers of a sorted array closest to x (ties prefer the smaller value), in ascending order.", "recall": [["Why compare arr[mid] and arr[mid + k]?", "They are the two elements that can swap in or out."], ["Why no abs?", "Signed differences handle x on either side correctly."]], "links": [["Shortest Distance to Target Color", 12], ["Binary Search", 0]]}];
+mount({
+  title: "Binary Search Basics Animations",
+  sub: "Binary search needs only a <b>yes/no question that flips once</b> along the array. Find the first \"yes\" with <code>lo &lt; hi</code>, <code>hi = mid</code> or <code>lo = mid + 1</code>.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

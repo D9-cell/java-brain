@@ -123,8 +123,19 @@ Each topic folder has `<Topic> Animations.html`; the Java lives in each problem 
 | Subsequences Stacks and Greedy | 19 | `Strings/Subsequences Stacks and Greedy/…` |
 | Pattern Matching | 9 | `Strings/Pattern Matching/…` |
 
+**Arrays: ⏳ in progress** (6 phases, about 383 notes). Phase 1 Binary Search ✅ (56 notes in 4 pages). Every solution was checked against a brute-force version or the published samples.
+
+| Topic | Problems | Page |
+| --- | --- | --- |
+| Binary Search Basics | 14 | `Arrays/Binary Search Basics/…` |
+| Rotated Arrays and Sorted Queries | 14 | `Arrays/Rotated Arrays and Sorted Queries/…` |
+| Search on the Answer: Rates and Capacities | 14 | `Arrays/Search on the Answer Rates and Capacities/…` |
+| Search on the Answer: Distances and K-th Values | 14 | `Arrays/Search on the Answer Distances and K-th Values/…` |
+
+Next phases: 2 Prefix Sums and Difference Arrays · 3 Two Pointers, Intervals and Sorting · 4 Matrices and Grids · 5 Easy Set and Simulation · 6 Classic Array Patterns.
+
 ### Still to do ⏳
-Arrays 383 · Design (33 C++ files, check overlap with the Design topic)
+Arrays phases 2–6 (about 327 notes) · Design (33 C++ files, check overlap with the Design topic)
 
 ## Bugs found in the originals while porting
 - **Array Pair Sum Divisibility** (HashSet): the set-based approach returns false for `[1,1,3,3], k=4`. Fixed with remainder counts.

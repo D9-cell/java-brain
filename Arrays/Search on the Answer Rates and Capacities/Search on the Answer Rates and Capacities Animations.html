@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search on the Answer Rates and Capacities Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="../../assets/theme.js?v=ce4f40b5"></script>
+<link rel="stylesheet" href="../../assets/theme.css?v=2cbf3e72">
+<link rel="stylesheet" href="../../assets/brain-anim.css?v=e07110a9">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js?v=f94ac422"></script>
+<script src="../../assets/solved.js?v=c282a395"></script>
+<script src="../../assets/progress.js?v=bc9e66cc"></script>
+<script src="../../assets/brain-anim.js?v=b6ab0e15"></script>
+<script src="../../assets/tree-kit.js?v=33d554bc"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const range = (a, b) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
+// Records a "smallest X that works" search: ok(x) returns [boolean, text]
+const minSearch = (r, code, lo, hi, ok, lineOk, lineBad) => { while (lo < hi) { const mid = lo + Math.floor((hi - lo) / 2), [good, txt] = ok(mid); r.step(ln(code, good ? lineOk : lineBad), `try ${mid}: ${txt} → ${good ? 'works, search lower' : 'fails, search higher'}.`, [R('lo · mid · hi', [lo, mid, hi], { active: [1] })], { lo, mid, hi }); if (good) hi = mid; else lo = mid + 1; } return lo; };
+const maxSearch = (r, code, lo, hi, ok, lineOk, lineBad) => { while (lo < hi) { const mid = lo + Math.floor((hi - lo + 1) / 2), [good, txt] = ok(mid); r.step(ln(code, good ? lineOk : lineBad), `try ${mid}: ${txt} → ${good ? 'works, search higher' : 'fails, search lower'}.`, [R('lo · mid · hi', [lo, mid, hi], { active: [1] })], { lo, mid, hi }); if (good) lo = mid; else hi = mid - 1; } return lo; };
+
+const C_SH = `
+while (lo < hi) {
+    int mid = (lo + hi) / 2;
+    if (daysNeeded(weights, mid) <= days) hi = mid;
+    else lo = mid + 1;
+}`;
+{
+  const w = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], days = 5, r = recorder(), need = c => { let d = 1, l = 0; for (const x of w) { if (l + x > c) { d++; l = 0; } l += x; } return d; };
+  r.step(0, 'Capacity lies in [max weight 10, total 55].', [A('weights', w)]);
+  const ans = minSearch(r, C_SH, 10, 55, c => [need(c) <= days, `${need(c)} days`], 'hi = mid', 'lo = mid + 1');
+  r.step(0, `Smallest capacity <b>${ans}</b>.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Capacity To Ship Packages Within D Days'] = W('Binary search on capacity', C_SH, r.steps);
+}
+
+const C_KO = `
+long hours = 0;
+for (int p : piles) hours += (p + mid - 1) / mid;
+if (hours <= h) hi = mid;
+else lo = mid + 1;`;
+{
+  const piles = [3, 6, 7, 11], h = 8, r = recorder(), hrs = s => piles.reduce((t, p) => t + Math.ceil(p / s), 0);
+  r.step(0, 'piles [3,6,7,11], h = 8. Speed lies in [1, 11].', [A('piles', piles)]);
+  const ans = minSearch(r, C_KO, 1, 11, s => [hrs(s) <= h, `${piles.map(p => Math.ceil(p / s)).join('+')} = ${hrs(s)} hours`], 'hi = mid', 'lo = mid + 1');
+  r.step(0, `Minimum speed <b>${ans}</b>.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Koko Eating Bananas'] = W('Binary search on speed', C_KO, r.steps);
+}
+
+const C_SD = `
+for (int x : nums) sum += (x + mid - 1) / mid;
+if (sum <= threshold) hi = mid;
+else lo = mid + 1;`;
+{
+  const nums = [1, 2, 5, 9], th = 6, r = recorder(), s = d => nums.reduce((t, x) => t + Math.ceil(x / d), 0);
+  const ans = minSearch(r, C_SD, 1, 9, d => [s(d) <= th, `sum ${s(d)}`], 'hi = mid', 'lo = mid + 1');
+  r.step(0, `Smallest divisor <b>${ans}</b>.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Find the Smallest Divisor Given a Threshold'] = W('Binary search on divisor', C_SD, r.steps);
+}
+
+const C_BQ = `
+run = d <= day ? run + 1 : 0;
+if (run == k) {
+    count++;
+    run = 0;
+}`;
+{
+  const bd = [7, 7, 7, 7, 12, 7, 7], m = 2, k = 3, r = recorder(), bq = day => { let c = 0, run = 0; for (const d of bd) { run = d <= day ? run + 1 : 0; if (run === k) { c++; run = 0; } } return c; };
+  const ans = minSearch(r, C_BQ, 7, 12, d => [bq(d) >= m, `${bq(d)} bouquet${bq(d) === 1 ? '' : 's'}`], 'count++', 'run = 0;');
+  r.step(0, `Day <b>${ans}</b>: all flowers bloom, runs give two bouquets of 3.`, [A('bloomDay', bd, { done: range(0, 6) })]);
+  ANIM['Minimum Number of Days to Make m Bouquets'] = W('Binary search on day', C_BQ, r.steps);
+}
+
+const C_MS = `
+if (hour <= dist.length - 1) return -1;
+for (int i = 0; i < dist.length - 1; i++) t += (dist[i] + speed - 1) / speed;
+return t + (double) dist[dist.length - 1] / speed;`;
+{
+  const dist = [1, 3, 2], hour = 2.7, r = recorder(), tm = s => dist.slice(0, -1).reduce((t, d) => t + Math.ceil(d / s), 0) + dist[2] / s;
+  r.step(ln(C_MS, 'hour <= dist.length'), 'hour 2.7 > 2 rides of waiting, so it is possible.', [A('dist', dist)]);
+  const ans = minSearch(r, C_MS, 1, 10, s => [tm(s) <= hour, `${tm(s).toFixed(2)} h`], 'return t +', 'return t +');
+  r.step(0, `Minimum speed <b>${ans}</b>.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Minimum Speed to Arrive on Time'] = W('Binary search on speed', C_MS, r.steps);
+}
+
+const C_CT = `
+for (int t : time) {
+    trips += mid / t;
+    if (trips >= totalTrips) break;
+}
+if (trips >= totalTrips) hi = mid;
+else lo = mid + 1;`;
+{
+  const time = [1, 2, 3], total = 5, r = recorder(), tr = T => time.reduce((s, t) => s + Math.floor(T / t), 0);
+  const ans = minSearch(r, C_CT, 1, 5, T => [tr(T) >= total, `${tr(T)} trips`], 'hi = mid', 'lo = mid + 1');
+  r.step(0, `At time <b>${ans}</b>: 3 + 1 + 1 = 5 trips.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Minimum Time to Complete Trips'] = W('Binary search on time', C_CT, r.steps);
+}
+
+const C_RC = `
+for (int r : ranks) fixed += (long) Math.sqrt((double) mid / r);
+if (fixed >= cars) hi = mid;
+else lo = mid + 1;`;
+{
+  const ranks = [4, 2, 3, 1], cars = 10, r = recorder(), fx = T => ranks.reduce((s, k) => s + Math.floor(Math.sqrt(T / k)), 0);
+  const ans = minSearch(r, C_RC, 1, 100, T => [fx(T) >= cars, `${ranks.map(k => Math.floor(Math.sqrt(T / k))).join('+')} = ${fx(T)} cars`], 'hi = mid', 'lo = mid + 1');
+  r.step(0, `Minimum time <b>${ans}</b>.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Minimum Time to Repair Cars'] = W('Binary search on time', C_RC, r.steps);
+}
+
+const C_BB = `
+for (int x : nums) ops += (x - 1) / mid;
+if (ops <= maxOperations) hi = mid;
+else lo = mid + 1;`;
+{
+  const nums = [9], maxOps = 2, r = recorder();
+  const ans = minSearch(r, C_BB, 1, 9, p => [Math.floor(8 / p) <= maxOps, `(9 − 1) / ${p} = ${Math.floor(8 / p)} splits`], 'hi = mid', 'lo = mid + 1');
+  r.step(0, `Penalty <b>${ans}</b>: 9 → 6 + 3 → 3 + 3 + 3.`, [R('bags', [3, 3, 3], { done: [0, 1, 2] })]);
+  ANIM['Minimum Limit of Balls in a Bag'] = W('Binary search on penalty', C_BB, r.steps);
+}
+
+const C_CK = `
+int mid = lo + (hi - lo + 1) / 2;
+for (int c : candies) kids += c / mid;
+if (kids >= k) lo = mid;
+else hi = mid - 1;`;
+{
+  const c = [5, 8, 6], k = 3, r = recorder(), kd = x => c.reduce((s, v) => s + Math.floor(v / x), 0);
+  const ans = maxSearch(r, C_CK, 0, 8, x => [kd(x) >= k, `${kd(x)} children served`], 'lo = mid', 'hi = mid - 1');
+  r.step(0, `Each child gets <b>${ans}</b>.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Maximum Candies Allocated to K Children'] = W('Binary search on size', C_CK, r.steps);
+}
+
+const C_MM = `
+for (int i = 0; i < nums.length; i++) {
+    sum += nums[i];
+    best = Math.max(best, (sum + i) / (i + 1));
+}`;
+{
+  const a = [3, 7, 1, 6], r = recorder(); let s = 0, best = 0;
+  a.forEach((v, i) => { s += v; best = Math.max(best, Math.ceil(s / (i + 1))); r.step(ln(C_MM, 'best = Math.max'), `Prefix [${a.slice(0, i + 1)}]: sum ${s} over ${i + 1} → at least ⌈${s}/${i + 1}⌉ = ${Math.ceil(s / (i + 1))}. best ${best}.`, [A('nums', a, { active: range(0, i) })], { sum: s, best }); });
+  ANIM['Minimize Maximum of Array'] = W('Prefix averages', C_MM, r.steps);
+}
+
+const C_BV = `
+int mid = lo + (hi - lo + 1) / 2;
+if (side(mid, index) + side(mid, n - 1 - index) + mid <= maxSum) lo = mid;
+else hi = mid - 1;`;
+{
+  const n = 6, idx = 1, ms = 10, r = recorder(), arr = v => range(0, n - 1).map(i => Math.max(1, v - Math.abs(i - idx))), sm = v => arr(v).reduce((a, b) => a + b, 0);
+  const ans = maxSearch(r, C_BV, 1, ms, v => [sm(v) <= ms, `[${arr(v)}] sums to ${sm(v)}`], 'lo = mid', 'hi = mid - 1');
+  r.step(0, `Peak <b>${ans}</b>: [${arr(ans)}].`, [A('array', arr(ans), { done: [idx] })]);
+  ANIM['Maximum Value at a Given Index in a Bounded Array'] = W('Binary search on peak', C_BV, r.steps);
+}
+
+const C_RT = `
+for (int b : batteries) usable += Math.min(b, mid);
+if (usable >= (long) n * mid) lo = mid;
+else hi = mid - 1;`;
+{
+  const n = 2, bat = [3, 3, 3], r = recorder(), us = T => bat.reduce((s, b) => s + Math.min(b, T), 0);
+  const ans = maxSearch(r, C_RT, 0, 4, T => [us(T) >= n * T, `usable ${us(T)} vs needed ${n * T}`], 'lo = mid', 'hi = mid - 1');
+  r.step(0, `Both computers run <b>${ans}</b> minutes by swapping the third battery around.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Maximum Running Time of N Computers'] = W('Binary search on time', C_RT, r.steps);
+}
+
+const C_MC = `
+int mid = lo + (hi - lo) / 2;
+if (total(nums, cost, mid) <= total(nums, cost, mid + 1)) hi = mid;
+else lo = mid + 1;`;
+{
+  const nums = [1, 3, 5, 2], cost = [2, 3, 1, 14], r = recorder(), f = t => nums.reduce((s, x, i) => s + Math.abs(x - t) * cost[i], 0);
+  r.step(0, `Cost by target: ${range(1, 5).map(t => `${t} → ${f(t)}`).join(', ')}. Convex: falls, then rises.`, [A('f(t), t = 1..5', range(1, 5).map(f))]);
+  const ans = minSearch(r, C_MC, 1, 5, t => [f(t) <= f(t + 1), `f(${t}) = ${f(t)} vs f(${t + 1}) = ${f(t + 1)}`], 'hi = mid', 'lo = mid + 1');
+  r.step(0, `Target ${ans} → cost <b>${f(ans)}</b>.`, [R('answer', [f(ans)], { done: [0] })]);
+  ANIM['Minimum Cost to Make Array Equal'] = W('Binary search on slope', C_MC, r.steps);
+}
+
+const C_MH = `
+for (int t : workerTimes) {
+    removed += units(mid / t);
+    if (removed >= mountainHeight) break;
+}
+if (removed >= mountainHeight) hi = mid;
+else lo = mid + 1;`;
+{
+  const h = 4, wt = [2, 1, 1], r = recorder(), u = b => { let x = 0; while ((x + 1) * (x + 2) / 2 <= b) x++; return x; }, rem = T => wt.reduce((s, t) => s + u(Math.floor(T / t)), 0);
+  const ans = minSearch(r, C_MH, 1, 10, T => [rem(T) >= h, `${wt.map(t => u(Math.floor(T / t))).join('+')} = ${rem(T)} units`], 'hi = mid', 'lo = mid + 1');
+  r.step(0, `<b>${ans}</b> seconds: the workers remove ${wt.map(t => u(Math.floor(ans / t))).join(' + ')} = ${rem(ans)} ≥ 4 units.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Minimum Number of Seconds to Make Mountain Height Zero'] = W('Binary search on time', C_MH, r.steps);
+}
+
+const META = [{"name": "Capacity To Ship Packages Within D Days", "hook": "Search capacity in <b>[max weight, total weight]</b>. Check by loading greedily: start a new day when the next package does not fit.", "mantra": "lo = max w, hi = Σ w · daysNeeded(mid) ≤ days → hi = mid · ELSE lo = mid + 1", "statement": "Packages must be shipped in order within days days. Return the least ship capacity that makes it possible.", "recall": [["Why lo = max weight?", "Every package must fit on its own."], ["Why is the greedy check correct?", "Filling each day as much as possible never uses more days."]], "links": [["Koko Eating Bananas", 1], ["Minimum Limit of Balls in a Bag", 7]]}, {"name": "Koko Eating Bananas", "hook": "Hours at speed s = <b>Σ ⌈pile / s⌉</b>, which only falls as s grows. Find the smallest s with hours ≤ h.", "mantra": "lo = 1, hi = max pile · hours(mid) ≤ h → hi = mid", "statement": "Koko eats up to k bananas from one pile per hour. Return the minimum k to finish all piles within h hours.", "recall": [["Why hi = max pile?", "At that speed each pile takes exactly one hour."], ["Why long?", "Hours can reach n · 10⁹ at speed 1."]], "links": [["Capacity To Ship Packages Within D Days", 0], ["Find the Smallest Divisor Given a Threshold", 2]]}, {"name": "Find the Smallest Divisor Given a Threshold", "hook": "Koko in disguise: <b>Σ ⌈x / d⌉</b> falls as d grows. Find the smallest d with sum ≤ threshold.", "mantra": "sum(mid) ≤ threshold → hi = mid · ELSE lo = mid + 1", "statement": "Return the smallest positive divisor such that the sum of every element divided by it (rounded up) is at most threshold.", "recall": [["Same as which problem?", "Koko Eating Bananas with threshold as hours."], ["Upper bound?", "max(nums): every quotient is then 1."]], "links": [["Koko Eating Bananas", 1]]}, {"name": "Minimum Number of Days to Make m Bouquets", "hook": "By day d, bloomed flowers form runs; each run of length L gives <b>L / k</b> bouquets. Find the smallest day with ≥ m.", "mantra": "m·k > n → −1 · bouquets(day) ≥ m → hi = mid", "statement": "bloomDay[i] is when flower i blooms. A bouquet uses k adjacent bloomed flowers. Return the minimum day to make m bouquets, or -1.", "recall": [["Why check m·k first?", "Not enough flowers in total."], ["Why long for m·k?", "Both can be 10⁶."]], "links": [["Capacity To Ship Packages Within D Days", 0]]}, {"name": "Minimum Speed to Arrive on Time", "hook": "Every ride except the last waits for the <b>next whole hour</b> (ceil); the last one is exact. Search speeds 1..10⁷.", "mantra": "n − 1 ≥ hour → −1 · time(mid) ≤ hour → hi = mid", "statement": "Trains run dist[i] km in order; each train departs only at an integer hour. Return the minimum integer speed to arrive within hour, or -1.", "recall": [["Why is the last ride not rounded?", "You arrive immediately, no waiting for a departure."], ["Why 10⁷?", "The statement guarantees the answer is at most 10⁷."]], "links": [["Koko Eating Bananas", 1]]}, {"name": "Minimum Time to Complete Trips", "hook": "In time T the buses finish <b>Σ T / time[i]</b> trips. Find the smallest T reaching totalTrips.", "mantra": "hi = fastest · totalTrips · trips(mid) ≥ total → hi = mid", "statement": "Bus i needs time[i] per trip and buses run independently. Return the minimum time for at least totalTrips trips in total.", "recall": [["Upper bound?", "Fastest bus doing every trip."], ["Why break early?", "The sum can overflow and is already enough."]], "links": [["Minimum Time to Repair Cars", 6]]}, {"name": "Minimum Time to Repair Cars", "hook": "A mechanic of rank r fixes n cars in <b>r·n²</b> minutes, so in T minutes <b>⌊√(T / r)⌋</b> cars. Find the smallest T with enough cars.", "mantra": "fixed(mid) = Σ ⌊√(mid / r)⌋ ≥ cars → hi = mid", "statement": "Mechanics work simultaneously. Return the minimum time to repair all cars.", "recall": [["Why r · n²?", "The statement defines the time that way."], ["Precision of sqrt?", "Doubles are exact enough below 10¹⁴ here."]], "links": [["Minimum Time to Complete Trips", 5]]}, {"name": "Minimum Limit of Balls in a Bag", "hook": "To make a bag of x balls all ≤ p takes <b>(x − 1) / p</b> splits. Find the smallest p within maxOperations.", "mantra": "ops(mid) = Σ (x − 1) / mid ≤ max → hi = mid", "statement": "An operation splits a bag into two non-empty bags. The penalty is the largest bag. Return the minimum penalty after at most maxOperations operations.", "recall": [["Why (x − 1) / p?", "It equals ⌈x / p⌉ − 1."], ["Greedy splitting the biggest bag?", "Fails; halving is not always optimal."]], "links": [["Koko Eating Bananas", 1]]}, {"name": "Maximum Candies Allocated to K Children", "hook": "Search the <b>largest</b> pile size x with <b>Σ c / x ≥ k</b>. Use the upper-middle so the loop ends.", "mantra": "mid = lo + (hi − lo + 1)/2 · kids(mid) ≥ k → lo = mid · ELSE hi = mid − 1", "statement": "Piles can be split but not merged. Each child gets one sub-pile of the same size. Return the maximum size so that k children each get one (0 if impossible).", "recall": [["Why round mid up?", "With lo = mid, rounding down could leave the range unchanged."], ["Why long k?", "k can be 10¹²."]], "links": [["Minimum Limit of Balls in a Bag", 7]]}, {"name": "Minimize Maximum of Array", "hook": "Values only move <b>left</b>. The first i + 1 elements can at best share their sum: answer = <b>max over prefixes of ⌈sum / (i + 1)⌉</b>.", "mantra": "best = max ⌈prefix / (i+1)⌉ · OR search limit, pushing excess left", "statement": "One operation decreases nums[i] by 1 and increases nums[i − 1] by 1 (i ≥ 1). Return the minimum possible maximum.", "recall": [["Why can a prefix not drop below its average?", "Its sum never decreases."], ["Why carry excess left?", "Excess can only go to earlier indexes."]], "links": [["Minimum Limit of Balls in a Bag", 7]]}, {"name": "Maximum Value at a Given Index in a Bounded Array", "hook": "Search the peak v. The cheapest array falls by 1 per step away from the index, never below 1. Its sum is two <b>arithmetic series</b> plus 1s.", "mantra": "sum = side(v, left) + side(v, right) + v ≤ maxSum → lo = mid", "statement": "Build an array of n positive integers with neighbours differing by at most 1 and sum ≤ maxSum. Return the maximum value at index.", "recall": [["Why fall by exactly 1?", "It is the smallest sum allowed by the neighbour rule."], ["Why longs?", "Sums can reach about 10¹⁸."]], "links": [["Maximum Candies Allocated to K Children", 8]]}, {"name": "Maximum Running Time of N Computers", "hook": "n computers run for T minutes iff <b>Σ min(b, T) ≥ n · T</b>: a battery cannot power two computers at once, so it contributes at most T.", "mantra": "hi = Σ b / n · usable(mid) ≥ n·mid → lo = mid", "statement": "Batteries can be swapped between computers at any time. Return the maximum minutes all n computers can run simultaneously.", "recall": [["Why cap at T?", "One battery cannot run two computers at once."], ["Greedy alternative?", "Sort and drop batteries larger than the average."]], "links": [["Maximum Candies Allocated to K Children", 8]]}, {"name": "Minimum Cost to Make Array Equal", "hook": "Total cost Σ |x − t|·cost is <b>convex</b> in t. Binary search on the slope: if f(mid) ≤ f(mid + 1) the minimum is at mid or left.", "mantra": "f(mid) ≤ f(mid + 1) → hi = mid · ELSE lo = mid + 1", "statement": "Changing nums[i] by 1 costs cost[i]. Return the minimum total cost to make all elements equal.", "recall": [["Weighted median version?", "Sort by value and stop where the cumulative cost passes half."], ["Why stay inside [min, max]?", "Moving outside only adds cost."]], "links": []}, {"name": "Minimum Number of Seconds to Make Mountain Height Zero", "hook": "Removing x units costs a worker <b>t · x(x + 1)/2</b> seconds. In T seconds that worker removes the largest x with x(x+1)/2 ≤ T / t.", "mantra": "removed(mid) = Σ units(mid / t) ≥ height → hi = mid", "statement": "Workers reduce the mountain simultaneously; worker i needs t, 2t, …, x·t seconds for its x units. Return the minimum seconds to reach height 0.", "recall": [["Why fix the sqrt result?", "Double rounding can be off by one near perfect squares."], ["Upper bound?", "The fastest worker alone: t · h(h + 1)/2."]], "links": [["Minimum Time to Repair Cars", 6]]}];
+mount({
+  title: "Search on the Answer Rates and Capacities Animations",
+  sub: "When the question is \"the smallest X that works\" (or the largest), and <b>if X works then every bigger X works</b>, binary search X itself. Each guess runs a cheap <b>feasibility check</b>.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>
