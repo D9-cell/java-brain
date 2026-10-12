@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subsequences Stacks and Greedy Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="../../assets/theme.js?v=3"></script>
+<link rel="stylesheet" href="../../assets/theme.css?v=3">
+<link rel="stylesheet" href="../../assets/brain-anim.css?v=4">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js?v=4"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const range = (a, b) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
+const L_ = (name, s, o = {}) => lane(name, s.split(''), o);
+
+const C_IS = `
+for (int j = 0; j < t.length() && i < s.length(); j++)
+    if (s.charAt(i) == t.charAt(j)) i++;
+return i == s.length();`;
+{
+  const s = 'abc', t = 'ahbgdc', r = recorder(); let i = 0;
+  for (let j = 0; j < t.length && i < s.length; j++) { const m = s[i] === t[j]; if (m) i++; r.step(ln(C_IS, 'i++'), `t[${j}] = '${t[j]}' ${m ? `matches → i = ${i}` : `≠ '${s[i]}'`}.`, [L_('s', s, { done: range(0, i - 1), active: i < s.length ? [i] : [] }), L_('t', t, { active: [j] })], { i, j }); }
+  r.step(ln(C_IS, 'return'), `i reached ${i} = |s| → <b>true</b>.`, [L_('s', s, { done: [0, 1, 2] })]);
+  ANIM['Is Subsequence'] = W('Greedy pointers', C_IS, r.steps);
+}
+
+const C_AC = `
+for (int i = 0; i < s.length() && j < t.length(); i++)
+    if (s.charAt(i) == t.charAt(j)) j++;
+return t.length() - j;`;
+{
+  const s = 'coaching', t = 'coding', r = recorder(); let j = 0;
+  for (let i = 0; i < s.length && j < t.length; i++) if (s[i] === t[j]) { j++; r.step(ln(C_AC, 'j++'), `s[${i}] = '${s[i]}' matches t[${j - 1}].`, [L_('s', s, { active: [i] }), L_('t', t, { done: range(0, j - 1) })], { j }); }
+  r.step(ln(C_AC, 'return'), `Matched "${t.slice(0, j)}"; append "${t.slice(j)}" → <b>${t.length - j}</b>.`, [L_('t', t, { done: range(0, j - 1), warn: range(j, t.length - 1) })]);
+  ANIM['Append Characters to String to Make Subsequence'] = W('Greedy pointers', C_AC, r.steps);
+}
+
+const C_CI = `
+char c = str1.charAt(i), need = str2.charAt(j);
+if (c == need || (c - 'a' + 1) % 26 == need - 'a') j++;`;
+{
+  const a = 'zc', b = 'ad', r = recorder(); let j = 0;
+  for (let i = 0; i < a.length && j < b.length; i++) { const c = a[i], need = b[j], ok = c === need || (c.charCodeAt(0) - 96) % 26 === need.charCodeAt(0) - 97; if (ok) j++; r.step(ln(C_CI, 'j++'), `'${c}' ${ok ? `${c === need ? 'equals' : 'increments to'} '${need}' → match` : `cannot become '${need}'`}.`, [L_('str1', a, { active: [i] }), L_('str2', b, { done: range(0, j - 1) })], { j }); }
+  r.step(0, '"zc" → "ad" by incrementing both → <b>true</b>.', [R('answer', ['true'], { done: [0] })]);
+  ANIM['Make String a Subsequence Using Cyclic Increments'] = W('Greedy pointers', C_CI, r.steps);
+}
+
+const C_BS = `
+i = nextKept(s, i);
+j = nextKept(t, j);
+if (i < 0 || j < 0) return i < 0 && j < 0;
+if (s.charAt(i) != t.charAt(j)) return false;`;
+{
+  const s = 'ab##c', t = 'ad#c', r = recorder();
+  r.step(ln(C_BS, 'i = nextKept'), "Both end with 'c' (no # after it) → equal.", [L_('s', s, { done: [4] }), L_('t', t, { done: [3] })]);
+  r.step(ln(C_BS, 'j = nextKept'), 's: "##" erases b and a → nothing left. t: "#" erases d, a survives.', [L_('s', s, { ghost: [0, 1, 2, 3] }), L_('t', t, { ghost: [1, 2], active: [0] })]);
+  r.step(ln(C_BS, 'return i < 0'), 's ran out while t still has "a" → <b>false</b> ("c" vs "ac").', [R('typed', ['c', 'ac'], { bad: [0, 1] })]);
+  ANIM['Backspace String Compare'] = W('Two backward pointers', C_BS, r.steps);
+}
+
+const C_MG = `
+if (n > 0 && Math.abs(st.charAt(n - 1) - c) == 32) st.deleteCharAt(n - 1);
+else st.append(c);`;
+{
+  const s = 'abBAcC', r = recorder(); let st = '';
+  for (const c of s) { const pop = st.length && Math.abs(st.charCodeAt(st.length - 1) - c.charCodeAt(0)) === 32; st = pop ? st.slice(0, -1) : st + c; r.step(ln(C_MG, pop ? 'deleteCharAt' : 'st.append'), `'${c}' ${pop ? 'cancels the top' : 'pushed'}.`, [S('stack', st.split(''))]); }
+  r.step(0, 'Everything cancelled → <b>""</b>.', [S('stack', [])]);
+  ANIM['Make The String Great'] = W('Stack', C_MG, r.steps);
+}
+
+const C_RS = `
+if (n > 0 && ((c == 'B' && st.charAt(n - 1) == 'A') || (c == 'D' && st.charAt(n - 1) == 'C'))) st.deleteCharAt(n - 1);
+else st.append(c);`;
+{
+  const s = 'ABFCACDB', r = recorder(); let st = '';
+  for (const c of s) { const pop = st.length && ((c === 'B' && st.endsWith('A')) || (c === 'D' && st.endsWith('C'))); st = pop ? st.slice(0, -1) : st + c; r.step(ln(C_RS, pop ? 'deleteCharAt' : 'st.append'), `'${c}' ${pop ? `completes "${st.length >= 0 ? (c === 'B' ? 'AB' : 'CD') : ''}" → pop` : 'pushed'}.`, [S('stack', st.split(''))]); }
+  r.step(0, `Length <b>${st.length}</b> ("${st}").`, [S('stack', st.split(''))]);
+  ANIM['Minimum String Length After Removing Substrings'] = W('Stack', C_RS, r.steps);
+}
+
+const C_MR = `
+if (c == '(') open++;
+else if (c == ')') {
+    if (open == 0) continue;
+    open--;
+}
+if (sb.charAt(i) == '(' && open > 0) {
+    open--;
+    continue;
+}`;
+{
+  const s = 'a)b(c)d(', r = recorder(); let open = 0, keep = [];
+  s.split('').forEach((c, i) => { if (c === '(') open++; else if (c === ')') { if (!open) { r.step(ln(C_MR, 'if (open == 0)'), `')' at ${i} has no open partner → drop.`, [L_('s', s, { bad: [i] })], { open }); return; } open--; } keep.push(i); });
+  r.step(0, `After pass 1, ${open} '(' still open.`, [L_('s', s, { bad: [1], warn: [7] })], { open });
+  r.step(ln(C_MR, 'open--;', 2), "Pass 2 from the right drops the last unmatched '(' → <b>\"ab(c)d\"</b>.", [L_('result', 'ab(c)d', { done: range(0, 5) })]);
+  ANIM['Minimum Remove to Make Valid Parentheses'] = W('Two passes', C_MR, r.steps);
+}
+
+const C_RD = `
+if (inStack[c - 'a']) continue;
+while (st.length() > 0 && st.charAt(st.length() - 1) > c && last[st.charAt(st.length() - 1) - 'a'] > i) {
+    inStack[st.charAt(st.length() - 1) - 'a'] = false;
+    st.deleteCharAt(st.length() - 1);
+}
+st.append(c);`;
+{
+  const s = 'cbacdcbc', r = recorder(), last = {}; s.split('').forEach((c, i) => last[c] = i); let st = '';
+  for (let i = 0; i < s.length; i++) { const c = s[i]; if (st.includes(c)) { r.step(ln(C_RD, 'continue'), `'${c}' already in the stack → skip.`, [L_('s', s, { ghost: [i] }), S('stack', st.split(''))]); continue; } const popped = []; while (st && st[st.length - 1] > c && last[st[st.length - 1]] > i) { popped.push(st[st.length - 1]); st = st.slice(0, -1); } st += c; r.step(ln(C_RD, popped.length ? 'deleteCharAt' : 'st.append(c)'), `'${c}': ${popped.length ? `pop ${popped.join(', ')} (bigger and seen again later), ` : ''}push.`, [L_('s', s, { active: [i] }), S('stack', st.split(''))]); }
+  r.step(0, `Answer <b>"${st}"</b>.`, [S('stack', st.split(''))]);
+  ANIM['Remove Duplicate Letters'] = W('Monotonic stack', C_RD, r.steps);
+}
+
+const C_RB = `
+t.append(s.charAt(i));
+while (t.length() > 0 && t.charAt(t.length() - 1) <= minSuffix[i + 1]) {
+    paper.append(t.charAt(t.length() - 1));
+    t.deleteCharAt(t.length() - 1);
+}`;
+{
+  const s = 'bdda', r = recorder(), ms = []; for (let i = s.length; i >= 0; i--) ms[i] = i === s.length ? '{' : (s[i] < ms[i + 1] ? s[i] : ms[i + 1]); let t = '', paper = '';
+  for (let i = 0; i < s.length; i++) { t += s[i]; while (t && t[t.length - 1] <= ms[i + 1]) { paper += t[t.length - 1]; t = t.slice(0, -1); } r.step(ln(C_RB, 'paper.append'), `Push '${s[i]}'. Smallest unread: ${ms[i + 1] === '{' ? 'none' : `'${ms[i + 1]}'`}. Pop while top ≤ it.`, [L_('s', s, { active: [i] }), S('t', t.split('')), R('paper', [paper])]); }
+  r.step(0, `Paper <b>"${paper}"</b>.`, [R('paper', [paper], { done: [0] })]);
+  ANIM['Using a Robot to Print the Lexicographically Smallest String'] = W('Stack + suffix min', C_RB, r.steps);
+}
+
+const C_RL = `
+int use = Math.min(cnt[cur], repeatLimit);
+for (int k = 0; k < use; k++) sb.append((char) ('a' + cur));
+cnt[cur] -= use;
+if (cnt[cur] == 0) continue;
+int next = cur - 1;
+while (next >= 0 && cnt[next] == 0) next--;
+if (next < 0) break;
+sb.append((char) ('a' + next));
+cnt[next]--;`;
+{
+  const r = recorder(); let out = '';
+  r.step(0, 's = "cczazcc", limit 3: z×2, c×4, a×1.', [R('counts', ['z2', 'c4', 'a1'])]);
+  out += 'zz'; r.step(ln(C_RL, 'sb.append((char) (\'a\' + cur))'), 'Take both z (under the limit); z is used up.', [R('result', [out])]);
+  out += 'ccc'; r.step(ln(C_RL, 'cnt[cur] -= use'), 'Take c three times (the limit); one c remains.', [R('result', [out])]);
+  out += 'a'; r.step(ln(C_RL, 'cnt[next]--'), 'Separate with one a.', [R('result', [out])]);
+  out += 'c'; r.step(0, `Last c → <b>"${out}"</b>.`, [R('result', [out], { done: [0] })]);
+  ANIM['Construct String With Repeat Limit'] = W('Counts + greedy', C_RL, r.steps);
+}
+
+const C_BX = `
+int n = word.length(), maxLen = n - numFriends + 1;
+for (int i = 0; i < n; i++) {
+    String cand = word.substring(i, Math.min(n, i + maxLen));
+    if (cand.compareTo(best) > 0) best = cand;
+}`;
+{
+  const w = 'dbca', f = 2, r = recorder(), maxLen = w.length - f + 1; let best = '';
+  r.step(ln(C_BX, 'maxLen'), `word = "${w}", 2 friends → a piece is at most ${maxLen} long.`, [L_('word', w)], { maxLen });
+  for (let i = 0; i < w.length; i++) { const c = w.slice(i, Math.min(w.length, i + maxLen)); const better = c > best; if (better) best = c; r.step(ln(C_BX, 'best = cand'), `Start ${i}: "${c}" ${better ? '→ new best' : ''}.`, [L_('word', w, { active: range(i, Math.min(w.length, i + maxLen) - 1) })], { best }); }
+  r.step(0, `Answer <b>"${best}"</b>.`, [R('answer', [best], { done: [0] })]);
+  ANIM['Find the Lexicographically Largest String From the Box I'] = W('Try every start', C_BX, r.steps);
+}
+
+const C_OQ = `
+if (k > 1) {
+    char[] c = s.toCharArray();
+    Arrays.sort(c);
+    return new String(c);
+}
+for (int i = 1; i < s.length(); i++) {
+    String rot = s.substring(i) + s.substring(0, i);
+    if (rot.compareTo(best) < 0) best = rot;
+}`;
+{
+  const s = 'cba', r = recorder(); let best = s;
+  for (let i = 1; i < s.length; i++) { const rot = s.slice(i) + s.slice(0, i); if (rot < best) best = rot; r.step(ln(C_OQ, 'String rot'), `k = 1, rotation "${rot}" → best "${best}".`, [L_('rotation', rot)], { best }); }
+  r.step(ln(C_OQ, 'Arrays.sort'), 'k = 2 on "baaca": any order is reachable → sort → <b>"aaabc"</b>.', [L_('sorted', 'aaabc', { done: range(0, 4) })]);
+  ANIM['Orderly Queue'] = W('Rotations or sort', C_OQ, r.steps);
+}
+
+const C_OE = `
+if (s.charAt(i) != t.charAt(i)) {
+    if (s.length() == t.length()) return s.substring(i + 1).equals(t.substring(i + 1));
+    return s.substring(i).equals(t.substring(i + 1));
+}`;
+{
+  const r = recorder();
+  r.step(ln(C_OE, 's.substring(i).equals'), '"ab" vs "acb": first mismatch at 1; lengths differ → skip t[1]: "b" == "b" → <b>true</b> (insert c).', [L_('s', 'ab', { active: [1] }), L_('t', 'acb', { warn: [1], done: [2] })]);
+  r.step(ln(C_OE, 's.length() == t.length()'), '"cab" vs "cad": mismatch at 2, same length → rest after it is "" == "" → <b>true</b> (replace).', [L_('s', 'cab', { active: [2] }), L_('t', 'cad', { active: [2] })]);
+  r.step(ln(C_OE, 's.length() == t.length()'), '"1203" vs "1213": mismatch at 2, rest "3" == "3" → true.', [L_('s', '1203', { active: [2] }), L_('t', '1213', { active: [2] })]);
+  ANIM['One Edit Distance'] = W('First mismatch', C_OE, r.steps);
+}
+
+const C_TE = `
+for (int i = 0; i < q.length() && diff <= 2; i++)
+    if (q.charAt(i) != d.charAt(i)) diff++;
+if (diff <= 2) {
+    out.add(q);
+    break;
+}`;
+{
+  const qs = ['word', 'note', 'ants'], ds = ['wood', 'joke', 'moat'], r = recorder(), out = [];
+  for (const q of qs) { let hit = null; for (const d of ds) { const diff = q.split('').filter((c, i) => c !== d[i]).length; if (diff <= 2) { hit = [d, diff]; break; } } if (hit) out.push(q); r.step(ln(C_TE, hit ? 'out.add' : 'diff++'), hit ? `"${q}" vs "${hit[0]}": ${hit[1]} difference${hit[1] === 1 ? '' : 's'} → keep.` : `"${q}" is 3+ letters from every word → drop.`, [R('kept', out)]); }
+  ANIM['Words Within Two Edits of Dictionary'] = W('Pairwise compare', C_TE, r.steps);
+}
+
+const C_SC = `
+int best = dp(i + 1, k - 1), same = 0, diff = 0;
+for (int j = i; j < s.length() && diff <= k; j++) {
+    if (s.charAt(j) == s.charAt(i)) same++;
+    else diff++;
+    best = Math.min(best, encoded(same) + dp(j + 1, k - diff));
+}`;
+{
+  const r = recorder();
+  r.step(0, 's = "aaabcccd", k = 2. Encoded as is: "a3bc3d" = 6.', [L_('s', 'aaabcccd')]);
+  r.step(ln(C_SC, 'int best = dp(i + 1'), 'Option: delete s[i]. Option: keep a run of s[i]\'s letter, deleting other letters inside it.', [L_('s', 'aaabcccd', { active: [0, 1, 2] })]);
+  r.step(ln(C_SC, 'encoded(same)'), 'Keep "aaa" (2 chars), delete b and d with both deletions, keep "ccc" (2 chars) → "a3c3".', [L_('s', 'aaabcccd', { done: [0, 1, 2, 4, 5, 6], bad: [3, 7] })]);
+  r.step(0, 'Answer <b>4</b>.', [R('answer', [4], { done: [0] })]);
+  ANIM['String Compression II'] = W('Top-down DP', C_SC, r.steps);
+}
+
+const C_ST = `
+for (int i = 0; i + m <= n; i++) {
+    if (visited[i]) continue;
+    int changed = unstamp(t, stamp, i);
+    if (changed < 0) continue;
+    visited[i] = true;
+    done += changed;
+    order.add(i);
+}`;
+{
+  const stamp = 'abc', r = recorder(); let t = 'ababc'.split(''); const order = [];
+  r.step(0, 'stamp "abc", target "ababc". Undo stamps from the last one.', [lane('target', t.slice(), { showIdx: true })]);
+  const tryAt = i => { let ch = 0; for (let k = 0; k < 3; k++) { if (t[i + k] === '?') continue; if (t[i + k] !== stamp[k]) return -1; ch++; } if (!ch) return -1; for (let k = 0; k < 3; k++) t[i + k] = '?'; return ch; };
+  for (const i of [2, 0]) { const ch = tryAt(i); order.push(i); r.step(ln(C_ST, 'order.add'), `Window ${i} matches "${stamp}" (using ? as wildcards) → un-stamp ${ch} letter${ch === 1 ? '' : 's'}.`, [lane('target', t.slice(), { warn: [i, i + 1, i + 2], showIdx: true })]); }
+  r.step(0, `All ? → reverse the order: stamp at <b>[${order.slice().reverse()}]</b>.`, [R('moves', order.slice().reverse(), { done: [0, 1] })]);
+  ANIM['Stamping The Sequence'] = W('Reverse stamping', C_ST, r.steps);
+}
+
+const C_CW = `
+for (int j = 1; j <= n; j++)
+    for (int i = 0; i < j && !can[j]; i++)
+        can[j] = can[i] && dict.contains(w.substring(i, j));`;
+{
+  const w = 'catsdogcats', dict = new Set(['cat', 'cats', 'dog', 'rat']), r = recorder(), can = Array(w.length + 1).fill(false); can[0] = true;
+  for (let j = 1; j <= w.length; j++) for (let i = 0; i < j && !can[j]; i++) if (can[i] && dict.has(w.slice(i, j))) { can[j] = true; r.step(ln(C_CW, 'can[j] = can[i]'), `can[${j}]: can[${i}] and "${w.slice(i, j)}" is a word.`, [L_('w', w, { done: range(0, i - 1), active: range(i, j - 1) }), A('can', can.map(b => b ? 1 : 0))]); }
+  r.step(0, `can[${w.length}] = ${can[w.length]} → "catsdogcats" is <b>concatenated</b>.`, [A('can', can.map(b => b ? 1 : 0), { done: [w.length] })]);
+  ANIM['Concatenated Words'] = W('Word break per word', C_CW, r.steps);
+}
+
+const C_SU = `
+for (String x : subs) owners.merge(x, 1, Integer::sum);
+for (int len = 1; len <= w.length() && best.isEmpty(); len++)
+    for (int i = 0; i + len <= w.length(); i++) {
+        String x = w.substring(i, i + len);
+        if (owners.get(x) == 1 && (best.isEmpty() || x.compareTo(best) < 0)) best = x;
+    }`;
+{
+  const arr = ['cab', 'ad', 'bad', 'c'], r = recorder();
+  r.step(ln(C_SU, 'owners.merge'), 'Count owners of every substring across the words.', [R('words', arr)]);
+  const res = arr.map((w, k) => { for (let len = 1; len <= w.length; len++) { const c = []; for (let i = 0; i + len <= w.length; i++) { const x = w.slice(i, i + len); if (arr.filter((o, j) => j !== k && o.includes(x)).length === 0) c.push(x); } if (c.length) return c.sort()[0]; } return ''; });
+  arr.forEach((w, k) => r.step(ln(C_SU, 'best = x'), `"${w}" → ${res[k] ? `"${res[k]}"` : '"" (every substring appears elsewhere)'}.`, [R('answers', res.slice(0, k + 1).map(x => x || '""'), { active: [k] })]));
+  ANIM['Shortest Uncommon Substring in an Array'] = W('Substring counts', C_SU, r.steps);
+}
+
+const C_SM = `
+for (int i = 0; i < words.length; i++)
+    for (int j = 0; j < words.length; j++)
+        if (i != j && words[j].contains(words[i])) {
+            out.add(words[i]);
+            break;
+        }`;
+{
+  const ws = ['mass', 'as', 'hero', 'superhero'], r = recorder(), out = [];
+  ws.forEach((w, i) => { const j = ws.findIndex((o, k) => k !== i && o.includes(w)); if (j >= 0) out.push(w); r.step(ln(C_SM, j >= 0 ? 'out.add' : 'contains'), j >= 0 ? `"${w}" is inside "${ws[j]}" → keep.` : `"${w}" is inside no other word.`, [R('words', ws, { active: [i], done: j >= 0 ? [j] : [] }), R('result', out)]); });
+  ANIM['String Matching in an Array'] = W('Double loop', C_SM, r.steps);
+}
+
+const META = [{"name": "Is Subsequence", "hook": "Walk t once; <b>advance in s on every match</b>. s is a subsequence iff its pointer reaches the end.", "mantra": "s[i] == t[j] → i++ · RETURN i == |s|", "statement": "Return true if s is a subsequence of t (s can be obtained by deleting characters of t without reordering).", "recall": [["Why is the earliest match safe?", "Any later match leaves less of t."], ["Many queries of s?", "Store the positions of each letter in t and binary search."]], "links": [["Append Characters to String to Make Subsequence", 1], ["Make String a Subsequence Using Cyclic Increments", 2]]}, {"name": "Append Characters to String to Make Subsequence", "hook": "Match as much of <b>t's prefix</b> inside s as possible; the <b>unmatched tail</b> of t must be appended.", "mantra": "greedy match t in s · RETURN |t| − matched", "statement": "Return the minimum number of characters to append to the end of s so that t becomes a subsequence of s.", "recall": [["Why only a suffix of t?", "Appended letters come after all of s."], ["Same as Is Subsequence?", "Yes, but we keep the matched length."]], "links": [["Is Subsequence", 0]]}, {"name": "Make String a Subsequence Using Cyclic Increments", "hook": "A character of str1 can serve a needed letter if it <b>equals it or is one step before it</b> (z before a). Then greedy matching.", "mantra": "c == need || (c + 1) % 26 == need → j++", "statement": "You may pick any set of indexes in str1 and increment each chosen letter once cyclically. Return true if str2 can then be a subsequence of str1.", "recall": [["Why at most one step?", "Each index is incremented at most once."], ["Wrap-around?", "z becomes a, hence % 26."]], "links": [["Is Subsequence", 0]]}, {"name": "Backspace String Compare", "hook": "Read <b>from the end</b>: a # adds a pending skip, a letter is eaten while skips remain. Compare the surviving letters one by one.", "mantra": "nextKept(i): # → skip++ · letter with skip → skip−− · compare survivors", "statement": "In s and t, # is a backspace. Return true if both type the same text.", "recall": [["Stack version?", "Build both typed strings with a stack, O(n) space."], ["Backspace on empty text?", "It does nothing; the skip just runs out."]], "links": [["Make The String Great", 4]]}, {"name": "Make The String Great", "hook": "Stack of letters: if the new letter is the <b>same letter in the other case</b> as the top, <b>pop</b>; else push.", "mantra": "|top − c| == 32 → pop · ELSE push", "statement": "Remove adjacent pairs like \"aA\" or \"Bb\" repeatedly. Return the final string.", "recall": [["Why 32?", "Upper and lower case ASCII codes differ by 32."], ["Order of removals?", "The final result is the same in any order."]], "links": [["Minimum String Length After Removing Substrings", 5], ["Backspace String Compare", 3]]}, {"name": "Minimum String Length After Removing Substrings", "hook": "Stack: a <b>B on top of A</b> or a <b>D on top of C</b> cancels. The stack size is the answer.", "mantra": "c == 'B' && top == 'A' or c == 'D' && top == 'C' → pop · ELSE push", "statement": "Repeatedly remove \"AB\" or \"CD\" from s. Return the minimum possible length.", "recall": [["Why is greedy removal optimal?", "Removals never block each other: the end result is unique."], ["\"ABFCACDB\"?", "Leaves \"FC\" → 2."]], "links": [["Make The String Great", 4]]}, {"name": "Minimum Remove to Make Valid Parentheses", "hook": "Left pass drops every <b>\")\" with no open partner</b>. Then drop the <b>leftover \"(\" from the right end</b>.", "mantra": "pass 1: open count, skip bad ) · pass 2 from the right: skip open extra (", "statement": "Remove the minimum number of parentheses so the string is valid. Return any valid result.", "recall": [["Why remove the rightmost \"(\"?", "A \"(\" can only match \")\" to its right, so the last ones are unmatched."], ["Stack version?", "Push indexes of \"(\" and mark unmatched ones."]], "links": [["Make The String Great", 4]]}, {"name": "Remove Duplicate Letters", "hook": "Keep a stack in increasing order: <b>pop a bigger top if it appears again later</b>. Skip letters already in the stack.", "mantra": "in stack → skip · WHILE top > c && last[top] > i: pop · push c", "statement": "Remove duplicate letters so every letter appears once and the result is the smallest in lexicographic order among all such subsequences.", "recall": [["Why check last[top] &gt; i?", "Without a later copy the letter would be lost."], ["Same as which problem?", "Smallest Subsequence of Distinct Characters (1081)."]], "links": [["Using a Robot to Print the Lexicographically Smallest String", 8]]}, {"name": "Using a Robot to Print the Lexicographically Smallest String", "hook": "Push each character onto t; <b>pop to paper while the top ≤ the smallest letter still unread</b> in s.", "mantra": "minSuffix · push s[i] · WHILE top ≤ minSuffix[i+1]: print top", "statement": "The robot moves the first character of s to the end of t, or writes the last character of t on paper. Return the lexicographically smallest paper string.", "recall": [["Why ≤ and not &lt;?", "An equal letter later gives no advantage; writing now is just as good."], ["What is t?", "A stack."]], "links": [["Remove Duplicate Letters", 7]]}, {"name": "Construct String With Repeat Limit", "hook": "Always use the <b>largest letter</b>, up to repeatLimit in a row, then insert <b>one of the next largest</b> as a separator and continue.", "mantra": "take min(cnt, limit) of cur · cnt left → one of next · no next → stop", "statement": "Using characters of s (not necessarily all), build the lexicographically largest string with no letter repeated more than repeatLimit times in a row.", "recall": [["Why only one separator?", "More would delay the larger letter."], ["When do we stop?", "The largest letter still has copies but no other letter is left."]], "links": [["Remove Duplicate Letters", 7]]}, {"name": "Find the Lexicographically Largest String From the Box I", "hook": "A piece can be at most <b>n − (friends − 1)</b> long. Try every start, take the longest allowed piece, keep the <b>largest</b>.", "mantra": "friends == 1 → word · maxLen = n − f + 1 · best = max over i of word[i..i+maxLen)", "statement": "Split word into numFriends non-empty pieces in every possible way and put all pieces in a box. Return the lexicographically largest string in the box.", "recall": [["Why numFriends == 1 special?", "The only piece is the whole word."], ["Why is longer better?", "A string is smaller than any extension of it."]], "links": [["Orderly Queue", 11]]}, {"name": "Orderly Queue", "hook": "<b>k = 1</b>: only rotations are reachable, try all. <b>k ≥ 2</b>: any two adjacent letters can be swapped, so <b>sort</b>.", "mantra": "k > 1 → sorted · k == 1 → min rotation", "statement": "You may move one of the first k letters to the end, any number of times. Return the lexicographically smallest string reachable.", "recall": [["Why does k ≥ 2 allow swaps?", "Keep moving the second letter to the end to cycle past the first, effectively swapping."], ["Faster min rotation?", "Booth's algorithm in O(n)."]], "links": [["Find the Lexicographically Largest String From the Box I", 10]]}, {"name": "One Edit Distance", "hook": "Make s the shorter. At the <b>first mismatch</b>: same length → rest must match after a <b>replace</b>; else rest must match after <b>skipping one in t</b>.", "mantra": "len diff > 1 → false · mismatch: replace or insert check · none: lengths differ by 1", "statement": "Return true if s and t are exactly one edit (insert, delete or replace one character) apart.", "recall": [["Equal strings?", "Zero edits, so false."], ["Why swap so s is shorter?", "Delete from t is the same as insert into s."]], "links": [["Words Within Two Edits of Dictionary", 13]]}, {"name": "Words Within Two Edits of Dictionary", "hook": "All words have the same length and an edit is a <b>letter change</b>, so count <b>differing positions</b>, stopping once over 2.", "mantra": "FOR query: any dict word with ≤ 2 differences → keep", "statement": "An edit changes one letter. Return the queries that can be turned into some dictionary word with at most two edits, in order.", "recall": [["Why stop at 3 differences?", "The pair is already too far."], ["Larger inputs?", "Index dictionary words by masked patterns."]], "links": [["One Edit Distance", 12]]}, {"name": "String Compression II", "hook": "dp(i, k): best length of s[i..] with k deletions. Either <b>delete s[i]</b>, or <b>keep a run of s[i]'s letter</b>: scan j, deleting the other letters on the way.", "mantra": "dp = min(dp(i+1, k−1), FOR j: enc(same) + dp(j+1, k − diff))", "statement": "Delete at most k characters from s so its run-length encoding (letter + count when count &gt; 1) is as short as possible. Return that length.", "recall": [["Why does the run absorb other letters?", "Deleting them merges more copies into one run."], ["Base case?", "If the rest fits in k deletions, delete it all: length 0."]], "links": []}, {"name": "Stamping The Sequence", "hook": "Work <b>backwards</b>: any window that matches the stamp (with ? as wildcard) can be the <b>last stamp</b>; replace it with ?. Repeat until all ?. Reverse the order.", "mantra": "FOR window: matches with ? wildcards and changes ≥ 1 letter → ?…? · reverse moves", "statement": "Starting from all ?, stamping overwrites a window with the stamp. Return a sequence of at most 10·n stamp positions that produces target, or an empty array.", "recall": [["Why work backwards?", "Only the final stamp is fully visible."], ["Why require changed ≥ 1?", "Undoing an all-? window makes no progress."]], "links": [["String Matching in an Array", 18]]}, {"name": "Concatenated Words", "hook": "For each word, run <b>word break</b> against the set of the <b>other</b> words.", "mantra": "remove w · can[j] = can[i] && dict.contains(w[i..j)) · put w back", "statement": "Return all words that are made of at least two shorter words from the same list.", "recall": [["Why remove the word first?", "Otherwise every word is trivially made of itself."], ["Faster lookups?", "A trie of the words avoids substring hashing."]], "links": []}, {"name": "Shortest Uncommon Substring in an Array", "hook": "Count <b>in how many words</b> each substring appears (once per word). For each word take the <b>shortest, then smallest</b> substring owned only by it.", "mantra": "owners[sub]++ per word · FOR len up: smallest sub with owners == 1", "statement": "For each string in arr, return its shortest substring that occurs in no other string (smallest lexicographically on ties), or \"\".", "recall": [["Why a set per word?", "A repeated substring inside one word still has one owner."], ["Why scan lengths upward?", "The first length with a hit is the shortest."]], "links": [["String Matching in an Array", 18]]}, {"name": "String Matching in an Array", "hook": "Keep a word if it <b>occurs inside another</b> word.", "mantra": "any j ≠ i: words[j].contains(words[i]) → keep", "statement": "Return all strings in words that are substrings of another word.", "recall": [["Why break after a match?", "Each word is listed once."], ["Speed-up?", "Sort by length and only test against longer words."]], "links": [["Shortest Uncommon Substring in an Array", 17]]}];
+mount({
+  title: "Subsequences Stacks and Greedy Animations",
+  sub: "Three tools cover most \"build or reduce a string\" problems: <b>two pointers</b> for subsequences, a <b>stack</b> for cancel and undo rules, and <b>greedy by the smallest or largest letter</b>.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

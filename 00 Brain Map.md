@@ -111,8 +111,20 @@ Each topic folder has `<Topic> Animations.html`; the Java lives in each problem 
 | Formulas and Observations | 19 | `Mathematical/Formulas and Observations/…` |
 | Geometry and Randomness | 13 | `Mathematical/Geometry and Randomness/…` |
 
+**Strings: ✅ done** (115 notes in 7 pages). Count Binary Substrings appeared twice in the C++ folder and became one note; Find Longest Special Substring That Occurs Thrice covers parts I and II. Every solution was checked against a brute-force version or the published samples.
+
+| Topic | Problems | Page |
+| --- | --- | --- |
+| Character Counts and Anagrams | 20 | `Strings/Character Counts and Anagrams/…` |
+| Words Parsing and Formatting | 15 | `Strings/Words Parsing and Formatting/…` |
+| Simulation and Encoding | 19 | `Strings/Simulation and Encoding/…` |
+| Numbers as Strings | 12 | `Strings/Numbers as Strings/…` |
+| Binary Strings and Substring Counting | 21 | `Strings/Binary Strings and Substring Counting/…` |
+| Subsequences Stacks and Greedy | 19 | `Strings/Subsequences Stacks and Greedy/…` |
+| Pattern Matching | 9 | `Strings/Pattern Matching/…` |
+
 ### Still to do ⏳
-strings 112 · Arrays 383 · Design (33 C++ files, check overlap with the Design topic)
+Arrays 383 · Design (33 C++ files, check overlap with the Design topic)
 
 ## Bugs found in the originals while porting
 - **Array Pair Sum Divisibility** (HashSet): the set-based approach returns false for `[1,1,3,3], k=4`. Fixed with remainder counts.

@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Binary Strings and Substring Counting Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="../../assets/theme.js?v=3"></script>
+<link rel="stylesheet" href="../../assets/theme.css?v=3">
+<link rel="stylesheet" href="../../assets/brain-anim.css?v=4">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js?v=4"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const range = (a, b) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
+const runsOf = s => { const o = []; for (let i = 0; i < s.length;) { let j = i; while (j < s.length && s[j] === s[i]) j++; o.push([i, j]); i = j; } return o; };
+const L_ = (name, s, o = {}) => lane(name, s.split(''), o);
+
+const C_CB = `
+if (s.charAt(i) == s.charAt(i - 1)) cur++;
+else {
+    count += Math.min(prev, cur);
+    prev = cur;
+    cur = 1;
+}`;
+{
+  const s = '00110011', r = recorder(), rr = runsOf(s); let count = 0;
+  r.step(0, `Runs of "${s}": ${rr.map(([i, j]) => j - i).join(', ')}.`, [L_('s', s)]);
+  for (let k = 1; k < rr.length; k++) { const p = rr[k - 1][1] - rr[k - 1][0], c = rr[k][1] - rr[k][0]; count += Math.min(p, c); r.step(ln(C_CB, 'Math.min(prev, cur)'), `Boundary at ${rr[k][0]}: runs ${p} and ${c} → +${Math.min(p, c)} ("${s.slice(rr[k][0] - Math.min(p, c), rr[k][0] + Math.min(p, c))}" and shorter).`, [L_('s', s, { warn: range(rr[k - 1][0], rr[k - 1][1] - 1), active: range(rr[k][0], rr[k][1] - 1) })], { count }); }
+  r.step(0, `Total <b>${count}</b>.`, [R('count', [count], { done: [0] })]);
+  ANIM['Count Binary Substrings'] = W('Run lengths', C_CB, r.steps);
+}
+
+const C_CH = `
+run = i > 0 && s.charAt(i) == s.charAt(i - 1) ? run + 1 : 1;
+total = (total + run) % MOD;`;
+{
+  const s = 'abbcccaa', r = recorder(); let run = 0, total = 0;
+  for (let i = 0; i < s.length; i++) { run = i > 0 && s[i] === s[i - 1] ? run + 1 : 1; total += run; r.step(ln(C_CH, 'total ='), `i = ${i} '${s[i]}': run ${run} → ${run} homogenous substrings end here, total ${total}.`, [L_('s', s, { active: [i], warn: range(i - run + 1, i - 1) })], { run, total }); }
+  ANIM['Count Number of Homogenous Substrings'] = W('Running run length', C_CH, r.steps);
+}
+
+const C_N1 = `
+run = c == '1' ? run + 1 : 0;
+total = (total + run) % MOD;`;
+{
+  const s = '0110111', r = recorder(); let run = 0, total = 0;
+  for (let i = 0; i < s.length; i++) { run = s[i] === '1' ? run + 1 : 0; total += run; r.step(ln(C_N1, 'total ='), `s[${i}] = ${s[i]}: run ${run}, total ${total}.`, [L_('s', s, s[i] === '1' ? { active: [i], warn: range(i - run + 1, i - 1) } : { ghost: [i] })], { run, total }); }
+  ANIM['Number of Substrings With Only 1s'] = W('Running run length', C_N1, r.steps);
+}
+
+const C_SE = `
+for (char ch : s.toCharArray())
+    if (ch == c) k++;
+return k * (k + 1) / 2;`;
+{
+  const s = 'abada', r = recorder(), idx = [0, 2, 4];
+  r.step(ln(C_SE, 'k++'), `c = 'a' appears k = 3 times.`, [L_('s', s, { warn: idx, showIdx: true })], { k: 3 });
+  r.step(ln(C_SE, 'return'), 'Pairs start ≤ end: (0,0) (0,2) (0,4) (2,2) (2,4) (4,4) → 3·4/2 = <b>6</b>.', [R('substrings', ['a', 'aba', 'abada', 'a', 'ada', 'a'], { done: range(0, 5) })]);
+  ANIM['Count Substrings Starting and Ending with Given Character'] = W('Count and formula', C_SE, r.steps);
+}
+
+const C_OS = `
+return !s.contains("01");`;
+{
+  const r = recorder();
+  r.step(ln(C_OS, 'return'), '"1001": "01" at index 2 means a second block of ones → <b>false</b>.', [L_('s', '1001', { bad: [2, 3] })]);
+  r.step(ln(C_OS, 'return'), '"110": no "01" → <b>true</b>.', [L_('s', '110', { done: [0, 1] })]);
+  ANIM['Check if Binary String Has at Most One Segment of Ones'] = W('Look for "01"', C_OS, r.steps);
+}
+
+const C_AL = `
+for (int i = 0; i < s.length(); i++)
+    if (s.charAt(i) - '0' != i % 2) diff++;
+return Math.min(diff, s.length() - diff);`;
+{
+  const s = '0100', r = recorder(), pat = s.split('').map((_, i) => String(i % 2)), mis = s.split('').map((c, i) => c !== pat[i] ? i : -1).filter(i => i >= 0);
+  r.step(ln(C_AL, 'diff++'), `Compare with 0101: mismatches at ${mis.join(', ')} → ${mis.length}.`, [L_('s', s, { bad: mis }), lane('0101…', pat)], { diff: mis.length });
+  r.step(ln(C_AL, 'return'), `The other pattern needs ${s.length - mis.length}. Answer <b>${Math.min(mis.length, s.length - mis.length)}</b>.`, [R('answer', [Math.min(mis.length, s.length - mis.length)], { done: [0] })]);
+  ANIM['Minimum Changes To Make Alternating Binary String'] = W('One pass', C_AL, r.steps);
+}
+
+const C_BE = `
+for (int i = 0; i < s.length(); i += 2)
+    if (s.charAt(i) != s.charAt(i + 1)) changes++;`;
+{
+  const s = '10011011', r = recorder(); let ch = 0;
+  for (let i = 0; i < s.length; i += 2) { const bad = s[i] !== s[i + 1]; if (bad) ch++; r.step(ln(C_BE, bad ? 'changes++' : 'if (s.charAt'), `Pair "${s[i]}${s[i + 1]}" ${bad ? 'differs → 1 change' : 'is fine'}.`, [L_('s', s, bad ? { bad: [i, i + 1] } : { done: [i, i + 1] })], { changes: ch }); }
+  ANIM['Minimum Number of Changes to Make Binary String Beautiful'] = W('Pair scan', C_BE, r.steps);
+}
+
+const C_SC = `
+for (int i = 0; i + 1 < s.length(); i++) {
+    balance += s.charAt(i) == '0' ? 1 : -1;
+    best = Math.max(best, balance);
+}
+return ones + best;`;
+{
+  const s = '011101', r = recorder(), ones = 4; let bal = 0, best = -1e9;
+  r.step(0, `"${s}" has ${ones} ones. Score = ones + (zeros − ones) on the left.`, [L_('s', s)], { ones });
+  for (let i = 0; i + 1 < s.length; i++) { bal += s[i] === '0' ? 1 : -1; best = Math.max(best, bal); r.step(ln(C_SC, 'best = Math.max'), `Split after ${i}: left balance ${bal} → score ${ones + bal}.`, [L_('s', s, { active: range(0, i), ghost: range(i + 1, s.length - 1) })], { balance: bal, best }); }
+  r.step(ln(C_SC, 'return'), `Answer <b>${ones + best}</b>.`, [R('answer', [ones + best], { done: [0] })]);
+  ANIM['Maximum Score After Splitting a String'] = W('One pass', C_SC, r.steps);
+}
+
+const C_BW = `
+if (c == '1') ones++;
+else steps += ones;`;
+{
+  const s = '100101', r = recorder(); let ones = 0, steps = 0;
+  for (let i = 0; i < s.length; i++) { if (s[i] === '1') ones++; else steps += ones; r.step(ln(C_BW, s[i] === '1' ? 'ones++' : 'steps +='), s[i] === '1' ? `Black ball, ones = ${ones}.` : `White ball must pass ${ones} black ball${ones === 1 ? '' : 's'} → steps ${steps}.`, [L_('balls', s, { active: [i] })], { ones, steps }); }
+  ANIM['Separate Black and White Balls'] = W('Count inversions', C_BW, r.steps);
+}
+
+const C_CC = `
+while (l <= r && directions.charAt(l) == 'L') l++;
+while (r >= l && directions.charAt(r) == 'R') r--;
+for (int i = l; i <= r; i++)
+    if (directions.charAt(i) != 'S') count++;`;
+{
+  const d = 'LLRSLLRR', r = recorder();
+  r.step(ln(C_CC, "== 'L') l++"), 'Leading L cars drive away to the left.', [L_('cars', d, { ghost: [0, 1] })]);
+  r.step(ln(C_CC, "== 'R') r--"), 'Trailing R cars drive away to the right.', [L_('cars', d, { ghost: [0, 1, 6, 7] })]);
+  r.step(ln(C_CC, 'count++'), 'Middle "RSLL": every moving car hits something: R, L, L → <b>3</b>.', [L_('cars', d, { ghost: [0, 1, 6, 7], bad: [2, 4, 5], done: [3] })], { count: 3 });
+  ANIM['Count Collisions on a Road'] = W('Trim and count', C_CC, r.steps);
+}
+
+const C_LB = `
+if (cur == 0) continue;
+total += prev * cur;
+prev = cur;`;
+{
+  const bank = ['011001', '000000', '010100', '001000'], r = recorder(); let prev = 0, total = 0;
+  bank.forEach((row, i) => { const cur = row.split('').filter(c => c === '1').length; if (!cur) { r.step(ln(C_LB, 'continue'), `Row ${i} is empty → skip.`, [L_(`row ${i}`, row, { ghost: range(0, 5) })], { prev, total }); return; } total += prev * cur; r.step(ln(C_LB, 'total +='), `Row ${i}: ${cur} devices × previous ${prev} → total ${total}.`, [L_(`row ${i}`, row, { active: row.split('').map((c, k) => c === '1' ? k : -1).filter(k => k >= 0) })], { prev: cur, total }); prev = cur; });
+  ANIM['Number of Laser Beams in a Bank'] = W('Previous non-empty row', C_LB, r.steps);
+}
+
+const C_LC = `
+if (corridor.charAt(i) != 'S') continue;
+seats++;
+if (seats > 2 && seats % 2 == 1) ways = ways * (i - lastSeat) % MOD;
+lastSeat = i;`;
+{
+  const c = 'SSPPSPS', r = recorder(); let seats = 0, last = -1, ways = 1;
+  for (let i = 0; i < c.length; i++) { if (c[i] !== 'S') continue; seats++; if (seats > 2 && seats % 2 === 1) { ways *= i - last; r.step(ln(C_LC, 'ways = ways'), `Seat ${seats} starts a new pair: ${i - last} places for the divider between index ${last} and ${i}.`, [L_('corridor', c, { warn: range(last, i - 1), active: [i], showIdx: true })], { ways }); } last = i; }
+  r.step(0, `${seats} seats (even) → <b>${ways}</b> ways.`, [R('answer', [ways], { done: [0] })]);
+  ANIM['Number of Ways to Divide a Long Corridor'] = W('Product of gaps', C_LC, r.steps);
+}
+
+const C_MB = `
+for (int k = 0; k < n; k++) {
+    int i = pass == 0 ? k : n - 1 - k;
+    ans[i] += cost;
+    if (boxes.charAt(i) == '1') balls++;
+    cost += balls;
+}`;
+{
+  const b = '001011', n = 6, r = recorder(), ans = Array(n).fill(0);
+  for (const pass of [0, 1]) { let balls = 0, cost = 0; for (let k = 0; k < n; k++) { const i = pass ? n - 1 - k : k; ans[i] += cost; if (b[i] === '1') balls++; cost += balls; } r.step(ln(C_MB, 'ans[i] += cost'), pass ? 'Right-to-left pass adds the cost of balls on the right.' : 'Left-to-right pass: cost of bringing balls from the left; it grows by the balls already passed.', [L_('boxes', b), A('ans', ans.slice(), { active: range(0, n - 1) })]); }
+  r.step(0, `Answer <b>[${ans}]</b>.`, [A('ans', ans, { done: range(0, n - 1) })]);
+  ANIM['Minimum Number of Operations to Move All Balls to Each Box'] = W('Two sweeps', C_MB, r.steps);
+}
+
+const C_DO = `
+count += (p < Z ? zeros.get(p) : n) - i;
+for (int z = 1; (long) z * z <= n && p + z - 1 < Z; z++) {
+    int lo = zeros.get(p + z - 1);
+    int hi = (p + z < Z ? zeros.get(p + z) : n) - 1;
+    int from = Math.max(lo, i + z * z + z - 1);
+    if (from <= hi) count += hi - from + 1;
+}`;
+{
+  const s = '101101', r = recorder(), i = 0;
+  r.step(ln(C_DO, 'count += (p'), 'Start i = 0. Zero zeros: end at 0 only ("1") → +1.', [L_('s', s, { done: [0], showIdx: true })], { count: 1 });
+  r.step(ln(C_DO, 'int from'), 'One zero: ends 1..3 have exactly one zero; need length ≥ 1 + 1 = 2 → ends 1, 2, 3 → +3.', [L_('s', s, { warn: [1], done: [1, 2, 3], showIdx: true })], { z: 1, count: 4 });
+  r.step(ln(C_DO, 'int from'), 'Two zeros: ends 4..5; need length ≥ 4 + 2 = 6 → only end 5 ("101101", 4 ones ≥ 4) → +1.', [L_('s', s, { warn: [1, 4], done: [5], showIdx: true })], { z: 2, count: 5 });
+  r.step(0, 'z = 3 would need 9 + 3 = 12 characters: stop. Repeat for every start.', [R('starts', [0, 1, 2, 3, 4, 5], { active: [0] })]);
+  ANIM['Count the Number of Substrings With Dominant Ones'] = W('Start × few zeros', C_DO, r.steps);
+}
+
+const C_B1 = `
+for (int j = i; j < s.length(); j++) {
+    if ("aeiou".indexOf(s.charAt(j)) >= 0) v++;
+    else c++;
+    if (v == c && (v * c) % k == 0) count++;
+}`;
+{
+  const s = 'baeyh', k = 2, r = recorder(); let count = 0;
+  for (let i = 0; i < s.length; i++) { let v = 0, c = 0; for (let j = i; j < s.length; j++) { if ('aeiou'.includes(s[j])) v++; else c++; if (v === c && (v * c) % k === 0) { count++; r.step(ln(C_B1, 'count++'), `"${s.slice(i, j + 1)}": v = c = ${v}, ${v * c} % 2 = 0 → beautiful.`, [L_('s', s, { done: range(i, j) })], { count }); } } }
+  r.step(0, `Answer <b>${count}</b>.`, [R('answer', [count], { done: [0] })]);
+  ANIM['Count Beautiful Substrings I'] = W('All substrings', C_B1, r.steps);
+}
+
+const C_B2 = `
+while ((long) m * m % k != 0) m++;
+long key = key(balance, vowels % m);
+count += seen.getOrDefault(key, 0);
+seen.merge(key, 1, Integer::sum);`;
+{
+  const s = 'baeyh', k = 2, r = recorder(); let m = 1; while (m * m % k) m++; const seen = { '0,0': 1 }; let bal = 0, vow = 0, count = 0;
+  r.step(ln(C_B2, 'while'), `k = 2 → m = ${m}: v² divisible by 2 iff v is a multiple of 2.`, [L_('s', s)], { m });
+  for (let i = 0; i < s.length; i++) { if ('aeiou'.includes(s[i])) { bal++; vow++; } else bal--; const key = `${bal},${vow % m}`, add = seen[key] || 0; count += add; seen[key] = add + 1; r.step(ln(C_B2, 'count +='), `'${s[i]}': key (balance ${bal}, vowels%${m} = ${vow % m}) seen ${add} time${add === 1 ? '' : 's'} → count ${count}.`, [L_('s', s, { active: [i] }), R('seen', Object.entries(seen).map(([a, b]) => `(${a}):${b}`))], { count }); }
+  ANIM['Count Beautiful Substrings II'] = W('Prefix map', C_B2, r.steps);
+}
+
+const C_AS = `
+if (s.charAt(i) == '1') ones += j - i;
+else {
+    if (seenZero) bestPair = Math.max(bestPair, prevZeros + (j - i));
+    prevZeros = j - i;
+    seenZero = true;
+}`;
+{
+  const s = '0100', r = recorder();
+  r.step(0, '"0100" (imagine 1 at both ends): ones = 1, zero blocks 1 and 2.', [L_('s', s, { warn: [0, 2, 3], active: [1] })], { ones: 1 });
+  r.step(ln(C_AS, 'bestPair = Math.max'), 'Adjacent zero blocks around the 1-block: 1 + 2 = 3.', [L_('s', s, { warn: [0, 2, 3] })], { bestPair: 3 });
+  r.step(0, 'Trade: "0100" → "0000" → "1111". Answer 1 + 3 = <b>4</b>.', [L_('after', '1111', { done: [0, 1, 2, 3] })]);
+  ANIM['Maximize Active Section with Trade I'] = W('Zero-block pairs', C_AS, r.steps);
+}
+
+const C_D1 = `
+for (int k = 0; i + k < s.length() && j + k < t.length(); k++) {
+    if (s.charAt(i + k) != t.charAt(j + k)) diff++;
+    if (diff > 1) break;
+    if (diff == 1) total++;
+}`;
+{
+  const s = 'aba', t = 'baba', r = recorder(), i = 0, j = 0; let diff = 0, total = 0;
+  for (let k = 0; i + k < s.length && j + k < t.length; k++) { if (s[i + k] !== t[j + k]) diff++; if (diff > 1) { r.step(ln(C_D1, 'break'), `Second difference at k = ${k} → stop.`, [L_('s', s, { bad: [k] }), L_('t', t, { bad: [k] })], { diff }); break; } if (diff === 1) total++; r.step(ln(C_D1, diff === 1 ? 'total++' : 'diff++'), `Length ${k + 1}: "${s.slice(0, k + 1)}" vs "${t.slice(0, k + 1)}" differ in ${diff}${diff === 1 ? ' → count' : ''}.`, [L_('s', s, { active: range(0, k) }), L_('t', t, { active: range(0, k) })], { diff, total }); }
+  r.step(0, 'Repeat for every pair of start points. Total for this example: <b>6</b>.', [R('answer', [6], { done: [0] })]);
+  ANIM['Count Substrings That Differ by One Character'] = W('Extend from each pair', C_D1, r.steps);
+}
+
+const C_LV = `
+if (c == a) countA++;
+if (c == b) {
+    countB++;
+    restB--;
+}
+if (countB > 0) best = Math.max(best, countA - countB);
+if (countA < countB && restB > 0) {
+    countA = 0;
+    countB = 0;
+}`;
+{
+  const s = 'aababbb', r = recorder(); let cA = 0, cB = 0, rest = 4, best = 0;
+  r.step(0, 'Pair (a = b-letter "b", b = "a"): +1 for b, −1 for a. Look for the largest lead of b over a with at least one a.', [L_('s', s)]);
+  for (let i = 0; i < s.length; i++) { const ch = s[i]; if (ch === 'b') cA++; if (ch === 'a') { cB++; rest--; } if (cB > 0) best = Math.max(best, cA - cB); let reset = false; if (cA < cB && rest > 0) { cA = 0; cB = 0; reset = true; } r.step(ln(C_LV, reset ? 'countA = 0' : 'best = Math.max'), `'${ch}': lead ${cA - cB}${reset ? ' → negative with an "a" still ahead → reset' : ''}, best ${best}.`, [L_('s', s, { active: [i] })], { countB_letter: cA, countA_letter: cB, best }); }
+  r.step(0, `Best over all pairs is <b>${best}</b> ("babbb": 4 b, 1 a).`, [R('answer', [best], { done: [0] })]);
+  ANIM['Substring With Largest Variance'] = W('26 × 26 Kadane', C_LV, r.steps);
+}
+
+const C_TH = `
+int[] t = top[s.charAt(i) - 'a'];
+for (int[] t : top) best = Math.max(best, Math.max(t[0] - 2, Math.max(Math.min(t[0] - 1, t[1]), t[2])));`;
+{
+  const s = 'aaaabaaab', r = recorder();
+  r.step(ln(C_TH, 'int[] t = top'), 'Runs of a: 4 and 3. Top three for a: [4, 3, 0].', [L_('s', s, { warn: [0, 1, 2, 3], active: [5, 6, 7] })], { t0: 4, t1: 3, t2: 0 });
+  r.step(ln(C_TH, 'best = Math.max'), 'One run: 4 − 2 = 2. Two runs: min(4 − 1, 3) = 3 ("aaa" twice in the long run, once in the short). Three runs: 0. → <b>3</b>.', [R('candidates', [2, 3, 0], { done: [1] })]);
+  ANIM['Find Longest Special Substring That Occurs Thrice'] = W('Top three runs', C_TH, r.steps);
+}
+
+const C_MP = `
+while (i < n && start.charAt(i) == '_') i++;
+while (j < n && target.charAt(j) == '_') j++;
+if (start.charAt(i) != target.charAt(j)) return false;
+if (start.charAt(i) == 'L' && i < j) return false;
+if (start.charAt(i) == 'R' && i > j) return false;`;
+{
+  const st = '_L__R__R_', tg = 'L______RR', r = recorder(); let i = 0, j = 0;
+  while (true) { while (i < st.length && st[i] === '_') i++; while (j < tg.length && tg[j] === '_') j++; if (i === st.length || j === tg.length) break; const ok = st[i] === tg[j] && !(st[i] === 'L' && i < j) && !(st[i] === 'R' && i > j); r.step(ln(C_MP, st[i] === 'L' ? "== 'L' && i < j" : "== 'R' && i > j"), `${st[i]} at ${i} → target ${tg[j]} at ${j}: ${st[i] === 'L' ? 'moves left' : 'moves right'} ${ok ? '✓' : '✗'}.`, [L_('start', st, { active: [i], showIdx: true }), L_('target', tg, { done: [j], showIdx: true })]); i++; j++; }
+  r.step(0, 'All pieces matched → <b>true</b>.', [R('answer', ['true'], { done: [0] })]);
+  ANIM['Move Pieces to Obtain a String'] = W('Two pointers', C_MP, r.steps);
+}
+
+const META = [{"name": "Count Binary Substrings", "hook": "A valid substring sits on <b>one boundary between runs</b>. Each boundary gives <b>min(previous run, current run)</b>.", "mantra": "run lengths · Σ min(prev, cur)", "statement": "Count non-empty substrings with equal numbers of 0s and 1s where all 0s and all 1s are grouped consecutively.", "recall": [["\"00110011\"?", "Runs 2, 2, 2, 2 → 2 + 2 + 2 = 6."], ["Why min?", "Both sides must supply k characters."]], "links": [["Count Number of Homogenous Substrings", 1]]}, {"name": "Count Number of Homogenous Substrings", "hook": "At index i inside a run of length L so far, <b>L new homogenous substrings end here</b>. Add the run length every step.", "mantra": "run = same ? run + 1 : 1 · total += run", "statement": "Count substrings made of one repeated character, mod 1e9+7.", "recall": [["Why add run each step?", "Exactly run substrings end at this position."], ["Why mod?", "n up to 10⁵ gives about 5·10⁹ substrings."]], "links": [["Number of Substrings With Only 1s", 2], ["Count Binary Substrings", 0]]}, {"name": "Number of Substrings With Only 1s", "hook": "Same trick: every <b>1 ends run</b> all-ones substrings; a <b>0 resets</b> the run.", "mantra": "run = c == '1' ? run + 1 : 0 · total += run", "statement": "Count substrings consisting only of 1s, mod 1e9+7.", "recall": [["Run of 3 ones?", "1 + 2 + 3 = 6 substrings."], ["Difference from Homogenous?", "Zeros reset instead of counting."]], "links": [["Count Number of Homogenous Substrings", 1]]}, {"name": "Count Substrings Starting and Ending with Given Character", "hook": "With <b>k copies of c</b>, pick a start copy and an end copy (possibly the same): <b>k(k + 1)/2</b>.", "mantra": "k = count(c) · k(k+1)/2", "statement": "Count substrings of s that start and end with character c.", "recall": [["Why k + 1 and not k − 1?", "A single character c counts as a substring too."], ["Why long?", "k up to 10⁵ squared."]], "links": [["Count Number of Homogenous Substrings", 1]]}, {"name": "Check if Binary String Has at Most One Segment of Ones", "hook": "s starts with 1, so a second block of ones must be preceded by <b>\"01\"</b>.", "mantra": "RETURN !s.contains(\"01\")", "statement": "s has no leading zeros. Return true if its ones form at most one contiguous segment.", "recall": [["Why is \"10\" harmless?", "It just ends the first block."], ["Without the leading 1 guarantee?", "Count the \"01\" patterns plus whether s starts with 1."]], "links": [["Count Binary Substrings", 0]]}, {"name": "Minimum Changes To Make Alternating Binary String", "hook": "Count mismatches against <b>\"0101…\"</b>; the other pattern \"1010…\" mismatches exactly the <b>other positions</b>: <b>min(d, n − d)</b>.", "mantra": "d = #(s[i] != i % 2) · min(d, n − d)", "statement": "Return the minimum number of flips to make the binary string alternate.", "recall": [["Why n − d?", "Each position mismatches exactly one of the two patterns."], ["Why only two targets?", "An alternating string is fixed by its first character."]], "links": [["Minimum Number of Changes to Make Binary String Beautiful", 6]]}, {"name": "Minimum Number of Changes to Make Binary String Beautiful", "hook": "Any even-length all-same partition can be cut into <b>pairs</b>. So just fix every <b>unequal pair</b> (one change each).", "mantra": "FOR i += 2: s[i] != s[i+1] → changes++", "statement": "A string is beautiful if it can be split into substrings of even length, each all 0s or all 1s. Return the minimum number of flips.", "recall": [["Why are pairs enough?", "Every valid block is a union of equal pairs."], ["Cost of a mixed pair?", "One flip."]], "links": [["Minimum Changes To Make Alternating Binary String", 5]]}, {"name": "Maximum Score After Splitting a String", "hook": "Score = zeros left + ones right = <b>totalOnes + (zeros − ones) on the left</b>. Maximise the left balance over split points.", "mantra": "ones total · balance += (0 → +1, 1 → −1) · ones + max balance", "statement": "Split s into two non-empty parts. Score = zeros in the left part + ones in the right part. Return the maximum score.", "recall": [["Why stop at n − 2?", "The right part needs at least one character."], ["Two-pass version?", "Count ones first, then sweep: also O(n)."]], "links": [["Separate Black and White Balls", 8]]}, {"name": "Separate Black and White Balls", "hook": "Each <b>0</b> must pass every <b>1 to its left</b>. Add the ones seen so far at each 0.", "mantra": "c == '1' → ones++ · c == '0' → steps += ones", "statement": "1 is black, 0 is white. Swapping two adjacent balls is one step. Return the minimum steps to put all black balls on the right.", "recall": [["Why inversions?", "Each swap removes exactly one 1-before-0 pair."], ["Why long?", "Up to 2.5·10⁹ steps."]], "links": [["Maximum Score After Splitting a String", 7], ["Minimum Number of Operations to Move All Balls to Each Box", 12]]}, {"name": "Count Collisions on a Road", "hook": "Cars driving <b>L off the left edge</b> and <b>R off the right edge</b> escape. <b>Every other moving car</b> eventually stops in a collision and adds 1.", "mantra": "trim leading L and trailing R · count non-S in the middle", "statement": "directions[i] is L, R or S. Opposite cars colliding add 2, a moving car hitting a stopped one adds 1; cars stop after colliding. Return the total collisions.", "recall": [["\"RLRSLL\"?", "Nothing trimmed; moving cars R, L, R, L, L → 5."], ["Why do leading Ls escape?", "Nothing is to their left."]], "links": [["Move Pieces to Obtain a String", 20]]}, {"name": "Number of Laser Beams in a Bank", "hook": "Beams join <b>consecutive non-empty rows</b>: add <b>prev × cur</b> and skip empty rows.", "mantra": "cur = devices in row · cur > 0 → total += prev · cur, prev = cur", "statement": "Each row is a binary string of security devices. Beams connect every device in one non-empty row to every device in the next non-empty row. Count beams.", "recall": [["Why skip empty rows?", "They do not block or create beams."], ["Rows 3, 0, 2, 1?", "3·2 + 2·1 = 8."]], "links": [["Separate Black and White Balls", 8]]}, {"name": "Number of Ways to Divide a Long Corridor", "hook": "Pair up seats. Between pair k and pair k + 1 a divider fits in any of the <b>(gap of plants + 1)</b> spots. Multiply those choices.", "mantra": "at seat 3, 5, 7…: ways *= i − lastSeat · odd or < 2 seats → 0", "statement": "A corridor has seats S and plants P. Place dividers so each section has exactly two seats. Count the ways mod 1e9+7.", "recall": [["Odd number of seats?", "Impossible, answer 0."], ["Why i − lastSeat?", "There are that many places to cut between the two seats."]], "links": [["Count Collisions on a Road", 9]]}, {"name": "Minimum Number of Operations to Move All Balls to Each Box", "hook": "Sweep left to right: moving one box further costs <b>one more per ball already passed</b>. Do the same from the right and add.", "mantra": "ans[i] += cost · balls += box · cost += balls (both directions)", "statement": "For each box i, return the total moves to bring every ball to box i (one move shifts one ball one box).", "recall": [["Why does cost grow by balls?", "Every ball on the left is one step further away."], ["Brute force?", "O(n²) sum of |i − j|."]], "links": [["Separate Black and White Balls", 8]]}, {"name": "Count the Number of Substrings With Dominant Ones", "hook": "Dominant needs <b>ones ≥ zeros²</b>, so a dominant substring has <b>at most √n zeros</b>. For each start, step through the next √n zeros and count valid ends.", "mantra": "FOR start: z = 0 → all ends before next zero · z ≥ 1: ends in [z-th zero, next zero) with length ≥ z² + z", "statement": "A binary string has dominant ones if ones ≥ zeros². Count its substrings with dominant ones.", "recall": [["Why only √n zeros?", "z² ≤ ones ≤ n."], ["Why is the valid set of ends an interval?", "With z fixed, more length only adds ones."]], "links": [["Count Binary Substrings", 0]]}, {"name": "Count Beautiful Substrings I", "hook": "n ≤ 1000: for every start extend the end, keeping <b>vowel and consonant counts</b>; check <b>v == c</b> and <b>v·c % k == 0</b>.", "mantra": "FOR i: FOR j ≥ i: update v, c · v == c && v·c % k == 0 → count", "statement": "A substring is beautiful if it has equally many vowels and consonants and (vowels · consonants) % k == 0. Count beautiful substrings.", "recall": [["Why running counts?", "Recounting each substring would be O(n³)."], ["Faster?", "Part II uses a prefix balance and a residue."]], "links": [["Count Beautiful Substrings II", 15]]}, {"name": "Count Beautiful Substrings II", "hook": "v == c means equal <b>balance</b> (vowel +1, consonant −1). v² % k == 0 means v is a multiple of <b>m = smallest with m² % k == 0</b>. Match prefixes on <b>(balance, vowels mod m)</b>.", "mantra": "m = min m: m² % k == 0 · key = (balance, vowels % m) · count += seen[key]", "statement": "Same as part I with n up to 5·10⁴.", "recall": [["Why not v % k?", "k = 4: v = 2 gives v² = 4, divisible, yet v % 4 ≠ 0."], ["Why seed (0, 0)?", "Substrings starting at index 0."]], "links": [["Count Beautiful Substrings I", 14]]}, {"name": "Maximize Active Section with Trade I", "hook": "Turning a 1-block (between zeros) to 0 merges the <b>two zero blocks around it</b>; then they all become 1. Gain = <b>best sum of two adjacent zero blocks</b>.", "mantra": "ones + max over adjacent zero blocks (z₁ + z₂)", "statement": "s is treated as if it had a 1 on both ends. One trade turns a block of 1s surrounded by 0s into 0s, then a block of 0s surrounded by 1s into 1s. Return the maximum number of 1s after at most one trade.", "recall": [["Why adjacent zero blocks?", "They sit on both sides of one 1-block."], ["No such pair?", "No useful trade; the answer is the current count of 1s."]], "links": [["Count Binary Substrings", 0]]}, {"name": "Count Substrings That Differ by One Character", "hook": "Fix a start in s and a start in t, extend together, and count while <b>exactly one</b> position differs; stop at the second difference.", "mantra": "FOR i, j: extend k · diff == 1 → count · diff > 1 → stop", "statement": "Count pairs of equal-length substrings of s and t that differ in exactly one position.", "recall": [["Why break at two differences?", "Longer substrings only add differences."], ["Faster idea?", "For each mismatch, (equal run on the left + 1) × (equal run on the right + 1)."]], "links": []}, {"name": "Substring With Largest Variance", "hook": "Try every ordered pair (a, b): +1 for a, −1 for b, and run <b>Kadane</b> that requires <b>at least one b</b>. Reset only when another b is still to come.", "mantra": "FOR a ≠ b: countA, countB · countB > 0 → best · countA < countB && b remains → reset", "statement": "The variance of a string is the largest difference between the counts of two characters in it. Return the largest variance among all substrings.", "recall": [["Why require one b?", "A substring of only a has variance 0, not countA."], ["Why check restB &gt; 0?", "Without a later b the reset would leave a run with no b."]], "links": []}, {"name": "Find Longest Special Substring That Occurs Thrice", "hook": "Per letter keep the <b>three longest runs</b> t0 ≥ t1 ≥ t2. Best length: <b>max(t0 − 2, min(t0 − 1, t1), t2)</b>.", "mantra": "top3 runs per letter · max(t0−2, min(t0−1, t1), t2) · none → −1", "statement": "A special string is made of one repeated character. Return the length of the longest special substring that occurs at least three times in s, or -1. (Part II is the same with n up to 5·10⁵.)", "recall": [["Why t0 − 2?", "A run of length L contains L − len + 1 copies of a length-len block."], ["Why min(t0 − 1, t1)?", "Two copies from the longest run plus one from the second."]], "links": [["Count Number of Homogenous Substrings", 1]]}, {"name": "Move Pieces to Obtain a String", "hook": "Pieces never pass each other, so the <b>order of L and R must match</b>. Each L can only go <b>left</b> (i ≥ j), each R only <b>right</b> (i ≤ j).", "mantra": "skip _ on both · same piece · L: i ≥ j · R: i ≤ j", "statement": "start and target contain L, R and _. An L moves left into a blank, an R moves right into a blank. Return true if start can become target.", "recall": [["Why can pieces not pass?", "They only move into blanks, one cell at a time."], ["Both pointers at the end?", "All pieces matched."]], "links": [["Count Collisions on a Road", 9]]}];
+mount({
+  title: "Binary Strings and Substring Counting Animations",
+  sub: "Counting substrings is counting <b>(start, end) pairs</b>. Group the string into <b>runs</b>, carry a <b>running count</b>, or use a <b>prefix balance</b> with a hash map.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

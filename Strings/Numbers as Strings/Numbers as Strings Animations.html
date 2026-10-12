@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Numbers as Strings Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="../../assets/theme.js?v=3"></script>
+<link rel="stylesheet" href="../../assets/theme.css?v=3">
+<link rel="stylesheet" href="../../assets/brain-anim.css?v=4">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js?v=4"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const range = (a, b) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
+
+const C_AD = `
+while (i >= 0 || j >= 0 || carry > 0) {
+    int sum = carry;
+    if (i >= 0) sum += num1.charAt(i--) - '0';
+    if (j >= 0) sum += num2.charAt(j--) - '0';
+    sb.append(sum % 10);
+    carry = sum / 10;
+}`;
+{
+  const a = '456', b = '77', r = recorder(); let i = 2, j = 1, carry = 0; const out = [];
+  while (i >= 0 || j >= 0 || carry) { let s = carry; const ai = i, bj = j; if (i >= 0) s += +a[i--]; if (j >= 0) s += +b[j--]; out.unshift(s % 10); carry = Math.floor(s / 10); r.step(ln(C_AD, 'sb.append'), `${ai >= 0 ? a[ai] : 0} + ${bj >= 0 ? b[bj] : 0} + carry = ${s} → write ${s % 10}, carry ${carry}.`, [lane('num1', a.split(''), { active: ai >= 0 ? [ai] : [] }), lane('num2', b.split(''), { active: bj >= 0 ? [bj] : [] }), lane('result', out.slice())], { carry }); }
+  r.step(0, `<b>${out.join('')}</b>.`, [lane('result', out, { done: range(0, out.length - 1) })]);
+  ANIM['Add Strings'] = W('Grade-school addition', C_AD, r.steps);
+}
+
+const C_MU = `
+for (int i = m - 1; i >= 0; i--)
+    for (int j = n - 1; j >= 0; j--) {
+        int sum = (num1.charAt(i) - '0') * (num2.charAt(j) - '0') + pos[i + j + 1];
+        pos[i + j + 1] = sum % 10;
+        pos[i + j] += sum / 10;
+    }`;
+{
+  const a = '123', b = '45', r = recorder(), pos = Array(5).fill(0);
+  r.step(0, '123 × 45 has at most 3 + 2 = 5 digits.', [A('pos', pos.slice())]);
+  for (let i = 2; i >= 0; i--) for (let j = 1; j >= 0; j--) { const s = +a[i] * +b[j] + pos[i + j + 1]; pos[i + j + 1] = s % 10; pos[i + j] += Math.floor(s / 10); r.step(ln(C_MU, 'pos[i + j] +='), `${a[i]} × ${b[j]} + ${s - +a[i] * +b[j]} = ${s} → slot ${i + j + 1} gets ${s % 10}, carry ${Math.floor(s / 10)} to slot ${i + j}.`, [lane('num1', a.split(''), { active: [i] }), lane('num2', b.split(''), { active: [j] }), A('pos', pos.slice(), { active: [i + j + 1], warn: [i + j] })]); }
+  r.step(0, `Drop leading zeros → <b>${pos.join('').replace(/^0+/, '')}</b>.`, [A('pos', pos, { done: range(0, 4) })]);
+  ANIM['Multiply Strings'] = W('Slot array', C_MU, r.steps);
+}
+
+const C_IR = `
+for (int k = 0; k < val.length; k++)
+    while (num >= val[k]) {
+        sb.append(sym[k]);
+        num -= val[k];
+    }`;
+{
+  const val = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1], sym = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I'], r = recorder(); let num = 1994, out = '';
+  val.forEach((v, k) => { while (num >= v) { out += sym[k]; num -= v; r.step(ln(C_IR, 'sb.append'), `Take ${sym[k]} (${v}) → "${out}", left ${num}.`, [R('table', sym, { active: [k] }), R('roman', [out])], { num }); } });
+  r.step(0, `1994 = <b>${out}</b>.`, [R('roman', [out], { done: [0] })]);
+  ANIM['Integer to Roman'] = W('Greedy over 13 values', C_IR, r.steps);
+}
+
+const C_CX = `
+int[] x = parse(num1), y = parse(num2);
+int real = x[0] * y[0] - x[1] * y[1], imag = x[0] * y[1] + x[1] * y[0];
+return real + "+" + imag + "i";`;
+{
+  const r = recorder();
+  r.step(ln(C_CX, 'parse(num1)'), '"1+-1i" → a = 1, b = −1; "1+-1i" → c = 1, d = −1.', [R('parts', ['a = 1', 'b = −1', 'c = 1', 'd = −1'])]);
+  r.step(ln(C_CX, 'int real'), 'real = 1·1 − (−1)(−1) = 0, imag = 1·(−1) + (−1)·1 = −2.', [R('result', ['0', '−2'], { active: [0, 1] })]);
+  r.step(ln(C_CX, 'return'), '<b>"0+-2i"</b>.', [R('answer', ['0+-2i'], { done: [0] })]);
+  ANIM['Complex Number Multiplication'] = W('Parse and multiply', C_CX, r.steps);
+}
+
+const C_FA = `
+num = num * b + sign * a * den;
+den *= b;
+long g = gcd(Math.abs(num), den);
+num /= g;
+den /= g;`;
+{
+  const gcd = (a, b) => b === 0 ? a : gcd(b, a % b), r = recorder(); let num = 0, den = 1;
+  for (const [sg, a, b] of [[-1, 1, 2], [1, 1, 2], [1, 1, 3]]) { num = num * b + sg * a * den; den *= b; const g = gcd(Math.abs(num), den); num /= g; den /= g; r.step(ln(C_FA, 'num /= g'), `${sg < 0 ? '−' : '+'}${a}/${b} → running sum ${num}/${den}.`, [R('sum', [`${num}/${den}`], { active: [0] })], { num, den }); }
+  r.step(0, `"-1/2+1/2+1/3" = <b>${num}/${den}</b>.`, [R('answer', [`${num}/${den}`], { done: [0] })]);
+  ANIM['Fraction Addition and Subtraction'] = W('Running fraction', C_FA, r.steps);
+}
+
+const C_MS = `
+for (int i = 0; i < d.length; i++) last[d[i] - '0'] = i;
+for (int i = 0; i < d.length; i++)
+    for (int k = 9; k > d[i] - '0'; k--)
+        if (last[k] > i) {
+            swap(d, i, last[k]);
+            return Integer.parseInt(new String(d));
+        }`;
+{
+  const d = '1993'.split(''), r = recorder(), last = {}; d.forEach((c, i) => last[c] = i);
+  r.step(ln(C_MS, 'last[d[i]'), 'Last index of each digit: 1 → 0, 9 → 2, 3 → 3.', [lane('digits', d, { showIdx: true })]);
+  r.step(ln(C_MS, 'last[k] > i'), "i = 0 (digit 1): the biggest later digit is 9, last copy at index 2.", [lane('digits', d, { active: [0], warn: [2], showIdx: true })]);
+  [d[0], d[2]] = [d[2], d[0]];
+  r.step(ln(C_MS, 'swap'), `Swap → <b>${d.join('')}</b> (using index 1 would give only 9193).`, [lane('digits', d, { done: [0, 2], showIdx: true })]);
+  ANIM['Maximum Swap'] = W('Last index table', C_MS, r.steps);
+}
+
+const C_NG = `
+int i = d.length - 2;
+while (i >= 0 && d[i] >= d[i + 1]) i--;
+if (i < 0) return -1;
+int j = d.length - 1;
+while (d[j] <= d[i]) j--;
+swap(d, i, j);
+reverse(d, i + 1, d.length - 1);`;
+{
+  const d = '12443322'.split('').map(Number), r = recorder(); let i = d.length - 2;
+  while (i >= 0 && d[i] >= d[i + 1]) i--;
+  r.step(ln(C_NG, 'd[i] >= d[i + 1]'), `From the right, the first drop is at i = ${i} (digit ${d[i]}); the tail is non-increasing.`, [A('digits', d.slice(), { active: [i], ghost: range(i + 1, d.length - 1) })]);
+  let j = d.length - 1; while (d[j] <= d[i]) j--;
+  r.step(ln(C_NG, 'd[j] <= d[i]'), `Rightmost digit bigger than ${d[i]} is ${d[j]} at ${j}.`, [A('digits', d.slice(), { active: [i], warn: [j] })]);
+  [d[i], d[j]] = [d[j], d[i]];
+  r.step(ln(C_NG, 'swap'), 'Swap them.', [A('digits', d.slice(), { done: [i, j] })]);
+  const tail = d.splice(i + 1).reverse(); d.push(...tail);
+  r.step(ln(C_NG, 'reverse'), `Reverse the tail → <b>${d.join('')}</b>.`, [A('digits', d, { done: range(i + 1, d.length - 1) })]);
+  ANIM['Next Greater Element III'] = W('Next permutation', C_NG, r.steps);
+}
+
+const C_CP = `
+cand.add((long) Math.pow(10, len - 1) - 1);
+cand.add((long) Math.pow(10, len) + 1);
+for (long h = half - 1; h <= half + 1; h++)
+    if (String.valueOf(h).length() == String.valueOf(half).length()) cand.add(mirror(h, len % 2 == 1));`;
+{
+  const r = recorder(), n = 12345;
+  r.step(ln(C_CP, 'Math.pow(10, len - 1)'), 'n = 12345. Length-change candidates: 9999 and 100001.', [R('candidates', [9999, 100001])]);
+  r.step(ln(C_CP, 'cand.add(mirror'), 'Left half 123 (middle digit included). Mirror 122, 123, 124 → 12221, 12321, 12421.', [R('candidates', [9999, 100001, 12221, 12321, 12421], { active: [2, 3, 4] })]);
+  r.step(0, 'Distances: 2346, 87656, 124, 24, 76 → <b>12321</b>.', [R('candidates', [9999, 100001, 12221, 12321, 12421], { done: [3] })]);
+  ANIM['Find the Closest Palindrome'] = W('Five candidates', C_CP, r.steps);
+}
+
+const C_SJ = `
+for (char c : s.toCharArray()) v = v * 10 + mapping[c - '0'];
+key[i] = v;
+Arrays.sort(idx, (a, b) -> Long.compare(key[a], key[b]));`;
+{
+  const mp = [8, 9, 4, 0, 2, 1, 3, 5, 7, 6], nums = [991, 338, 38], r = recorder(), key = nums.map(x => +String(x).split('').map(c => mp[+c]).join(''));
+  r.step(ln(C_SJ, 'mapping[c'), `Mapped values: ${nums.map((x, i) => `${x} → ${key[i]}`).join(', ')}.`, [A('nums', nums), A('key', key)]);
+  const order = [0, 1, 2].sort((a, b) => key[a] - key[b]);
+  r.step(ln(C_SJ, 'Arrays.sort'), `Stable sort by key: 338 and 38 tie at 7 and keep their order → <b>[${order.map(i => nums[i])}]</b>.`, [A('sorted', order.map(i => nums[i]), { done: [0, 1, 2] })]);
+  ANIM['Sort the Jumbled Numbers'] = W('Precomputed keys', C_SJ, r.steps);
+}
+
+const C_DI = `
+for (int i = 0; i <= pattern.length(); i++) {
+    stack.append((char) ('1' + i));
+    if (i == pattern.length() || pattern.charAt(i) == 'I') {
+        sb.append(stack.reverse());
+        stack.setLength(0);
+    }
+}`;
+{
+  const p = 'IIIDIDDD', r = recorder(); let st = '', out = '';
+  for (let i = 0; i <= p.length; i++) { st += String(i + 1); const flush = i === p.length || p[i] === 'I'; if (flush) { out += st.split('').reverse().join(''); r.step(ln(C_DI, 'sb.append'), `${i === p.length ? 'End' : `p[${i}] = I`}: flush "${st}" reversed → "${out}".`, [lane('pattern', p.split(''), { active: i < p.length ? [i] : [] }), lane('out', out.split(''))]); st = ''; } else r.step(ln(C_DI, 'stack.append'), `p[${i}] = D: hold ${st}.`, [lane('pattern', p.split(''), { warn: [i] }), R('stack', st.split(''))]); }
+  ANIM['Construct Smallest Number From DI String'] = W('Stack flush', C_DI, r.steps);
+}
+
+const C_PI = `
+for (int i = 0; i < pre; i++) {
+    int d = t.charAt(i) - '0';
+    if (d > limit) return result + (long) Math.pow(limit + 1, pre - i);
+    result += d * (long) Math.pow(limit + 1, pre - i - 1);
+}
+if (t.substring(pre).compareTo(s) >= 0) result++;`;
+{
+  const r = recorder();
+  r.step(0, 'start 1, finish 6000, limit 4, s = "124". count(6000): free prefix is the first digit, x has "6".', [lane('x', '6000'.split(''), { active: [0], ghost: [1, 2, 3] })]);
+  r.step(ln(C_PI, 'd > limit'), '6 > limit 4 → every allowed digit 0..4 is smaller: add 5¹ = 5 (124, 1124, 2124, 3124, 4124).', [R('powerful', [124, 1124, 2124, 3124, 4124], { done: [0, 1, 2, 3, 4] })], { result: 5 });
+  r.step(0, 'count(0) = 0, so the answer is <b>5</b>.', [R('answer', [5], { done: [0] })]);
+  ANIM['Count the Number of Powerful Integers'] = W('Digit walk', C_PI, r.steps);
+}
+
+const C_UB = `
+for (int i = 0; i < nums.length; i++) sb.append(nums[i].charAt(i) == '0' ? '1' : '0');`;
+{
+  const nums = ['111', '011', '001'], r = recorder(); let out = '';
+  nums.forEach((s, i) => { out += s[i] === '0' ? '1' : '0'; r.step(ln(C_UB, 'sb.append'), `nums[${i}][${i}] = ${s[i]} → write ${out[i]}; now differs from "${s}".`, [lane(`nums[${i}]`, s.split(''), { active: [i] }), lane('answer', out.split(''))]); });
+  r.step(0, `<b>"${out}"</b> is not in the list.`, [lane('answer', out.split(''), { done: [0, 1, 2] })]);
+  ANIM['Find Unique Binary String'] = W('Diagonal flip', C_UB, r.steps);
+}
+
+const META = [{"name": "Add Strings", "hook": "Two pointers from the <b>right</b>, add digits plus <b>carry</b>, keep going while either has digits or carry is left.", "mantra": "sum = carry + d1 + d2 · append sum % 10 · carry = sum / 10 · reverse", "statement": "Return the sum of two non-negative integers given as strings, without converting them to integers.", "recall": [["Why include carry in the loop condition?", "999 + 1 needs an extra digit."], ["Why reverse?", "Digits are produced least significant first."]], "links": [["Multiply Strings", 1]]}, {"name": "Multiply Strings", "hook": "Digit i of num1 times digit j of num2 belongs at <b>positions i + j and i + j + 1</b> of the product.", "mantra": "sum = a·b + pos[i+j+1] · pos[i+j+1] = sum % 10 · pos[i+j] += sum / 10", "statement": "Return the product of two non-negative integers given as strings, without big-integer libraries.", "recall": [["Why m + n slots?", "The product of an m-digit and an n-digit number has at most m + n digits."], ["Zero result?", "All slots are 0, so return \"0\"."]], "links": [["Add Strings", 0]]}, {"name": "Integer to Roman", "hook": "List values <b>including the subtractive pairs</b> (900, 400, 90, 40, 9, 4) and greedily take the biggest that fits.", "mantra": "FOR value desc: WHILE num ≥ value: append symbol, subtract", "statement": "Convert an integer in 1..3999 to a Roman numeral.", "recall": [["Why include 900 and 4?", "Otherwise greedy writes DCCCC and IIII."], ["Reverse direction?", "Roman to Integer subtracts when a smaller value comes before a larger one."]], "links": [["Add Strings", 0]]}, {"name": "Complex Number Multiplication", "hook": "Split each \"a+bi\" at <b>+</b>, then <b>(ac − bd) + (ad + bc)i</b>.", "mantra": "parse a, b, c, d · real = ac − bd · imag = ad + bc", "statement": "Multiply two complex numbers given as strings \"real+imaginaryi\" (parts can be negative) and return the result in the same format.", "recall": [["Why split at the first +?", "The format always has \"+\" before the imaginary part, even if it is negative."], ["Where does −bd come from?", "bi · di = bd · i² = −bd."]], "links": [["Fraction Addition and Subtraction", 4]]}, {"name": "Fraction Addition and Subtraction", "hook": "Read signed fractions one at a time, add to a running <b>num/den</b>, and <b>reduce by gcd</b> after each step.", "mantra": "num = num·b + sign·a·den · den *= b · divide both by gcd", "statement": "Evaluate an expression like \"-1/2+1/3\" and return the result as an irreducible fraction (an integer is written with denominator 1).", "recall": [["Why gcd of |num|?", "The sign stays on the numerator."], ["Why is 0 printed as 0/1?", "gcd(0, den) = den."]], "links": [["Complex Number Multiplication", 3]]}, {"name": "Maximum Swap", "hook": "Find the <b>first digit</b> that has a <b>bigger digit later</b>. Swap it with the <b>last copy</b> of the biggest such digit.", "mantra": "last[d] = last index · FOR i: FOR k = 9 > d[i]: last[k] > i → swap, done", "statement": "Swap at most two digits of num once to get the maximum value.", "recall": [["Why the last copy?", "1993 → swap with the second 9: 9913 beats 9193."], ["No improvement?", "Digits are non-increasing; return num."]], "links": [["Next Greater Element III", 6]]}, {"name": "Next Greater Element III", "hook": "<b>Next permutation</b> of the digits: find the drop from the right, swap with the next bigger digit to its right, reverse the tail. Reject if &gt; int max.", "mantra": "i = last d[i] < d[i+1] · j = last d[j] > d[i] · swap · reverse(i+1..)", "statement": "Return the smallest integer greater than n that uses exactly the same digits, or -1 if none exists or it does not fit in 32 bits.", "recall": [["Why reverse instead of sort?", "The suffix is already non-increasing, so reversing sorts it."], ["Why parse as long?", "The result can exceed Integer.MAX_VALUE."]], "links": [["Maximum Swap", 5]]}, {"name": "Find the Closest Palindrome", "hook": "Mirror the <b>left half with −1, 0, +1</b>, plus <b>99…9</b> (one digit shorter) and <b>10…01</b> (one longer). Pick the nearest, smaller on ties, never n itself.", "mantra": "cands: 10^(L−1) − 1, 10^L + 1, mirror(half ± 0/1) · min distance, tie → smaller", "statement": "Return the closest palindrome integer to n (not n itself), choosing the smaller one on a tie. n has up to 18 digits.", "recall": [["Why exclude n?", "The answer must differ from n even if n is a palindrome."], ["Why the 9…9 candidate?", "100 → 99 is closer than 101."]], "links": []}, {"name": "Sort the Jumbled Numbers", "hook": "Compute each number's <b>mapped value once</b>, then <b>stable-sort indexes</b> by it so ties keep input order.", "mantra": "key[i] = map digits of nums[i] · sort indexes by key", "statement": "mapping[d] says what digit d becomes. Sort nums by their mapped values (ties keep relative order) and return the original numbers in that order.", "recall": [["Why sort Integer[] and not int[]?", "The object sort is stable and takes a comparator."], ["Leading zeros in the mapped value?", "Building it as a number drops them naturally."]], "links": [["Maximum Swap", 5]]}, {"name": "Construct Smallest Number From DI String", "hook": "Write 1, 2, 3, … in order, but <b>reverse every run that ends in D</b>: push digits, flush the stack at each <b>I</b> and at the end.", "mantra": "push i+1 · at I or end: append stack reversed", "statement": "pattern has I (increase) and D (decrease). Return the lexicographically smallest number of length n + 1 using distinct digits 1..9 that follows the pattern.", "recall": [["\"IIIDIDDD\"?", "123549876."], ["Why flush on I?", "Everything before it can be finalized; the next digit must be bigger."]], "links": [["Next Greater Element III", 6]]}, {"name": "Count the Number of Powerful Integers", "hook": "count(x) = numbers ≤ x that <b>end with s</b> and have <b>all digits ≤ limit</b>. Walk the free prefix digits of x: each smaller digit frees the rest as <b>(limit + 1)^rest</b>.", "mantra": "answer = count(finish) − count(start − 1) · prefix digit d: add d·(limit+1)^rest · d > limit → add all and stop", "statement": "A number is powerful if it ends with suffix s and each of its digits is at most limit. Count powerful integers in [start, finish].", "recall": [["Why subtract count(start − 1)?", "Range counts are differences of prefix counts."], ["Why compare the suffix at the end?", "With the prefix equal to x's, s must not exceed x's last digits."]], "links": []}, {"name": "Find Unique Binary String", "hook": "<b>Flip the i-th bit of the i-th string</b>. The result differs from every string in at least one place.", "mantra": "ans[i] = nums[i][i] == '0' ? '1' : '0'", "statement": "nums holds n distinct binary strings of length n. Return any binary string of length n that is not in nums.", "recall": [["Why exactly n strings of length n?", "There is one diagonal position per string."], ["Alternative?", "Put the values in a set and try 0..n."]], "links": []}];
+mount({
+  title: "Numbers as Strings Animations",
+  sub: "When a number is too big or its <b>digits are the point</b>, work on the digit string directly: from the right for arithmetic, from the left for greedy choices.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

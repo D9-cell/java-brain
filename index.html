@@ -175,7 +175,7 @@ const P = BrainProgress, esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&
 const url = h => h.split('/').map(encodeURIComponent).join('/');
 const pages = Object.keys(BrainLinks);
 const total = pages.reduce((n, h) => n + BrainLinks[h].length, 0);
-const ABBR = { Backtracking: 'BT', 'Binary Lifting': 'BL', Bit_Magic: 'BM', DP: 'DP', Design: 'DS', Graph: 'GR', Greedy: 'GD', HashMap: 'HM', HashSet: 'HS', Heap: 'HP', 'Line Sweep': 'LS', 'Linked List': 'LL', 'Meet In The Middle': 'MM', Queue: 'QU', Recursion: 'RC', 'Segment Tree': 'ST', 'Sliding Window': 'SW', Stack: 'SK', Tree: 'TR', Trie: 'TI' };
+const ABBR = { Backtracking: 'BT', 'Binary Lifting': 'BL', Bit_Magic: 'BM', DP: 'DP', Design: 'DS', Graph: 'GR', Greedy: 'GD', HashMap: 'HM', HashSet: 'HS', Heap: 'HP', 'Line Sweep': 'LS', 'Linked List': 'LL', 'Meet In The Middle': 'MM', Queue: 'QU', Recursion: 'RC', 'Segment Tree': 'ST', 'Sliding Window': 'SW', Stack: 'SK', Strings: 'SR', Tree: 'TR', Trie: 'TI' };
 const TITLES = { DP: 'Dynamic Programming' };
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const platClass = n => /^LeetCode/i.test(n) ? 'plat-lc' : /^GfG/i.test(n) ? 'plat-gfg' : 'plat-cc';

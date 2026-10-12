@@ -86,4 +86,4 @@ Left: b gained a character that a did not have.
 ## Connected
 - [Delete Operation for Two Strings](Delete%20Operation%20for%20Two%20Strings.md)
 - [Longest Common Subsequence](Longest%20Common%20Subsequence.md)
-- One Edit Distance
+- [One Edit Distance](../../Strings/Subsequences%20Stacks%20and%20Greedy/One%20Edit%20Distance.md)
