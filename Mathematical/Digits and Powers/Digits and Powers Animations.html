@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digits and Powers Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="../../assets/theme.js?v=3"></script>
+<link rel="stylesheet" href="../../assets/theme.css?v=3">
+<link rel="stylesheet" href="../../assets/brain-anim.css?v=4">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js?v=4"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const digs = x => String(x).split('').map(Number);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+
+const C_AD1 = `
+while (num >= 10) {
+    int sum = 0;
+    while (num > 0) {
+        sum += num % 10;
+        num /= 10;
+    }
+    num = sum;
+}
+return num;`;
+const C_AD2 = `
+if (num == 0) return 0;
+return 1 + (num - 1) % 9;`;
+{
+  let num = 9875; const r = recorder();
+  r.step(0, `num = ${num}. Keep replacing it with the sum of its digits until one digit is left.`, [A('digits', digs(num))], { num });
+  while (num >= 10) { const d = digs(num), s = d.reduce((a, b) => a + b, 0); r.step(ln(C_AD1, 'sum += num % 10'), `${d.join(' + ')} = <b>${s}</b>`, [A('digits', d, { active: d.map((_, i) => i) })], { num, sum: s }); num = s; r.step(ln(C_AD1, 'num = sum'), `num becomes ${num}.`, [A('digits', digs(num), { done: num < 10 ? [0] : [] })], { num }); }
+  r.step(ln(C_AD1, 'return num'), `One digit left: <b>${num}</b>.`, [A('digits', [num], { done: [0] })], { num });
+  const r2 = recorder(), n = 9875;
+  r2.step(0, 'A number and its digit sum leave the same remainder mod 9, because 10 ≡ 1 (mod 9).', [A('n', digs(n)), R('mod 9', [`${n} % 9 = ${n % 9}`, `29 % 9 = ${29 % 9}`, `11 % 9 = ${11 % 9}`, `2 % 9 = 2`])], { n });
+  r2.step(ln(C_AD2, 'return 1 +'), `1 + (${n} − 1) % 9 = <b>${1 + (n - 1) % 9}</b>. The shift makes multiples of 9 give 9 instead of 0.`, [R('answer', [1 + (n - 1) % 9], { done: [0] })], { n, root: 1 + (n - 1) % 9 });
+  ANIM['Add Digits'] = [{ name: 'Simulate', code: C_AD1, steps: r.steps }, { name: 'Digital root formula', code: C_AD2, steps: r2.steps }];
+}
+
+const C_RI = `
+int rev = 0;
+while (x != 0) {
+    int d = x % 10;
+    if (rev > Integer.MAX_VALUE / 10 || (rev == Integer.MAX_VALUE / 10 && d > 7)) return 0;
+    if (rev < Integer.MIN_VALUE / 10 || (rev == Integer.MIN_VALUE / 10 && d < -8)) return 0;
+    rev = rev * 10 + d;
+    x /= 10;
+}
+return rev;`;
+{
+  const r = recorder(); let x = -1230, rev = 0;
+  r.step(ln(C_RI, 'int rev = 0'), 'x = -1230. Java % keeps the sign, so every digit comes out negative and rev stays negative.', [R('x', [x]), R('rev', [rev])], { x, rev });
+  while (x !== 0) { const d = x % 10 === 0 ? 0 : x % 10; r.step(ln(C_RI, 'int d = x % 10'), `d = x % 10 = ${d}.`, [R('x', [x], { active: [0] }), R('rev', [rev])], { x, d, rev }); r.step(ln(C_RI, 'Integer.MAX_VALUE / 10'), `rev = ${rev} is far from ±214748364, safe to grow.`, [R('rev', [rev])], { rev }); rev = rev * 10 + d; x = Math.trunc(x / 10); r.step(ln(C_RI, 'rev = rev * 10 + d'), `rev = ${rev}, x = ${x}.`, [R('x', [x]), R('rev', [rev], { active: [0] })], { x, rev }); }
+  r.step(ln(C_RI, 'return rev'), `Answer <b>${rev}</b>. The trailing zero became a leading zero and vanished.`, [R('rev', [rev], { done: [0] })], { rev });
+  r.step(ln(C_RI, 'Integer.MAX_VALUE / 10'), 'Overflow case: x = 1534236469 would reverse to 9646324351. When rev = 964632435 > 214748364 the guard returns <b>0</b> before multiplying.', [R('rev', [964632435], { bad: [0] }), R('MAX/10', [214748364])]);
+  ANIM['Reverse Integer'] = W('Digit loop with guard', C_RI, r.steps);
+}
+
+const C_MD = `
+int rev = 0, x = n;
+while (x > 0) {
+    rev = rev * 10 + x % 10;
+    x /= 10;
+}
+return Math.abs(n - rev);`;
+{
+  const r = recorder(), n = 120; let x = n, rev = 0;
+  r.step(ln(C_MD, 'int rev = 0'), `n = ${n}.`, [A('digits', digs(n))], { n });
+  while (x > 0) { rev = rev * 10 + x % 10; x = Math.floor(x / 10); r.step(ln(C_MD, 'rev = rev * 10'), `Move the last digit over: rev = ${rev}, x = ${x}.`, [R('x', [x]), R('rev', [rev], { active: [0] })], { x, rev }); }
+  r.step(ln(C_MD, 'return'), `|${n} − ${rev}| = <b>${Math.abs(n - rev)}</b>.`, [R('distance', [Math.abs(n - rev)], { done: [0] })], { rev });
+  ANIM['Mirror Distance of an Integer'] = W('Digit loop', C_MD, r.steps);
+}
+
+const C_EX = `
+while (columnNumber > 0) {
+    columnNumber--;
+    sb.append((char) ('A' + columnNumber % 26));
+    columnNumber /= 26;
+}
+return sb.reverse().toString();`;
+{
+  const r = recorder(); let n = 701; const out = [];
+  r.step(0, 'columnNumber = 701. Letters are digits 1..26 with no zero.', [R('n', [n]), R('letters', out)], { n });
+  while (n > 0) { n--; r.step(ln(C_EX, 'columnNumber--'), `Shift down: ${n}. Now 0..25 maps to A..Z.`, [R('n', [n], { active: [0] }), R('letters', out)], { n }); const c = String.fromCharCode(65 + n % 26); out.push(c); r.step(ln(C_EX, 'sb.append'), `${n} % 26 = ${n % 26} → '${c}'.`, [R('letters', out, { active: [out.length - 1] })], { n }); n = Math.floor(n / 26); r.step(ln(C_EX, 'columnNumber /= 26'), `n = ${n}.`, [R('n', [n]), R('letters', out)], { n }); }
+  r.step(ln(C_EX, 'reverse'), `Reverse: <b>${out.slice().reverse().join('')}</b>.`, [R('title', out.slice().reverse(), { done: [0, 1] })]);
+  ANIM['Excel Sheet Column Title'] = W('Shifted base 26', C_EX, r.steps);
+}
+
+const C_UG = `
+if (n <= 0) return false;
+for (int p : new int[]{2, 3, 5})
+    while (n % p == 0) n /= p;
+return n == 1;`;
+{
+  const run = n0 => { const r = recorder(); let n = n0; r.step(ln(C_UG, 'if (n <= 0)'), `n = ${n0}.`, [R('n', [n])], { n }); for (const p of [2, 3, 5]) { const seq = [n]; while (n % p === 0) { n /= p; seq.push(n); } r.step(ln(C_UG, 'while (n % p'), `Divide out ${p}: ${seq.join(' → ')}.`, [R('n', seq, { active: [seq.length - 1] })], { p, n }); } r.step(ln(C_UG, 'return n == 1'), n === 1 ? `Left with 1 → <b>ugly</b>.` : `Left with ${n}, another prime → <b>not ugly</b>.`, [R('n', [n], n === 1 ? { done: [0] } : { bad: [0] })], { n }); return r.steps; };
+  ANIM['Ugly Number'] = [{ name: 'Divide out (n = 60)', code: C_UG, steps: run(60) }, { name: 'Divide out (n = 42)', code: C_UG, steps: run(42) }];
+}
+
+const C_P3A = `
+if (n <= 0) return false;
+while (n % 3 == 0) n /= 3;
+return n == 1;`;
+const C_P3B = `
+return n > 0 && 1162261467 % n == 0;`;
+{
+  const r = recorder(); let n = 243; const seq = [n];
+  r.step(ln(C_P3A, 'if (n <= 0)'), 'n = 243.', [R('n', seq)], { n });
+  while (n % 3 === 0) { n /= 3; seq.push(n); r.step(ln(C_P3A, 'while'), `Divide by 3 → ${n}.`, [R('n', seq, { active: [seq.length - 1] })], { n }); }
+  r.step(ln(C_P3A, 'return'), 'Reached 1 → <b>true</b>.', [R('n', seq, { done: [seq.length - 1] })]);
+  const r2 = recorder();
+  r2.step(0, '3¹⁹ = 1162261467 is the largest power of three in an int. Its divisors are exactly 3⁰..3¹⁹.', [R('3^k', [1, 3, 9, 27, 81, 243, '…', 1162261467])]);
+  r2.step(ln(C_P3B, 'return'), '1162261467 % 243 = 0 → <b>true</b>. 1162261467 % 45 = 27 → false (45 has a factor 5).', [R('n', [243, 45], { done: [0], bad: [1] })]);
+  ANIM['Power of Three'] = [{ name: 'Divide by 3', code: C_P3A, steps: r.steps }, { name: 'Divisor of 3^19', code: C_P3B, steps: r2.steps }];
+}
+
+const C_P4 = `
+return n > 0 && (n & (n - 1)) == 0 && (n & 0x55555555) != 0;`;
+{
+  const bits = n => n.toString(2).padStart(8, '0').split('');
+  const r = recorder(), mask = '01010101'.split('');
+  for (const n of [16, 32]) {
+    r.step(ln(C_P4, 'return'), `n = ${n}: n & (n − 1) = ${n & (n - 1)}, so exactly one bit is set.`, [lane('n', bits(n), { active: bits(n).map((b, i) => b === '1' ? i : -1) }), lane('n − 1', bits(n - 1))], { n });
+    const ok = (n & 0x55555555) !== 0;
+    r.step(ln(C_P4, '0x55555555'), `The mask keeps even positions (bit 0, 2, 4, …). ${n} → ${ok ? '<b>true</b>' : '<b>false</b>, its bit is at an odd position'}.`, [lane('n', bits(n), ok ? { done: [bits(n).indexOf('1')] } : { bad: [bits(n).indexOf('1')] }), lane('mask', mask)], { n });
+  }
+  ANIM['Power of Four'] = W('Bit mask', C_P4, r.steps);
+}
+
+const C_PW = `
+long e = n;
+if (e < 0) {
+    x = 1 / x;
+    e = -e;
+}
+double result = 1;
+while (e > 0) {
+    if ((e & 1) == 1) result *= x;
+    x *= x;
+    e >>= 1;
+}
+return result;`;
+{
+  const r = recorder(); let x = 2, e = 13, res = 1;
+  r.step(ln(C_PW, 'long e = n'), '2^13. 13 = 1101₂, so 2^13 = 2^8 · 2^4 · 2^1.', [lane('bits of e', '1101'.split(''))], { x, e, result: res });
+  while (e > 0) { const bit = e & 1; if (bit) res *= x; r.step(ln(C_PW, 'if ((e & 1)'), bit ? `Bit 1 → multiply: result = ${res}.` : 'Bit 0 → skip.', [R('result', [res], bit ? { active: [0] } : {}), R('x', [x])], { x, e, result: res }); x *= x; e >>= 1; r.step(ln(C_PW, 'x *= x'), `Square x → ${x}, e → ${e}.`, [R('result', [res]), R('x', [x], { active: [0] })], { x, e, result: res }); }
+  r.step(ln(C_PW, 'return result'), `Answer <b>${res}</b> with 4 rounds instead of 13 multiplications.`, [R('result', [res], { done: [0] })]);
+  ANIM['Pow(x, n)'] = W('Iterative fast power', C_PW, r.steps);
+}
+
+const C_PN = `
+long rev = 0;
+for (long x = n; x > 0; x /= 10) rev = rev * 10 + x % 10;
+return power(n % MOD, rev);`;
+{
+  const r = recorder();
+  r.step(ln(C_PN, 'for (long x'), 'n = 12 → reverse = 21.', [R('n', [12]), R('rev', [21], { active: [0] })]);
+  let b = 12, e = 21, res = 1; const M = 1000000007;
+  while (e > 0) { if (e & 1) res = Number(BigInt(res) * BigInt(b) % BigInt(M)); r.step(ln(C_PN, 'return power'), `bit ${e & 1}: result = ${res}; base squared mod M next.`, [R('result', [res], { active: [0] }), R('base', [b])], { e, result: res }); b = Number(BigInt(b) * BigInt(b) % BigInt(M)); e >>= 1; }
+  r.step(ln(C_PN, 'return power'), `12^21 mod 1e9+7 = <b>${res}</b>.`, [R('answer', [res], { done: [0] })]);
+  ANIM['Power of Numbers'] = W('Reverse + modular fast power', C_PN, r.steps);
+}
+
+const C_C3 = `
+while (n > 0) {
+    if (n % 3 == 2) return false;
+    n /= 3;
+}
+return true;`;
+{
+  const run = n0 => { const r = recorder(); let n = n0; const d = []; r.step(0, `n = ${n0}. Read base-3 digits from the right.`, [R('base 3', [])], { n }); while (n > 0) { d.unshift(n % 3); if (n % 3 === 2) { r.step(ln(C_C3, 'n % 3 == 2'), `Digit 2 → would need the same power twice → <b>false</b>.`, [R('base 3', d, { bad: [0] })], { n }); return r.steps; } r.step(ln(C_C3, 'n /= 3'), `Digit ${n % 3}.`, [R('base 3', d, { active: [0] })], { n }); n = Math.floor(n / 3); } r.step(ln(C_C3, 'return true'), `All digits 0 or 1 → <b>true</b> (${n0} = ${d.map((v, i) => v ? `3^${d.length - 1 - i}` : '').filter(Boolean).join(' + ')}).`, [R('base 3', d, { done: d.map((_, i) => i) })]); return r.steps; };
+  ANIM['Check if Number is a Sum of Powers of Three'] = [{ name: 'n = 91', code: C_C3, steps: run(91) }, { name: 'n = 21', code: C_C3, steps: run(21) }];
+}
+
+const C_PI = `
+for (int a = 1; a <= bound; a *= x) {
+    for (int b = 1; a + b <= bound; b *= y) {
+        seen.add(a + b);
+        if (y == 1) break;
+    }
+    if (x == 1) break;
+}`;
+{
+  const r = recorder(), x = 2, y = 3, bound = 10, seen = new Set(), xs = [1, 2, 4, 8], ys = [1, 3, 9];
+  const m = xs.map(a => ys.map(b => a + b <= bound ? a + b : '·'));
+  r.step(0, 'x = 2, y = 3, bound = 10. Rows are powers of 2, columns powers of 3.', [G('a + b', m.map(row => row.map(() => '')), [], { rowLabels: xs, colLabels: ys })]);
+  const shown = m.map(row => row.map(() => ''));
+  xs.forEach((a, i) => { ys.forEach((b, j) => { if (a + b <= bound) { seen.add(a + b); shown[i][j] = a + b; } }); r.step(ln(C_PI, 'seen.add'), `a = ${a}: add ${ys.filter(b => a + b <= bound).map(b => a + b).join(', ')}.`, [G('a + b', shown, ys.map((_, j) => [i, j, 'active']), { rowLabels: xs, colLabels: ys }), R('set', [...seen].sort((p, q) => p - q))]); });
+  r.step(0, `Result: <b>${[...seen].sort((p, q) => p - q).join(', ')}</b>. Duplicates (like 5 = 4 + 1 = 2 + 3) collapse in the set.`, [R('set', [...seen].sort((p, q) => p - q), { done: [...seen].map((_, i) => i) })]);
+  ANIM['Powerful Integers'] = W('Double loop over powers', C_PI, r.steps);
+}
+
+const C_RP = `
+String key = sortedDigits(n);
+for (int p = 0; p < 31; p++)
+    if (sortedDigits(1 << p).equals(key)) return true;
+return false;`;
+{
+  const r = recorder(), n = 821, key = String(n).split('').sort().join('');
+  r.step(ln(C_RP, 'String key'), `n = ${n}, sorted digits = "${key}".`, [R('key', [key])]);
+  for (let p = 0; p < 31; p++) { const v = 2 ** p, k = String(v).split('').sort().join(''); if (String(v).length !== 3 && p !== 9) continue; r.step(ln(C_RP, 'equals(key)'), `2^${p} = ${v} → "${k}" ${k === key ? '= key → <b>true</b>' : '≠ key'}.`, [R('key', [key]), R(`2^${p}`, [k], k === key ? { done: [0] } : {})]); if (k === key) break; }
+  ANIM['Reordered Power of 2'] = W('Sorted-digit signature', C_RP, r.steps);
+}
+
+const C_SQ = `
+long a = 0, b = (long) Math.sqrt(c);
+while (a <= b) {
+    long s = a * a + b * b;
+    if (s == c) return true;
+    if (s < c) a++;
+    else b--;
+}
+return false;`;
+{
+  const r = recorder(), c = 41; let a = 0, b = 6; const sq = [0, 1, 2, 3, 4, 5, 6];
+  r.step(ln(C_SQ, 'long a = 0'), `c = 41. a = 0, b = ⌊√41⌋ = 6.`, [A('k', sq, { ptr: { [a]: 'a', [b]: 'b' } })], { a, b });
+  while (a <= b) { const s = a * a + b * b; if (s === c) { r.step(ln(C_SQ, 's == c'), `${a}² + ${b}² = 41 → <b>true</b>.`, [A('k', sq, { ptr: { [a]: 'a', [b]: 'b' }, done: [a, b] })], { a, b, s }); break; } r.step(ln(C_SQ, s < c ? 'a++' : 'b--'), `${a}² + ${b}² = ${s} ${s < c ? '< 41 → a++' : '> 41 → b−−'}.`, [A('k', sq, { ptr: { [a]: 'a', [b]: 'b' }, active: [a, b] })], { a, b, s }); if (s < c) a++; else b--; }
+  ANIM['Sum of Square Numbers'] = W('Two pointers', C_SQ, r.steps);
+}
+
+const C_CT = `
+for (int a = 1; a <= n; a++)
+    for (int b = 1; b <= n; b++) {
+        int s = a * a + b * b;
+        int c = (int) Math.sqrt(s);
+        if (c <= n && c * c == s) count++;
+    }`;
+{
+  const r = recorder(), n = 10, m = Array.from({ length: n }, () => Array(n).fill('')), hl = []; let count = 0;
+  r.step(0, 'n = 10. Cell (a, b) shows c when a² + b² is a perfect square with c ≤ n.', [G('c', m, [], { rowLabels: Array.from({ length: n }, (_, i) => i + 1), colLabels: Array.from({ length: n }, (_, i) => i + 1) })]);
+  for (let a = 1; a <= n; a++) { for (let b = 1; b <= n; b++) { const s = a * a + b * b, c = Math.floor(Math.sqrt(s)); if (c <= n && c * c === s) { m[a - 1][b - 1] = c; hl.push([a - 1, b - 1, 'done']); count++; } } if (a % 3 === 0 || a === n) r.step(ln(C_CT, 'count++'), `Rows up to a = ${a}: count = ${count}.`, [G('c', m, hl, { rowLabels: Array.from({ length: n }, (_, i) => i + 1), colLabels: Array.from({ length: n }, (_, i) => i + 1) })], { count }); }
+  r.step(0, `Answer <b>${count}</b>: (3,4,5), (4,3,5), (6,8,10), (8,6,10).`, [R('count', [count], { done: [0] })]);
+  ANIM['Count Square Sum Triples'] = W('Pairs + square check', C_CT, r.steps);
+}
+
+const C_CS = `
+String s = Integer.toString(x);
+int n = s.length();
+if (n % 2 == 1) continue;
+int diff = 0;
+for (int i = 0; i < n / 2; i++) diff += s.charAt(i) - s.charAt(n - 1 - i);
+if (diff == 0) count++;`;
+{
+  const r = recorder(); let count = 0;
+  for (const x of [1203, 1212, 1230, 1224, 123]) { const d = digs(x); if (d.length % 2) { r.step(ln(C_CS, 'n % 2 == 1'), `${x} has odd length → skip.`, [A('digits', d, { ghost: d.map((_, i) => i) })], { count }); continue; } const h = d.length / 2, L = d.slice(0, h).reduce((a, b) => a + b), Rr = d.slice(h).reduce((a, b) => a + b); if (L === Rr) count++; r.step(ln(C_CS, 'diff == 0'), `${x}: ${d.slice(0, h).join('+')} = ${L} vs ${d.slice(h).join('+')} = ${Rr} ${L === Rr ? '→ symmetric' : ''}.`, [A('digits', d, L === Rr ? { done: d.map((_, i) => i) } : { active: d.map((_, i) => i) })], { count }); }
+  ANIM['Count Symmetric Integers'] = W('Scan the range', C_CS, r.steps);
+}
+
+const C_F3 = `
+for (int x = 100; x < 1000; x += 2) {
+    int[] need = new int[10];
+    need[x / 100]++;
+    need[x / 10 % 10]++;
+    need[x % 10]++;
+    boolean ok = true;
+    for (int d = 0; d < 10 && ok; d++) ok = need[d] <= have[d];
+    if (ok) out.add(x);
+}`;
+{
+  const r = recorder(), digits = [2, 1, 3, 0], have = Array(10).fill(0); digits.forEach(d => have[d]++); const out = [];
+  r.step(0, 'digits = [2,1,3,0] → counts per digit.', [A('have', have)]);
+  for (const x of [100, 102, 120, 122, 130, 132, 210, 312, 320, 324]) { const need = Array(10).fill(0); need[Math.floor(x / 100)]++; need[Math.floor(x / 10) % 10]++; need[x % 10]++; const bad = need.map((v, d) => v > have[d] ? d : -1).filter(d => d >= 0); if (!bad.length) out.push(x); r.step(ln(C_F3, bad.length ? 'ok = need[d]' : 'out.add'), `${x}: ${bad.length ? `needs more ${bad.join(',')} than available → skip` : 'fits → keep'}.`, [A('have', have, bad.length ? { bad } : { done: digs(x) }), R('out', out)]); }
+  r.step(0, 'The full scan gives [102,120,130,132,210,230,302,310,312,320], sorted and distinct for free.', [R('out', [102, 120, 130, 132, 210, 230, 302, 310, 312, 320], { done: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] })]);
+  ANIM['Finding 3-Digit Even Numbers'] = W('Enumerate candidates', C_F3, r.steps);
+}
+
+const C_CC = `
+return Math.max(n - 999, 0);`;
+{
+  const r = recorder();
+  r.step(0, '1..999: no comma. 1,000..99,999: one comma each.', [R('band', ['1–999: 0', '1,000–99,999: 1'])]);
+  r.step(ln(C_CC, 'return'), 'n = 1002 → numbers 1000, 1001, 1002 → <b>3</b> commas.', [R('with comma', [1000, 1001, 1002], { done: [0, 1, 2] })], { n: 1002, answer: 3 });
+  ANIM['Count Commas in Range'] = W('Formula', C_CC, r.steps);
+}
+
+const C_CC2 = `
+long lower = 1000;
+for (int commas = 1; lower <= n; commas++) {
+    long upper = Math.min(n, lower * 1000 - 1);
+    result += (upper - lower + 1) * commas;
+    if (lower > n / 1000) break;
+    lower *= 1000;
+}`;
+{
+  const r = recorder(), n = 12345678; let lower = 1000, res = 0, k = 1; const bands = [];
+  r.step(ln(C_CC2, 'long lower'), `n = ${n.toLocaleString('en-US')}.`, [R('bands', bands)], { result: res });
+  while (lower <= n) { const upper = Math.min(n, lower * 1000 - 1), cnt = upper - lower + 1; res += cnt * k; bands.push(`${lower.toLocaleString('en-US')}–${upper.toLocaleString('en-US')}: ${cnt}×${k}`); r.step(ln(C_CC2, 'result +='), `Band with ${k} comma${k > 1 ? 's' : ''}: ${cnt} numbers → +${cnt * k}.`, [R('bands', bands, { active: [bands.length - 1] })], { commas: k, result: res }); lower *= 1000; k++; }
+  r.step(0, `Total <b>${res}</b>.`, [R('result', [res], { done: [0] })]);
+  ANIM['Count Commas in Range II'] = W('Band counting', C_CC2, r.steps);
+}
+
+const C_TW = `
+for (int i = 1; i + 1 < s.length(); i++) {
+    char a = s.charAt(i - 1), b = s.charAt(i), c = s.charAt(i + 1);
+    if ((b > a && b > c) || (b < a && b < c)) score++;
+}`;
+{
+  const r = recorder(); let total = 0;
+  for (const x of [4848, 1221, 97]) { const d = digs(x); if (d.length < 3) { r.step(0, `${x}: fewer than three digits → 0.`, [A('digits', d, { ghost: [0, 1] })], { total }); continue; } for (let i = 1; i + 1 < d.length; i++) { const peak = d[i] > d[i - 1] && d[i] > d[i + 1], val = d[i] < d[i - 1] && d[i] < d[i + 1]; if (peak || val) total++; r.step(ln(C_TW, 'score++'), `${x}, digit ${d[i]} between ${d[i - 1]} and ${d[i + 1]}: ${peak ? 'peak' : val ? 'valley' : 'neither'}.`, [A('digits', d, (peak || val) ? { done: [i], active: [i - 1, i + 1] } : { warn: [i] })], { total }); } }
+  ANIM['Total Waviness of Numbers in Range I'] = W('Scan each number', C_TW, r.steps);
+}
+
+const C_MN1 = `
+int n = nums.length, sum = n * (n + 1) / 2;
+for (int x : nums) sum -= x;
+return sum;`;
+const C_MN2 = `
+int x = nums.length;
+for (int i = 0; i < nums.length; i++) x ^= i ^ nums[i];
+return x;`;
+{
+  const a = [3, 0, 1], r = recorder(); let s = 6;
+  r.step(ln(C_MN1, 'int n'), 'nums = [3,0,1], n = 3. Expected 0+1+2+3 = 6.', [A('nums', a)], { sum: s });
+  a.forEach((v, i) => { s -= v; r.step(ln(C_MN1, 'sum -= x'), `Subtract ${v} → ${s}.`, [A('nums', a, { active: [i] })], { sum: s }); });
+  r.step(ln(C_MN1, 'return'), `Missing <b>${s}</b>.`, [R('answer', [s], { done: [0] })]);
+  const r2 = recorder(); let x = 3;
+  r2.step(ln(C_MN2, 'int x'), 'Start with x = n = 3.', [A('nums', a)], { x });
+  a.forEach((v, i) => { x ^= i ^ v; r2.step(ln(C_MN2, 'x ^= i'), `x ^= ${i} ^ ${v} → ${x}.`, [A('nums', a, { active: [i] })], { x }); });
+  r2.step(ln(C_MN2, 'return'), `Every number seen as both index and value cancelled. Left: <b>${x}</b>.`, [R('answer', [x], { done: [0] })]);
+  ANIM['Missing Number'] = [{ name: 'Sum formula', code: C_MN1, steps: r.steps }, { name: 'XOR', code: C_MN2, steps: r2.steps }];
+}
+
+const C_FM = `
+long diff = sum - N * (N + 1) / 2;
+long sqDiff = sq - N * (N + 1) * (2 * N + 1) / 6;
+long plus = sqDiff / diff;
+int a = (int) ((plus + diff) / 2), b = (int) ((plus - diff) / 2);`;
+{
+  const g = [[9, 1, 7], [8, 9, 2], [3, 4, 6]], r = recorder(), N = 9, flat = g.flat();
+  const sum = flat.reduce((x, y) => x + y, 0), sq = flat.reduce((x, y) => x + y * y, 0), S = N * (N + 1) / 2, Q = N * (N + 1) * (2 * N + 1) / 6;
+  const d = sum - S, q = sq - Q, p = q / d, a = (p + d) / 2, b = (p - d) / 2;
+  r.step(0, 'Grid holds 1..9 except one repeat a and one missing b.', [G('grid', g)]);
+  r.step(ln(C_FM, 'long diff'), `sum = ${sum}, expected ${S} → a − b = ${d}.`, [G('grid', g, [[0, 0, 'warn'], [1, 1, 'warn']])], { diff: d });
+  r.step(ln(C_FM, 'long sqDiff'), `sum of squares = ${sq}, expected ${Q} → a² − b² = ${q}.`, [G('grid', g)], { diff: d, sqDiff: q });
+  r.step(ln(C_FM, 'long plus'), `a + b = ${q} / ${d} = ${p}.`, [R('a + b', [p])], { diff: d, plus: p });
+  r.step(ln(C_FM, 'int a'), `a = (${p} + ${d}) / 2 = <b>${a}</b>, b = (${p} − ${d}) / 2 = <b>${b}</b>.`, [R('[a, b]', [a, b], { done: [0, 1] })]);
+  ANIM['Find Missing and Repeated Values'] = W('Two equations', C_FM, r.steps);
+}
+
+const C_MB = `
+for (char c : text.toCharArray()) f[c - 'a']++;
+return Math.min(Math.min(f['b' - 'a'], f['a' - 'a']),
+       Math.min(Math.min(f['l' - 'a'] / 2, f['o' - 'a'] / 2), f['n' - 'a']));`;
+{
+  const t = 'loonbalxballpoon', r = recorder(), f = {}; for (const c of t) f[c] = (f[c] || 0) + 1;
+  r.step(ln(C_MB, 'f[c - \'a\']++'), `text = "${t}". Count the letters of "balloon".`, [R('letters', ['b', 'a', 'l', 'o', 'n']), R('count', ['b', 'a', 'l', 'o', 'n'].map(c => f[c] || 0))]);
+  const per = [f.b, f.a, Math.floor(f.l / 2), Math.floor(f.o / 2), f.n];
+  r.step(ln(C_MB, 'return Math.min'), `Copies each letter allows: b ${per[0]}, a ${per[1]}, l/2 ${per[2]}, o/2 ${per[3]}, n ${per[4]} → <b>${Math.min(...per)}</b>.`, [R('copies', per, { done: per.map((v, i) => v === Math.min(...per) ? i : -1) })]);
+  ANIM['Maximum Number of Balloons'] = W('Count and divide', C_MB, r.steps);
+}
+
+const META = [{"name": "Add Digits", "hook": "Summing digits keeps the <b>remainder mod 9</b>, so the end result is the digital root <code>1 + (n − 1) % 9</code>.", "mantra": "n == 0 → 0 · ELSE 1 + (n − 1) % 9", "statement": "Given a non-negative integer num, repeatedly add all its digits until the result has only one digit, and return it.", "recall": [["Why mod 9?", "10 leaves remainder 1 mod 9, so d·10^k and d leave the same remainder."], ["Why 1 + (n − 1) % 9 and not n % 9?", "Multiples of 9 must give 9, not 0."]], "links": [["Reverse Integer", 1], ["Mirror Distance of an Integer", 2]]}, {"name": "Reverse Integer", "hook": "Pop the last digit, push it onto the reverse, and <b>check overflow before multiplying by 10</b>.", "mantra": "d = x % 10 · GUARD rev vs MAX/10 · rev = rev*10 + d", "statement": "Given a 32-bit signed integer x, return x with its digits reversed. If the result leaves the 32-bit range, return 0. Assume 64-bit integers are not allowed.", "recall": [["Why check before multiplying?", "After the overflow the value has already wrapped and the check is useless."], ["What does -123 % 10 give in Java?", "-3, so the reverse is negative automatically."]], "links": [["Mirror Distance of an Integer", 2], ["Power of Numbers", 8]]}, {"name": "Mirror Distance of an Integer", "hook": "Reverse the digits and take <b>|n − reverse(n)|</b>. Trailing zeros vanish in the reverse.", "mantra": "rev = rev*10 + x % 10 · RETURN |n − rev|", "statement": "The mirror distance of n is |n − reverse(n)|, where reverse(n) reads the digits of n backwards (leading zeros dropped). Return it.", "recall": [["What is the reverse of 120?", "21: the leading zero after reversing is dropped."], ["Overflow?", "n ≤ 10⁹ and its reverse fits in an int for the given range."]], "links": [["Reverse Integer", 1]]}, {"name": "Excel Sheet Column Title", "hook": "Letters are digits <b>1..26 with no zero</b>, so <b>subtract one</b> before each <code>% 26</code>.", "mantra": "n−− · append A + n % 26 · n /= 26 · REVERSE", "statement": "Given columnNumber, return its column title as it appears in Excel: 1 → A, 26 → Z, 27 → AA, 28 → AB.", "recall": [["Why decrement first?", "Without it 26 gives \"A@\" instead of \"Z\"."], ["Reverse at the end?", "Digits come out least significant first."]], "links": [["Check if Number is a Sum of Powers of Three", 9]]}, {"name": "Ugly Number", "hook": "Divide out <b>2, 3 and 5</b> as long as they divide. An ugly number is reduced to <b>1</b>.", "mantra": "FOR p IN 2,3,5: WHILE n % p == 0: n /= p · RETURN n == 1", "statement": "An ugly number is a positive integer whose prime factors are only 2, 3 and 5. Return true if n is ugly.", "recall": [["Is 1 ugly?", "Yes, it has no prime factors at all."], ["Why check n ≤ 0?", "The while loop on 0 would never end."]], "links": [["Power of Three", 5]]}, {"name": "Power of Three", "hook": "3 is prime, so the divisors of <b>3¹⁹ = 1162261467</b> are exactly the powers of 3 that fit in an int.", "mantra": "n > 0 && 1162261467 % n == 0", "statement": "Return true if n is a power of three.", "recall": [["Why not the same trick for 6?", "6 is not prime: 2 divides 6¹⁰ but is not a power of 6."], ["Why not log10(n)/log10(3)?", "Floating point error makes it fail on some inputs."]], "links": [["Power of Four", 6], ["Check if Number is a Sum of Powers of Three", 9]]}, {"name": "Power of Four", "hook": "A power of four is a power of two whose <b>single bit sits at an even position</b>: mask <code>0x55555555</code>.", "mantra": "n > 0 && (n & (n−1)) == 0 && (n & 0x55555555) != 0", "statement": "Return true if n is a power of four.", "recall": [["Why does 2^odd fail the mask?", "Its bit is at an odd position, which 0x55555555 has cleared."], ["Why n % 3 == 1?", "4 ≡ 1 mod 3, so every power of 4 is 1 mod 3; 2·4^k is 2 mod 3."]], "links": [["Power of Three", 5]]}, {"name": "Pow(x, n)", "hook": "Read the exponent <b>bit by bit</b>: square the base each step, multiply it in when the bit is 1.", "mantra": "e < 0 → x = 1/x · WHILE e: IF e&1 r *= x · x *= x · e >>= 1", "statement": "Implement pow(x, n), which computes x raised to the power n (n can be negative).", "recall": [["Why a long exponent?", "-(-2³¹) does not fit in an int."], ["Recursive version?", "half = pow(x, n/2); return n odd ? half·half·x : half·half."]], "links": [["Power of Numbers", 8]]}, {"name": "Power of Numbers", "hook": "Reverse the digits for the exponent, then <b>fast power mod 1e9+7</b>.", "mantra": "rev = reverse(n) · power(n, rev) % MOD", "statement": "Given n, compute n raised to the power of its reverse (digits read backwards), modulo 10⁹ + 7.", "recall": [["Why reduce after each multiply?", "Two numbers below 1e9+7 multiply to under 1.0e18, which fits in a long; three would not."], ["Can the exponent be reduced mod (MOD − 1)?", "Yes by Fermat when n is not a multiple of MOD, but it is not needed here."]], "links": [["Pow(x, n)", 7], ["Reverse Integer", 1]]}, {"name": "Check if Number is a Sum of Powers of Three", "hook": "Distinct powers of three means <b>base 3 digits that are only 0 or 1</b>. A digit 2 kills it.", "mantra": "WHILE n: IF n % 3 == 2 → false · n /= 3", "statement": "Return true if n can be written as a sum of distinct powers of three.", "recall": [["Why not try subsets?", "There is only one base-3 representation, so no search is needed."], ["Same idea in base 2?", "Every number is a sum of distinct powers of two, so it would always be true."]], "links": [["Power of Three", 5], ["Excel Sheet Column Title", 3]]}, {"name": "Powerful Integers", "hook": "There are only about <b>log(bound)</b> powers of each base. Try every pair and stop when a base is <b>1</b>.", "mantra": "FOR a = x^i ≤ bound: FOR b = y^j: ADD a+b · BREAK IF base == 1", "statement": "Given x, y and bound, return every value x^i + y^j ≤ bound with i, j ≥ 0, each once.", "recall": [["Why break when the base is 1?", "1^i is always 1, so the loop would never end."], ["Why a set?", "Different (i, j) can give the same sum, e.g. 2 + 1 = 1 + 2."]], "links": [["Pow(x, n)", 7]]}, {"name": "Reordered Power of 2", "hook": "Reordering keeps the <b>multiset of digits</b>. Compare the sorted digits with the 31 powers of two.", "mantra": "key = sorted digits of n · ANY 2^p WITH SAME key", "statement": "Reorder the digits of n (no leading zero) in any order. Return true if some order is a power of two.", "recall": [["Why no permutation search?", "The signature captures every permutation at once."], ["Leading zeros?", "Powers of two have no leading zero, so a matching one is valid."]], "links": [["Finding 3-Digit Even Numbers", 15]]}, {"name": "Sum of Square Numbers", "hook": "Start <b>a = 0, b = √c</b> and squeeze: too small moves a up, too big moves b down.", "mantra": "a=0, b=√c · s<c a++ · s>c b−− · s==c true", "statement": "Given a non-negative integer c, decide whether there are integers a and b with a² + b² = c.", "recall": [["Why long?", "a² + b² can reach about 2·c, beyond the int range for large c."], ["Another way?", "Fermat: c works iff every prime 3 mod 4 appears an even number of times."]], "links": [["Count Square Sum Triples", 13], ["Missing Number", 19]]}, {"name": "Count Square Sum Triples", "hook": "n ≤ 250, so try <b>every (a, b)</b> and check if <b>a² + b²</b> is a perfect square ≤ n².", "mantra": "FOR a, b: c = √(a²+b²) · c ≤ n && c² == a²+b² → count++", "statement": "A square triple (a, b, c) has a² + b² = c². Count the ordered triples with 1 ≤ a, b, c ≤ n.", "recall": [["Why count (3,4,5) and (4,3,5)?", "The problem counts ordered triples."], ["Is Math.sqrt safe?", "Yes for these small values; the c·c check confirms it."]], "links": [["Sum of Square Numbers", 12]]}, {"name": "Count Symmetric Integers", "hook": "Only <b>even-length</b> numbers count. Compare the <b>digit sum of the two halves</b>.", "mantra": "odd length → skip · sum(first half) == sum(second half)", "statement": "An integer with 2n digits is symmetric if the sum of its first n digits equals the sum of its last n digits. Count symmetric integers in [low, high].", "recall": [["Is 5 symmetric?", "No, odd-length numbers never are."], ["Faster for large ranges?", "Digit DP on the difference of sums."]], "links": [["Total Waviness of Numbers in Range I", 18]]}, {"name": "Finding 3-Digit Even Numbers", "hook": "Do not permute the input. Walk the <b>450 even numbers 100..998</b> and check each against the digit counts.", "mantra": "have = counts · FOR x = 100..998 step 2: need ≤ have → add", "statement": "Given digits (with repeats), return all distinct three-digit even numbers without leading zeros that can be built from them, sorted.", "recall": [["Why step by 2?", "Only even numbers qualify."], ["Why no sort?", "Candidates are visited in increasing order."]], "links": [["Reordered Power of 2", 11], ["Maximum Number of Balloons", 21]]}, {"name": "Count Commas in Range", "hook": "Up to 10⁵ only numbers <b>≥ 1000</b> have a comma, and exactly one. Answer: <b>max(n − 999, 0)</b>.", "mantra": "max(n − 999, 0)", "statement": "Write every integer from 1 to n with standard thousands separators (1,000). Return the total number of commas. Here n ≤ 10⁵.", "recall": [["Where does the formula break?", "At 1,000,000, which has two commas; see part II."], ["Why max with 0?", "For n &lt; 1000 there are no commas."]], "links": [["Count Commas in Range II", 17]]}, {"name": "Count Commas in Range II", "hook": "Numbers in <b>[1000^k, 1000^(k+1))</b> carry <b>k commas</b>. Add each band clipped at n.", "mantra": "FOR lower = 1000, ×1000: count(lower..min(n, 1000·lower − 1)) · k", "statement": "Same as part I but n can be up to 10¹⁵: count all commas written from 1 to n.", "recall": [["How many commas does 10¹⁵ have?", "Five: it has 16 digits and (16 − 1) / 3 = 5."], ["Why the early break?", "lower · 1000 would overflow long past 10¹⁸."]], "links": [["Count Commas in Range", 16], ["Excel Sheet Column Title", 3]]}, {"name": "Total Waviness of Numbers in Range I", "hook": "A digit is a <b>peak</b> if it beats both neighbours, a <b>valley</b> if both beat it. Count them for every number.", "mantra": "FOR x IN range: FOR inner digit b: b > both OR b < both → +1", "statement": "The waviness of a number is the count of its inner digits that are strictly greater than both neighbours or strictly smaller than both. Return the total waviness of all integers in [num1, num2] (range up to 10⁵).", "recall": [["What about 1 or 2 digit numbers?", "No inner digit, so 0."], ["Larger ranges?", "Part II uses digit DP with the last two digits in the state."]], "links": [["Count Symmetric Integers", 14]]}, {"name": "Missing Number", "hook": "Expected <b>0 + 1 + … + n</b> minus the actual sum is the missing one. XOR of all indexes and values works too.", "mantra": "n(n+1)/2 − sum · OR x = n ^ i ^ nums[i]", "statement": "nums holds n distinct numbers from 0..n. Return the one that is missing.", "recall": [["Why start the XOR at n?", "Indexes are 0..n−1; n is the extra value to include."], ["Overflow?", "n ≤ 10⁴ so the int sum is safe; XOR is always safe."]], "links": [["Find Missing and Repeated Values", 20]]}, {"name": "Find Missing and Repeated Values", "hook": "Two unknowns, two equations: <b>sum gives a − b</b>, <b>sum of squares gives a² − b²</b>, so a + b = (a² − b²)/(a − b).", "mantra": "d = sum − S · q = sq − Q · a = (q/d + d)/2 · b = (q/d − d)/2", "statement": "An n × n grid holds 1..n² except one value a appears twice and one value b is missing. Return [a, b].", "recall": [["Why longs?", "Sum of squares up to n² = 2500 reaches about 5·10⁹."], ["Can a − b be 0?", "No, a and b are different."]], "links": [["Missing Number", 19]]}, {"name": "Maximum Number of Balloons", "hook": "Count letters. The answer is the <b>scarcest letter divided by how often \"balloon\" needs it</b> (l and o twice).", "mantra": "min(b, a, l/2, o/2, n)", "statement": "Return the maximum number of times the word \"balloon\" can be formed from the characters of text, using each character once.", "recall": [["Why divide l and o by 2?", "\"balloon\" contains two of each."], ["General version?", "min over letters of have[c] / need[c]."]], "links": [["Finding 3-Digit Even Numbers", 15]]}];
+mount({
+  title: "Digits and Powers Animations",
+  sub: "A number is a <b>list of digits in some base</b>. Peel digits with <code>% base</code> and <code>/ base</code>, rebuild with <code>* base + d</code>.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

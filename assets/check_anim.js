@@ -7,7 +7,8 @@ ctx.window = ctx; vm.createContext(ctx);
 const scripts = [...html.matchAll(/<script(?: src="([^"]+)")?>([\s\S]*?)<\/script>/g)];
 let problems = 0, steps = 0, errors = [];
 for (const m of scripts) {
-  const code = m[1] ? fs.readFileSync(path.resolve(dir, m[1]), 'utf8') : m[2];
+  if (m[1] && /theme\.js/.test(m[1])) continue;
+  const code = m[1] ? fs.readFileSync(path.resolve(dir, m[1].split('?')[0]), 'utf8') : m[2];
   if (!m[1]) {
     ctx.BrainAnim.mount = null;
     const patched = code.replace(/\bmount\(\{/, 'globalThis.__cfg = ({').replace('const { lane, tree, recorder, mount, ln } = BrainAnim;', 'const { lane, tree, recorder, ln } = BrainAnim; const mount = null;');

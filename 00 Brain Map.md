@@ -101,8 +101,18 @@ Each topic folder has `<Topic> Animations.html`; the Java lives in each problem 
 | Scheduling and Partitions | 8 | `DP/Scheduling and Partitions/…` |
 | Bitmask Digit and Tree DP | 9 | `DP/Bitmask Digit and Tree DP/…` |
 
+**Mathematical: ✅ done** (88 notes in 5 pages). Range Sum Query - Mutable already lives in Segment Tree, and the two copies of Calculate Money in Leetcode Bank became one note. Every solution was checked against a brute-force version or the published samples; the random-sampling classes were checked statistically.
+
+| Topic | Problems | Page |
+| --- | --- | --- |
+| Digits and Powers | 22 | `Mathematical/Digits and Powers/…` |
+| Primes Divisors and Remainders | 16 | `Mathematical/Primes Divisors and Remainders/…` |
+| Counting and Modular Combinatorics | 18 | `Mathematical/Counting and Modular Combinatorics/…` |
+| Formulas and Observations | 19 | `Mathematical/Formulas and Observations/…` |
+| Geometry and Randomness | 13 | `Mathematical/Geometry and Randomness/…` |
+
 ### Still to do ⏳
-Mathematical 83 · strings 112 · Arrays 383 · Design (33 C++ files, check overlap with the Design topic)
+strings 112 · Arrays 383 · Design (33 C++ files, check overlap with the Design topic)
 
 ## Bugs found in the originals while porting
 - **Array Pair Sum Divisibility** (HashSet): the set-based approach returns false for `[1,1,3,3], k=4`. Fixed with remainder counts.

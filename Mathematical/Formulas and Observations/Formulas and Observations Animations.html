@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formulas and Observations Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="../../assets/theme.js?v=3"></script>
+<link rel="stylesheet" href="../../assets/theme.css?v=3">
+<link rel="stylesheet" href="../../assets/brain-anim.css?v=4">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js?v=4"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const range = (a, b) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+
+const C_CM = `
+int w = n / 7, r = n % 7;
+int full = 28 * w + 7 * w * (w - 1) / 2;
+int partial = r * (w + 1) + r * (r - 1) / 2;
+return full + partial;`;
+{
+  const n = 17, r = recorder(), w = Math.floor(n / 7), rr = n % 7, rows = range(0, w).map(k => range(0, 6).map(d => k * 7 + d < n ? k + d + 1 : ''));
+  r.step(0, 'n = 17. Week k deposits k+1 … k+7.', [G('deposits', rows, [], { rowLabels: ['wk 0', 'wk 1', 'wk 2'], colLabels: ['M', 'T', 'W', 'T', 'F', 'S', 'S'] })]);
+  const full = 28 * w + 7 * w * (w - 1) / 2;
+  r.step(ln(C_CM, 'int full'), `${w} full weeks: 28 + 35 = ${full}.`, [G('deposits', rows, range(0, w - 1).flatMap(k => range(0, 6).map(d => [k, d, 'done'])), { rowLabels: ['wk 0', 'wk 1', 'wk 2'], colLabels: ['M', 'T', 'W', 'T', 'F', 'S', 'S'] })], { w, full });
+  const part = rr * (w + 1) + rr * (rr - 1) / 2;
+  r.step(ln(C_CM, 'int partial'), `${rr} days left starting at ${w + 1}: ${range(w + 1, w + rr).join(' + ')} = ${part}.`, [G('deposits', rows, range(0, rr - 1).map(d => [w, d, 'active']), { rowLabels: ['wk 0', 'wk 1', 'wk 2'], colLabels: ['M', 'T', 'W', 'T', 'F', 'S', 'S'] })], { r: rr, partial: part });
+  r.step(ln(C_CM, 'return'), `Total <b>${full + part}</b>.`, [R('total', [full + part], { done: [0] })]);
+  ANIM['Calculate Money in Leetcode Bank'] = W('Formula', C_CM, r.steps);
+}
+
+const C_CT = `
+return n - 1;`;
+{
+  const r = recorder(); let n = 7, matches = 0;
+  while (n > 1) { const m = Math.floor(n / 2); matches += m; r.step(0, `${n} teams: ${m} matches${n % 2 ? ', one bye' : ''}, ${Math.ceil(n / 2)} advance.`, [lane('teams', range(1, n), { bad: range(0, m - 1).map(i => 2 * i + 1) })], { matches }); n = Math.ceil(n / 2); }
+  r.step(ln(C_CT, 'return'), `${matches} matches = 7 − 1. Each match removed one team.`, [R('matches', [matches], { done: [0] })]);
+  ANIM['Count of Matches in Tournament'] = W('Count eliminations', C_CT, r.steps);
+}
+
+const C_PP = `
+int trips = time / (n - 1), rest = time % (n - 1);
+return trips % 2 == 0 ? 1 + rest : n - rest;`;
+{
+  const r = recorder(), n = 4;
+  for (const time of [2, 5, 7]) { const trips = Math.floor(time / (n - 1)), rest = time % (n - 1), ans = trips % 2 === 0 ? 1 + rest : n - rest; r.step(ln(C_PP, 'return'), `time = ${time}: ${trips} trips of ${n - 1}, ${rest} more → ${trips % 2 ? 'walking back from 4' : 'walking forward from 1'} → person <b>${ans}</b>.`, [lane('people', range(1, n), { active: [ans - 1] })], { trips, rest }); }
+  ANIM['Pass the Pillow'] = W('Trips and remainder', C_PP, r.steps);
+}
+
+const C_WB = `
+int drunk = numBottles, empty = numBottles;
+while (empty >= numExchange) {
+    int fresh = empty / numExchange;
+    drunk += fresh;
+    empty = empty % numExchange + fresh;
+}`;
+{
+  const r = recorder(), e = 3; let drunk = 9, empty = 9;
+  r.step(ln(C_WB, 'int drunk'), '9 bottles, exchange 3. Drink all 9.', [R('drunk, empty', [drunk, empty])], { drunk, empty });
+  while (empty >= e) { const f = Math.floor(empty / e); drunk += f; empty = empty % e + f; r.step(ln(C_WB, 'empty = empty %'), `Trade for ${f} full, drink them: drunk ${drunk}, empty ${empty}.`, [R('drunk, empty', [drunk, empty], { active: [0] })], { drunk, empty }); }
+  r.step(0, `Formula: 9 + (9 − 1)/(3 − 1) = <b>${9 + Math.floor(8 / 2)}</b>.`, [R('answer', [drunk], { done: [0] })]);
+  ANIM['Water Bottles'] = W('Simulate', C_WB, r.steps);
+}
+
+const C_CO = `
+while (num1 != 0 && num2 != 0) {
+    if (num1 >= num2) {
+        ops += num1 / num2;
+        num1 %= num2;
+    } else {
+        ops += num2 / num1;
+        num2 %= num1;
+    }
+}`;
+{
+  const r = recorder(); let a = 10, b = 3, ops = 0;
+  r.step(0, 'num1 = 10, num2 = 3.', [R('num1, num2', [a, b])], { ops });
+  while (a && b) { if (a >= b) { ops += Math.floor(a / b); const q = Math.floor(a / b); a %= b; r.step(ln(C_CO, 'num1 %= num2'), `Subtract ${b} from num1 ${q} times at once → ${a}.`, [R('num1, num2', [a, b], { active: [0] })], { ops }); } else { const q = Math.floor(b / a); ops += q; b %= a; r.step(ln(C_CO, 'num2 %= num1'), `Subtract ${a} from num2 ${q} times → ${b}.`, [R('num1, num2', [a, b], { active: [1] })], { ops }); } }
+  r.step(0, `Total <b>${ops}</b> operations.`, [R('ops', [ops], { done: [0] })]);
+  ANIM['Count Operations to Obtain Zero'] = W('Bulk Euclid', C_CO, r.steps);
+}
+
+const C_OD = `
+return (high + 1) / 2 - low / 2;`;
+{
+  const r = recorder(), low = 3, high = 7;
+  r.step(0, 'Odds in [0, 7]: 1, 3, 5, 7 → (7 + 1)/2 = 4.', [lane('0..7', range(0, 7), { done: [1, 3, 5, 7] })]);
+  r.step(0, 'Odds in [0, 2]: just 1 → 3/2 = 1.', [lane('0..7', range(0, 7), { ghost: [1], done: [3, 5, 7] })]);
+  r.step(ln(C_OD, 'return'), '4 − 1 = <b>3</b> (3, 5, 7).', [R('answer', [3], { done: [0] })]);
+  ANIM['Count Odd Numbers in an Interval Range'] = W('Prefix counts', C_OD, r.steps);
+}
+
+const C_PI = `
+int total = n * (n + 1) / 2;
+int x = (int) Math.sqrt(total);
+return x * x == total ? x : -1;`;
+{
+  const r = recorder(), n = 8;
+  r.step(ln(C_PI, 'int total'), 'n = 8: total = 36.', [lane('1..8', range(1, 8))], { total: 36 });
+  r.step(ln(C_PI, 'Math.sqrt'), '√36 = 6. Check: 1+…+6 = 21 and 6+7+8 = 21.', [lane('1..8', range(1, 8), { warn: [0, 1, 2, 3, 4], active: [5], done: [6, 7] })], { x: 6 });
+  r.step(ln(C_PI, 'return'), '6² = 36 → <b>6</b>.', [R('answer', [6], { done: [0] })]);
+  ANIM['Find the Pivot Integer'] = W('Formula', C_PI, r.steps);
+}
+
+const C_CC = `
+return 1 + 2L * n * (n - 1);`;
+{
+  const r = recorder(), N = 7, c = 3;
+  for (let n = 1; n <= 4; n++) { const m = range(0, N - 1).map(i => range(0, N - 1).map(j => Math.abs(i - c) + Math.abs(j - c) < n ? (Math.abs(i - c) + Math.abs(j - c) === n - 1 ? 'new' : '■') : '')); r.step(ln(C_CC, 'return'), `Minute ${n}: ring of ${n === 1 ? 1 : 4 * (n - 1)} → total ${1 + 2 * n * (n - 1)}.`, [G('cells', m, range(0, N - 1).flatMap(i => range(0, N - 1).filter(j => Math.abs(i - c) + Math.abs(j - c) === n - 1).map(j => [i, j, 'active'])))], { n, total: 1 + 2 * n * (n - 1) }); }
+  ANIM['Count Total Number of Colored Cells'] = W('Series', C_CC, r.steps);
+}
+
+const C_AF = `
+return (long) n * m / 2;`;
+{
+  const r = recorder(), n = 3, m = 2, g = range(1, n).map(x => range(1, m).map(y => (x + y) % 2 ? 'A' : 'B'));
+  r.step(0, 'n = 3, m = 2. Alice wins when x + y is odd (she makes the last move).', [G('winner', g, range(0, n - 1).flatMap(i => range(0, m - 1).filter(j => (i + j + 2) % 2).map(j => [i, j, 'done'])), { rowLabels: range(1, n), colLabels: range(1, m) })]);
+  r.step(ln(C_AF, 'return'), '3 · 2 / 2 = <b>3</b> winning pairs.', [R('answer', [3], { done: [0] })]);
+  ANIM['Alice and Bob Playing Flower Game'] = W('Parity count', C_AF, r.steps);
+}
+
+const C_VG = `
+for (char c : s.toCharArray())
+    if ("aeiou".indexOf(c) >= 0) return true;
+return false;`;
+{
+  const r = recorder(), s = 'leetcoder'.split(''), v = s.map((c, i) => 'aeiou'.includes(c) ? i : -1).filter(i => i >= 0);
+  r.step(ln(C_VG, 'return true'), '"leetcoder" has 4 vowels (even) → Alice has a winning plan.', [lane('s', s, { warn: v })]);
+  r.step(0, 'Alice removes "leetcod" (3 vowels, odd), leaving "er" with one vowel.', [lane('s', s, { ghost: range(0, 6), warn: [7] })]);
+  r.step(0, 'Bob needs an even count; he can only remove "r" or nothing useful. Alice then takes the vowel and wins.', [lane('left', ['e', 'r'], { done: [0] })]);
+  ANIM['Vowels Game in a String'] = W('Look for a vowel', C_VG, r.steps);
+}
+
+const C_AC = `
+double m = minutes * 6.0;
+double h = (hour % 12) * 30.0 + minutes * 0.5;
+double diff = Math.abs(h - m);
+return Math.min(diff, 360 - diff);`;
+{
+  const r = recorder(), hr = 3, mi = 30;
+  r.step(ln(C_AC, 'double m'), '3:30. Minute hand: 30 · 6 = 180°.', [R('minute°', [180])], { m: 180 });
+  r.step(ln(C_AC, 'double h'), 'Hour hand: 3 · 30 + 30 · 0.5 = 105°. It has moved half way to 4.', [R('hour°', [105])], { m: 180, h: 105 });
+  r.step(ln(C_AC, 'return'), '|105 − 180| = 75; min(75, 285) = <b>75</b>.', [R('angle', [75], { done: [0] })]);
+  ANIM['Angle Between Hands of a Clock'] = W('Formula', C_AC, r.steps);
+}
+
+const C_MO = `
+return n * n / 4;`;
+{
+  const r = recorder(), n = 6, a = range(0, n - 1).map(i => 2 * i + 1);
+  r.step(0, `n = 6: arr = [${a}]. The mean is 6, every element ends there.`, [A('arr', a)]);
+  r.step(0, 'Lower half needs 5 + 3 + 1 = 9 units moved in from the upper half.', [A('need', a.map(x => 6 - x), { warn: [0, 1, 2], ghost: [3, 4, 5] })]);
+  r.step(ln(C_MO, 'return'), '6² / 4 = <b>9</b>.', [R('answer', [9], { done: [0] })]);
+  ANIM['Minimum Operations to Make Array Equal'] = W('Formula', C_MO, r.steps);
+}
+
+const C_AP = `
+int d = (max - min) / (n - 1);
+if (d == 0) return true;
+boolean[] used = new boolean[n];
+for (int x : arr) {
+    if ((x - min) % d != 0) return false;
+    int slot = (x - min) / d;
+    if (used[slot]) return false;
+    used[slot] = true;
+}`;
+{
+  const arr = [7, 1, 13, 4, 10], r = recorder(), min = 1, max = 13, d = 3, used = Array(5).fill('·');
+  r.step(ln(C_AP, 'int d'), 'arr = [7,1,13,4,10]: min 1, max 13, n = 5 → d = 12/4 = 3.', [A('arr', arr)], { d });
+  arr.forEach((x, i) => { const slot = (x - min) / d; used[slot] = x; r.step(ln(C_AP, 'used[slot] = true'), `${x} → slot ${slot}.`, [A('arr', arr, { active: [i] }), A('slots', used.slice(), { done: [slot] })], { slot }); });
+  r.step(0, 'Every slot filled once → <b>true</b>.', [A('slots', used, { done: range(0, 4) })]);
+  ANIM['Can Make Arithmetic Progression From Sequence'] = W('Slots', C_AP, r.steps);
+}
+
+const C_HS = `
+for (int d : differences) {
+    cur += d;
+    min = Math.min(min, cur);
+    max = Math.max(max, cur);
+}
+return (int) Math.max(0, (upper - lower) - (max - min) + 1);`;
+{
+  const diff = [3, -4, 5, 1, -2], lower = -4, upper = 5, r = recorder(); let cur = 0, mn = 0, mx = 0; const pre = [0];
+  r.step(0, 'differences [3,-4,5,1,-2], range [-4, 5]. Start the shape at 0.', [A('prefix', pre)], { min: 0, max: 0 });
+  for (const d of diff) { cur += d; pre.push(cur); mn = Math.min(mn, cur); mx = Math.max(mx, cur); r.step(ln(C_HS, 'cur += d'), `prefix ${cur}.`, [A('prefix', pre, { active: [pre.length - 1] })], { min: mn, max: mx }); }
+  const ans = Math.max(0, (upper - lower) - (mx - mn) + 1);
+  r.step(ln(C_HS, 'return'), `Shape height ${mx - mn}, room ${upper - lower} → <b>${ans}</b> starting values.`, [R('answer', [ans], { done: [0] })]);
+  ANIM['Count the Hidden Sequences'] = W('Prefix range', C_HS, r.steps);
+}
+
+const C_GL = `
+for (int i = 0; i < nums.length; i++)
+    if (Math.abs(nums[i] - i) > 1) return false;
+return true;`;
+{
+  const run = a => { const r = recorder(); for (let i = 0; i < a.length; i++) { const bad = Math.abs(a[i] - i) > 1; r.step(ln(C_GL, bad ? 'return false' : 'Math.abs'), `nums[${i}] = ${a[i]}, distance ${Math.abs(a[i] - i)}${bad ? ' > 1 → an inversion skips a position → <b>false</b>' : ''}.`, [A('nums', a, bad ? { bad: [i] } : { active: [i], done: range(0, i - 1) })]); if (bad) return r.steps; } r.step(ln(C_GL, 'return true'), 'Everything within one place → <b>true</b>.', [A('nums', a, { done: range(0, a.length - 1) })]); return r.steps; };
+  ANIM['Global and Local Inversions'] = [{ name: '[1,0,2]', code: C_GL, steps: run([1, 0, 2]) }, { name: '[1,2,0]', code: C_GL, steps: run([1, 2, 0]) }];
+}
+
+const C_CU = `
+if (min % 2 != 0) return true;
+for (int x : nums1)
+    if (x % 2 != 0) return false;
+return true;`;
+{
+  const r = recorder();
+  r.step(ln(C_CU, 'if (min % 2'), '[3,4,8]: min 3 is odd. 4 − 3 = 1 and 8 − 3 = 5 → all odd → <b>true</b>.', [A('nums1', [3, 4, 8], { active: [0], done: [1, 2] })]);
+  r.step(ln(C_CU, 'return false'), '[2,3,5]: min 2 is even and stuck. 3 has no smaller odd to subtract → <b>false</b>.', [A('nums1', [2, 3, 5], { active: [0], bad: [1] })]);
+  ANIM['Construct Uniform Parity Array II'] = W('Check the minimum', C_CU, r.steps);
+}
+
+const C_BA = `
+while (res.size() < n) {
+    List<Integer> next = new ArrayList<>();
+    for (int x : res) if (2 * x - 1 <= n) next.add(2 * x - 1);
+    for (int x : res) if (2 * x <= n) next.add(2 * x);
+    res = next;
+}`;
+{
+  const r = recorder(), n = 5; let res = [1];
+  r.step(0, 'Start with [1].', [R('res', res)]);
+  while (res.length < n) { const o = res.map(x => 2 * x - 1).filter(x => x <= n), e = res.map(x => 2 * x).filter(x => x <= n); res = [...o, ...e]; r.step(ln(C_BA, 'res = next'), `Odds 2x − 1 = [${o}], evens 2x = [${e}].`, [R('res', res, { warn: range(0, o.length - 1), done: range(o.length, res.length - 1) })]); }
+  r.step(0, `<b>[${res}]</b>: no middle element is the average of two outer ones.`, [R('res', res, { done: range(0, res.length - 1) })]);
+  ANIM['Beautiful Array'] = W('Build by doubling', C_BA, r.steps);
+}
+
+const C_DR = `
+int dx = Math.abs(sx - fx), dy = Math.abs(sy - fy);
+if (dx == 0 && dy == 0) return t != 1;
+return Math.max(dx, dy) <= t;`;
+{
+  const r = recorder(), m = range(0, 4).map(() => Array(6).fill(''));
+  m[0][0] = 'S'; m[1][1] = 1; m[2][2] = 2; m[3][3] = 3; m[3][4] = 4; m[3][5] = 'F';
+  r.step(ln(C_DR, 'int dx'), 'From (0,0) to (3,5): dx = 3, dy = 5. Go diagonal 3 times, then straight 2.', [G('path', m, [[0, 0, 'active'], [3, 5, 'done']])], { dx: 3, dy: 5 });
+  r.step(ln(C_DR, 'Math.max'), 'max(3, 5) = 5 ≤ t = 6 → <b>true</b>; the spare second is burnt by a detour.', [G('path', m, [[1, 1, 'warn'], [2, 2, 'warn'], [3, 3, 'warn'], [3, 4, 'warn'], [3, 5, 'done']])], { t: 6 });
+  r.step(ln(C_DR, 't != 1'), 'Special case: start = target with t = 1 → must move away and cannot return → false.', [R('t', [1], { bad: [0] })]);
+  ANIM['Determine if a Cell Is Reachable at a Given Time'] = W('Distance check', C_DR, r.steps);
+}
+
+const C_MT = `
+for (int i = 1; i < points.length; i++) {
+    int dx = Math.abs(points[i][0] - points[i - 1][0]);
+    int dy = Math.abs(points[i][1] - points[i - 1][1]);
+    time += Math.max(dx, dy);
+}`;
+{
+  const pts = [[1, 1], [3, 4], [-1, 0]], r = recorder(); let time = 0;
+  r.step(0, 'points (1,1) → (3,4) → (−1,0).', [R('points', pts.map(p => `(${p})`))], { time });
+  for (let i = 1; i < pts.length; i++) { const dx = Math.abs(pts[i][0] - pts[i - 1][0]), dy = Math.abs(pts[i][1] - pts[i - 1][1]); time += Math.max(dx, dy); r.step(ln(C_MT, 'time +='), `Leg ${i}: dx ${dx}, dy ${dy} → ${Math.max(dx, dy)} seconds.`, [R('points', pts.map(p => `(${p})`), { active: [i - 1, i] })], { dx, dy, time }); }
+  r.step(0, `Total <b>${time}</b>.`, [R('time', [time], { done: [0] })]);
+  ANIM['Minimum Time Visiting All Points'] = W('Sum of legs', C_MT, r.steps);
+}
+
+const META = [{"name": "Calculate Money in Leetcode Bank", "hook": "Week w (from 0) deposits <b>w + 1, w + 2, …, w + 7</b>. Full weeks sum to 28, 35, 42, …; the last partial week is a short series.", "mantra": "w = n/7, r = n%7 · 28w + 7·w(w−1)/2 + r(w+1) + r(r−1)/2", "statement": "Hercy deposits $1 on the first Monday and $1 more each next day; every Monday he deposits $1 more than the previous Monday. Return the total after n days.", "recall": [["What does week w deposit in total?", "28 + 7w."], ["First deposit of the partial week?", "w + 1."]], "links": [["Count of Matches in Tournament", 1], ["Count Total Number of Colored Cells", 7]]}, {"name": "Count of Matches in Tournament", "hook": "Every match <b>eliminates exactly one team</b> and n − 1 teams must be eliminated: <b>n − 1</b> matches.", "mantra": "RETURN n − 1", "statement": "n teams; each round pairs teams (an odd team out advances for free). Return the total number of matches until one winner remains.", "recall": [["Does the bye change anything?", "No, it adds no match and no elimination."], ["Same idea elsewhere?", "Knock-out brackets, merging k piles one pair at a time."]], "links": [["Water Bottles", 3]]}, {"name": "Pass the Pillow", "hook": "One end-to-end trip takes <b>n − 1</b> seconds. Even trips walk forward from 1, odd trips walk back from n.", "mantra": "trips = time/(n−1), rest = time%(n−1) · even → 1 + rest · odd → n − rest", "statement": "n people in a line pass a pillow every second, starting at person 1 going right and reversing direction at either end. Return who holds it after time seconds.", "recall": [["Why n − 1 and not n?", "Going from person 1 to person n is n − 1 passes."], ["Simulation?", "O(time), fine for the limits but the formula is cleaner."]], "links": [["Count of Matches in Tournament", 1]]}, {"name": "Water Bottles", "hook": "Each exchange turns <b>numExchange empties into one full</b> (net −(e − 1) empties). You always keep one last empty: <b>b + (b − 1)/(e − 1)</b>.", "mantra": "b + (b − 1) / (e − 1)", "statement": "You have numBottles full bottles and can exchange numExchange empty bottles for one full bottle. Return the maximum number of bottles you can drink.", "recall": [["Why b − 1?", "The final empty bottle can never be traded alone."], ["Leftovers in the loop?", "empty % e stays and joins the new bottles."]], "links": [["Count of Matches in Tournament", 1]]}, {"name": "Count Operations to Obtain Zero", "hook": "Repeated subtraction of the smaller number is <b>division</b>: add a / b operations at once and keep a % b.", "mantra": "ops += big / small · big %= small", "statement": "In one operation subtract the smaller of num1, num2 from the larger. Return the number of operations until either becomes 0.", "recall": [["Why is it Euclid?", "gcd(a, b) = gcd(a − b, b), applied until one is 0."], ["Edge case 0?", "The loop does not run, answer 0."]], "links": []}, {"name": "Count Odd Numbers in an Interval Range", "hook": "Odd numbers in <b>[0, x]</b> are <b>(x + 1)/2</b>. Answer: odds up to high minus odds below low.", "mantra": "(high + 1)/2 − low/2", "statement": "Return the count of odd numbers between low and high inclusive.", "recall": [["Why low / 2 for the lower prefix?", "Odds in [0, low − 1] = ((low − 1) + 1)/2 = low/2."], ["Check low = high = 3?", "2 − 1 = 1."]], "links": [["Find the Pivot Integer", 6]]}, {"name": "Find the Pivot Integer", "hook": "x(x + 1)/2 = total − x(x − 1)/2 simplifies to <b>x² = n(n + 1)/2</b>. Check if that is a perfect square.", "mantra": "total = n(n+1)/2 · x = √total · x² == total ? x : −1", "statement": "Return x such that 1 + … + x = x + … + n, or -1 if none exists.", "recall": [["Why is x unique?", "x² = total has one positive root."], ["n = 8?", "total 36, x = 6."]], "links": [["Count Odd Numbers in an Interval Range", 5]]}, {"name": "Count Total Number of Colored Cells", "hook": "Minute k adds a diamond ring of <b>4(k − 1)</b> cells: <b>1 + 4(1 + … + (n − 1)) = 1 + 2n(n − 1)</b>.", "mantra": "1 + 2·n·(n − 1)", "statement": "Start with one colored cell. Each minute, color every uncolored cell that touches a colored cell. Return the count after n minutes.", "recall": [["Why 4(k − 1)?", "The ring has four sides of k − 1 cells each."], ["Why 2L?", "It forces long arithmetic before the product overflows."]], "links": [["Calculate Money in Leetcode Bank", 0]]}, {"name": "Alice and Bob Playing Flower Game", "hook": "Alice takes the last flower iff the <b>total x + y is odd</b>. Pairs with one odd and one even: <b>n·m/2</b>.", "mantra": "RETURN (long) n * m / 2", "statement": "There are x flowers on one side and y on the other (1 ≤ x ≤ n, 1 ≤ y ≤ m). Players alternately pick one flower from either side, Alice first; whoever picks the last flower wins. Count pairs (x, y) where Alice wins.", "recall": [["Why do choices not matter?", "Every move removes exactly one flower."], ["Why n·m/2?", "Among all n·m pairs, odd sums are exactly half (rounded down)."]], "links": [["Vowels Game in a String", 9]]}, {"name": "Vowels Game in a String", "hook": "No vowel: Alice has no move and loses. <b>Any vowel</b>: Alice removes all (odd count) or all but one (even count), and Bob is stuck or loses next.", "mantra": "RETURN s contains a vowel", "statement": "Alice removes a non-empty substring with an odd number of vowels; Bob removes one with an even number. Alice starts; a player who cannot move loses. Return true if Alice wins.", "recall": [["Why can Bob never remove the last vowel?", "His substring needs an even number of vowels, and one is odd."], ["How was it checked?", "Against a full game search on short strings."]], "links": [["Alice and Bob Playing Flower Game", 8]]}, {"name": "Angle Between Hands of a Clock", "hook": "Minute hand <b>6°/min</b>, hour hand <b>30°/hour + 0.5°/min</b>. Take the difference and fold: <b>min(d, 360 − d)</b>.", "mantra": "m = 6·min · h = 30·(hour%12) + 0.5·min · min(|h − m|, 360 − |h − m|)", "statement": "Return the smaller angle in degrees between the hour and minute hands for the given hour and minutes.", "recall": [["Why 0.5° per minute?", "30° per hour spread over 60 minutes."], ["Why fold?", "The two angles between the hands add to 360°; the smaller is wanted."]], "links": [["Minimum Time Visiting All Points", 18]]}, {"name": "Minimum Operations to Make Array Equal", "hook": "arr = 1, 3, …, 2n − 1 has mean <b>n</b>. Pair the smaller half with the larger: sum of (n − (2i + 1)) = <b>n²/4</b>.", "mantra": "RETURN n * n / 4", "statement": "arr[i] = 2i + 1. One operation subtracts 1 from one element and adds 1 to another. Return the minimum operations to make all elements equal.", "recall": [["Why the mean?", "Operations keep the sum fixed."], ["n = 3?", "arr 1,3,5 → 2 operations, and 9/4 = 2."]], "links": []}, {"name": "Can Make Arithmetic Progression From Sequence", "hook": "Sort and check equal gaps, or without sorting: <b>min, max and n fix the gap d</b>, and every value must fill a <b>distinct slot (x − min)/d</b>.", "mantra": "d = (max − min)/(n − 1) · slot = (x − min)/d · no repeats", "statement": "Return true if arr can be rearranged into an arithmetic progression.", "recall": [["Why must max − min divide by n − 1?", "n terms span n − 1 equal gaps."], ["Why reject repeats when d &gt; 0?", "Two equal values would need the same slot."]], "links": [["Count the Hidden Sequences", 13]]}, {"name": "Count the Hidden Sequences", "hook": "The differences fix the <b>shape</b>; only the start shifts it. The shape's height is <b>max − min of prefix sums</b>, and it must fit in [lower, upper].", "mantra": "track prefix min, max · RETURN max(0, (upper − lower) − (max − min) + 1)", "statement": "differences[i] = hidden[i + 1] − hidden[i]. Count hidden sequences whose values all lie in [lower, upper].", "recall": [["Why include 0 in min and max?", "hidden[0] itself is part of the sequence."], ["Why long?", "n · 10⁵ differences overflow an int."]], "links": [["Can Make Arithmetic Progression From Sequence", 12]]}, {"name": "Global and Local Inversions", "hook": "Every local inversion is also global. They are equal iff <b>no inversion skips a position</b>, i.e. <b>|nums[i] − i| ≤ 1</b> for all i.", "mantra": "ANY |nums[i] − i| > 1 → false", "statement": "nums is a permutation of 0..n−1. Return true if the number of global inversions (i &lt; j, nums[i] &gt; nums[j]) equals the number of local inversions (nums[i] &gt; nums[i + 1]).", "recall": [["Why not count inversions?", "Counting takes O(n log n); only equality matters."], ["Alternative check?", "nums[i] &gt; min(nums[i + 2..]) for any i means false."]], "links": [["Beautiful Array", 16]]}, {"name": "Construct Uniform Parity Array II", "hook": "Odd − odd is even, even − odd is odd. With an <b>odd minimum</b> every even value can turn odd. With an <b>even minimum</b> that minimum is stuck even, so all must already be even.", "mantra": "min odd → true · ELSE all even ?", "statement": "Build nums2 where each nums2[i] is nums1[i] or nums1[i] − nums1[j] for some j with nums1[j] &lt; nums1[i]. Return true if all of nums2 can have the same parity.", "recall": [["Why is the minimum fixed?", "Nothing smaller exists to subtract from it."], ["Why does the smallest odd value stay odd?", "Only smaller values can be subtracted, and they are all even, so the parity never changes."]], "links": [["Alice and Bob Playing Flower Game", 8]]}, {"name": "Beautiful Array", "hook": "Put <b>odds left, evens right</b>: an average of an odd and an even is not an integer. Each half stays beautiful under <b>x → 2x − 1</b> and <b>x → 2x</b>.", "mantra": "res = [1] · next = (2x − 1 for x) + (2x for x), filtered ≤ n", "statement": "Return any permutation of 1..n such that for no i &lt; k &lt; j does 2·nums[k] = nums[i] + nums[j].", "recall": [["Why does deleting elements keep it beautiful?", "The condition is about triples; removing values never creates a new triple."], ["Why odd + even fails?", "Their sum is odd, but 2·nums[k] is even."]], "links": [["Global and Local Inversions", 14]]}, {"name": "Determine if a Cell Is Reachable at a Given Time", "hook": "8-direction moves reach (fx, fy) in <b>max(dx, dy)</b> seconds and extra seconds can be wasted. Only trap: <b>same cell with t = 1</b>.", "mantra": "same cell → t != 1 · ELSE max(dx, dy) ≤ t", "statement": "Each second you must move to one of the 8 neighbouring cells. Return true if you can be at (fx, fy) after exactly t seconds starting from (sx, sy).", "recall": [["Why can extra time always be wasted?", "Swap one direct step for two steps through a neighbour, or bounce at the target."], ["Why is t = 1 special?", "Leaving and coming back needs 2 seconds."]], "links": [["Minimum Time Visiting All Points", 18]]}, {"name": "Minimum Time Visiting All Points", "hook": "Each leg costs <b>max(dx, dy)</b>: go diagonal until one axis matches, then straight.", "mantra": "Σ max(|dx|, |dy|)", "statement": "Visit the points in the given order, moving one unit horizontally, vertically or diagonally per second. Return the minimum time.", "recall": [["Why max and not dx + dy?", "A diagonal step reduces both differences at once."], ["When is it dx + dy?", "With only 4-direction moves (Manhattan distance)."]], "links": [["Determine if a Cell Is Reachable at a Given Time", 17], ["Angle Between Hands of a Clock", 10]]}];
+mount({
+  title: "Formulas and Observations Animations",
+  sub: "Simulate a tiny case by hand, <b>spot the invariant</b>, and replace the loop with a formula.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>

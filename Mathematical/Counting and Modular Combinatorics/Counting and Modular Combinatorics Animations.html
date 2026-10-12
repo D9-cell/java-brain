@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Counting and Modular Combinatorics Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="../../assets/theme.js?v=3"></script>
+<link rel="stylesheet" href="../../assets/theme.css?v=3">
+<link rel="stylesheet" href="../../assets/brain-anim.css?v=4">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js"></script>
+<script src="../../assets/solved.js"></script>
+<script src="../../assets/progress.js"></script>
+<script src="../../assets/brain-anim.js?v=4"></script>
+<script src="../../assets/tree-kit.js"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const range = (a, b) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
+const G = (name, m, hl = [], o = {}) => grid(name, m, { cls: (r, c) => { const h = hl.find(([a, b]) => a === r && b === c); return h ? h[2] : ''; }, ...o });
+const nCr = (n, k) => { if (k < 0 || k > n) return 0; let r = 1; for (let i = 0; i < k; i++) r = r * (n - i) / (i + 1); return Math.round(r); };
+const fact = n => n <= 1 ? 1 : n * fact(n - 1);
+
+const C_CG = `
+return (int) (power(5, (n + 1) / 2) * power(4, n / 2) % MOD);`;
+{
+  const r = recorder(), n = 4;
+  r.step(0, 'n = 4: indexes 0..3. Even indexes take {0,2,4,6,8}, odd indexes take {2,3,5,7}.', [A('choices', [5, 4, 5, 4], { active: [0, 2], warn: [1, 3] })]);
+  r.step(ln(C_CG, 'return'), '⌈4/2⌉ = 2 even slots, ⌊4/2⌋ = 2 odd slots: 5² · 4² = <b>400</b>.', [R('answer', [400], { done: [0] })], { evens: 2, odds: 2 });
+  ANIM['Count Good Numbers'] = W('Product + fast power', C_CG, r.steps);
+}
+
+const C_CO = `
+for (int i = 1; i <= n; i++) ways = ways * (2L * i - 1) % MOD * i % MOD;`;
+{
+  const r = recorder(); let ways = 1; const seq = [];
+  for (let i = 1; i <= 4; i++) { ways *= (2 * i - 1) * i; seq.push(ways); r.step(ln(C_CO, 'ways = ways'), `Order ${i}: choose 2 of ${2 * i} positions, P first → ×${(2 * i - 1) * i}. ways = ${ways}.`, [R('ways by n', seq, { active: [seq.length - 1] })], { i, ways }); }
+  r.step(0, 'Same as (2n)! / 2ⁿ: 8! / 16 = 2520.', [R('ways by n', seq, { done: [3] })]);
+  ANIM['Count All Valid Pickup and Delivery Options'] = W('Insertion product', C_CO, r.steps);
+}
+
+const C_DV = `
+return (int) (nCr(n - 1, k) * 2 % MOD);`;
+{
+  const r = recorder(), n = 5, pos = 2, k = 2;
+  r.step(0, 'n = 5, pos = 2, k = 2. The four other people each have one direction that makes them visible.', [lane('people', ['?', '?', 'pos', '?', '?'], { active: [2] })]);
+  r.step(0, 'Pick 2 of the 4 to be visible, e.g. people 0 and 4. Their directions are now fixed, and so are the others.', [lane('people', ['vis', 'hid', 'pos', 'hid', 'vis'], { done: [0, 4], ghost: [1, 3] })]);
+  r.step(ln(C_DV, 'return'), `C(4, 2) = ${nCr(4, 2)} choices × 2 for pos = <b>${2 * nCr(4, 2)}</b>.`, [R('answer', [2 * nCr(4, 2)], { done: [0] })]);
+  ANIM['Direction Assignments with Exactly K Visible People'] = W('nCr + Fermat', C_DV, r.steps);
+}
+
+const C_CK = `
+long choose = fact[n - 1] * inv[k] % MOD * inv[n - 1 - k] % MOD;
+return (int) (m * choose % MOD * power(m - 1, n - 1 - k) % MOD);`;
+{
+  const r = recorder(), n = 4, m = 2, k = 2;
+  r.step(0, 'n = 4, m = 2, k = 2. There are 3 joints between neighbours.', [lane('array', ['a0', 'a1', 'a2', 'a3']), lane('joints', ['·', '·', '·'])]);
+  r.step(ln(C_CK, 'long choose'), `Choose which 2 joints are equal: C(3, 2) = ${nCr(3, 2)}.`, [lane('joints', ['=', '=', '≠'], { done: [0, 1], warn: [2] })]);
+  r.step(ln(C_CK, 'return'), `First value m = 2 ways, the one unequal joint m − 1 = 1 way: 2 · 3 · 1 = <b>6</b>.`, [R('answer', [6], { done: [0] })], { choose: 3 });
+  ANIM['Count the Number of Arrays with K Matching Adjacent Elements'] = W('Combinatorics', C_CK, r.steps);
+}
+
+const C_IA = `
+for (int p = 2; p * p <= x; p++) {
+    int e = 0;
+    while (x % p == 0) {
+        x /= p;
+        e++;
+    }
+    ways = ways * C[n - 1 + e][e] % MOD;
+}
+if (x > 1) ways = ways * C[n][1] % MOD;`;
+{
+  const r = recorder(), n = 5; let total = 0;
+  for (let v = 1; v <= 3; v++) { const w = v === 1 ? 1 : nCr(n, 1); total += w; r.step(ln(C_IA, v === 1 ? 'for (int p' : 'if (x > 1)'), v === 1 ? 'v = 1: only [1,1,1,1,1] → 1.' : `v = ${v} is prime, exponent 1: choose where it first appears among ${n} slots → C(${n}, 1) = ${w}.`, [R('ways per v', range(1, v).map(u => u === 1 ? 1 : nCr(n, 1)), { active: [v - 1] })], { v, total }); }
+  r.step(0, `n = 5, maxValue = 3 → <b>${total}</b>.`, [R('total', [total], { done: [0] })]);
+  const r2 = recorder(), n2 = 3, v = 12;
+  r2.step(0, 'v = 12 = 2² · 3 with n = 3. Exponents climb independently along the array.', [lane('exponent of 2', ['0..2', '…', '2']), lane('exponent of 3', ['0..1', '…', '1'])]);
+  r2.step(ln(C_IA, 'ways = ways * C'), `Prime 2: C(${n2 - 1} + 2, 2) = ${nCr(n2 + 1, 2)}. Prime 3: C(${n2}, 1) = ${nCr(n2, 1)}.`, [R('factors', [nCr(n2 + 1, 2), nCr(n2, 1)], { active: [0, 1] })]);
+  r2.step(0, `Ideal arrays of length 3 ending at 12: <b>${nCr(n2 + 1, 2) * nCr(n2, 1)}</b>.`, [R('ways', [nCr(n2 + 1, 2) * nCr(n2, 1)], { done: [0] })]);
+  ANIM['Count the Number of Ideal Arrays'] = [{ name: 'n = 5, maxValue = 3', code: C_IA, steps: r.steps }, { name: 'One value: 12', code: C_IA, steps: r2.steps }];
+}
+
+const C_RB = `
+int root = list.get(0);
+for (int i = 1; i < list.size(); i++) (list.get(i) < root ? left : right).add(list.get(i));
+return C[list.size() - 1][left.size()] * ways(left) % MOD * ways(right) % MOD;`;
+{
+  const r = recorder(), nums = [3, 4, 5, 1, 2];
+  r.step(ln(C_RB, 'int root'), 'nums = [3,4,5,1,2]. Root 3 must come first.', [A('nums', nums, { active: [0] })]);
+  r.step(ln(C_RB, 'left : right'), 'Left subtree [1,2], right subtree [4,5]. Each keeps its own order.', [R('left', [1, 2], { warn: [0, 1] }), R('right', [4, 5], { done: [0, 1] })]);
+  r.step(ln(C_RB, 'return C'), `Interleave 2 + 2 items: C(4, 2) = ${nCr(4, 2)}. Both subtrees have 1 way each.`, [R('ways', [nCr(4, 2)])], { ways: 6 });
+  r.step(0, 'Minus the original order → <b>5</b>.', [R('answer', [5], { done: [0] })]);
+  ANIM['Number of Ways to Reorder Array to Get Same BST'] = W('Recursive split + Pascal', C_RB, r.steps);
+}
+
+const C_CU = `
+for (int i = 1; i < complexity.length; i++) {
+    if (complexity[i] <= complexity[0]) return 0;
+    ways = ways * i % MOD;
+}`;
+{
+  const run = c => { const r = recorder(); let ways = 1; for (let i = 1; i < c.length; i++) { if (c[i] <= c[0]) { r.step(ln(C_CU, 'return 0'), `complexity[${i}] = ${c[i]} ≤ ${c[0]} → nobody can unlock it → <b>0</b>.`, [A('complexity', c, { bad: [i], active: [0] })]); return r.steps; } ways *= i; r.step(ln(C_CU, 'ways = ways'), `${c[i]} > ${c[0]}: computer 0 can unlock it. ways = ${ways}.`, [A('complexity', c, { done: range(1, i), active: [0] })], { ways }); } r.step(0, `Answer (n − 1)! = <b>${ways}</b>.`, [R('answer', [ways], { done: [0] })]); return r.steps; };
+  ANIM['Count the Number of Computer Unlocking Permutations'] = [{ name: '[1,2,3,4]', code: C_CU, steps: run([1, 2, 3, 4]) }, { name: '[3,3,3,4]', code: C_CU, steps: run([3, 3, 3, 4]) }];
+}
+
+const C_EW = `
+for (int i = 1; i < maxDepth; i++) ways = ways * 2 % MOD;
+return (int) ways;`;
+{
+  const r = recorder(), par = { 1: null, 2: 1, 3: 1, 4: 3, 5: 3 };
+  r.step(0, 'Edges 1-2, 1-3, 3-4, 3-5. BFS from 1 gives max depth 2 (node 4 or 5).', [tree('tree', par, { cls: { 1: 'active', 4: 'done' }, badge: { 1: 'd0', 2: 'd1', 3: 'd1', 4: 'd2', 5: 'd2' } })]);
+  r.step(0, 'Path 1 → 3 → 4 has 2 edges. Weights (1,2) and (2,1) give odd sums; (1,1) and (2,2) do not.', [R('assignments', ['1+2 ✓', '2+1 ✓', '1+1', '2+2'], { done: [0, 1], ghost: [2, 3] })]);
+  r.step(ln(C_EW, 'return'), '2^(2 − 1) = <b>2</b>.', [R('answer', [2], { done: [0] })], { maxDepth: 2 });
+  ANIM['Number of Ways to Assign Edge Weights I'] = W('BFS + power of two', C_EW, r.steps);
+}
+
+const C_DC = `
+for (int over = 0; over <= 3; over++) {
+    long rest = n - (long) over * (limit + 1);
+    if (rest < 0) break;
+    long ways = choose3(over) * (rest + 2) * (rest + 1) / 2;
+    total += over % 2 == 0 ? ways : -ways;
+}`;
+{
+  const r = recorder(), n = 5, limit = 2; let total = 0;
+  for (let over = 0; over <= 3; over++) { const rest = n - over * (limit + 1); if (rest < 0) { r.step(ln(C_DC, 'break'), `${over} children over the limit would need ${over * (limit + 1)} > ${n} candies → stop.`, [R('total', [total])], { over }); break; } const w = [1, 3, 3, 1][over] * (rest + 2) * (rest + 1) / 2; total += over % 2 ? -w : w; r.step(ln(C_DC, 'total +='), `${over} child${over === 1 ? '' : 'ren'} forced over (give ${limit + 1} first): ${[1, 3, 3, 1][over]} · C(${rest} + 2, 2) = ${w} → ${over % 2 ? '−' : '+'}. total = ${total}.`, [R('total', [total], { active: [0] })], { over, rest, ways: w }); }
+  r.step(0, `n = 5, limit = 2 → <b>${total}</b>: (1,2,2), (2,1,2), (2,2,1).`, [R('answer', [total], { done: [0] })]);
+  ANIM['Distribute Candies Among Children II'] = W('Inclusion-exclusion', C_DC, r.steps);
+}
+
+const C_PP = `
+int states = minutesToTest / minutesToDie + 1, pigs = 0;
+long reach = 1;
+while (reach < buckets) {
+    reach *= states;
+    pigs++;
+}`;
+{
+  const r = recorder(), buckets = 1000, states = 60 / 15 + 1; let reach = 1, pigs = 0;
+  r.step(ln(C_PP, 'int states'), '1000 buckets, die in 15, test 60 → 4 rounds, so each pig has 5 outcomes (dies in round 1..4 or lives).', [R('states', [states])], { states });
+  while (reach < buckets) { reach *= states; pigs++; r.step(ln(C_PP, 'reach *= states'), `${pigs} pig${pigs > 1 ? 's' : ''} → ${reach} buckets distinguishable.`, [R('reach', [reach], reach >= buckets ? { done: [0] } : { active: [0] })], { pigs, reach }); }
+  r.step(0, `Answer <b>${pigs}</b> pigs.`, [R('answer', [pigs], { done: [0] })]);
+  ANIM['Poor Pigs'] = W('Count states', C_PP, r.steps);
+}
+
+const C_ME = `
+long[][] result = {{1, 0}, {0, 1}}, base = {{1, 1}, {1, 0}};
+while (n > 0) {
+    if ((n & 1) == 1) result = multiply(result, base);
+    base = multiply(base, base);
+    n >>= 1;
+}
+return result[0][1];`;
+{
+  const mul = (a, b) => [[a[0][0] * b[0][0] + a[0][1] * b[1][0], a[0][0] * b[0][1] + a[0][1] * b[1][1]], [a[1][0] * b[0][0] + a[1][1] * b[1][0], a[1][0] * b[0][1] + a[1][1] * b[1][1]]];
+  const r = recorder(); let n = 10, pw = 1, res = [[1, 0], [0, 1]], base = [[1, 1], [1, 0]];
+  r.step(ln(C_ME, 'long[][] result'), 'F(10). 10 = 1010₂. result = identity, base = [[1,1],[1,0]].', [G('result', res), G('base', base)], { n });
+  while (n > 0) { const bit = n & 1; if (bit) res = mul(res, base); r.step(ln(C_ME, 'if ((n & 1)'), bit ? 'Bit 1 → result = result · base.' : 'Bit 0 → result unchanged.', [G('result', res, bit ? [[0, 1, 'active']] : []), G('base', base)], { n }); base = mul(base, base); pw *= 2; n >>= 1; r.step(ln(C_ME, 'base = multiply'), `Square base → M^${pw}, n = ${n}.`, [G('result', res), G('base', base, [[0, 0, 'warn']])], { n }); }
+  r.step(ln(C_ME, 'return'), `result = M^10, top-right = F(10) = <b>${res[0][1]}</b>.`, [G('result', res, [[0, 1, 'done']])]);
+  ANIM['Matrix Exponentiation'] = W('2 × 2 power', C_ME, r.steps);
+}
+
+const C_TC = `
+for (int c = 0; c < 26; c++)
+    for (int j = 1; j <= nums.get(c); j++) T[(c + j) % 26][c]++;
+long[][] P = power(T, t);`;
+{
+  const r = recorder(); let cnt = { a: 1, b: 1, c: 1, y: 2 }; const nums = { a: 1, b: 1, c: 1, y: 1, z: 2 };
+  r.step(0, 's = "abcyy", t = 2, every letter becomes the next one, except z → "ab" (nums[z] = 2).', [R('letters', Object.entries(cnt).map(([k, v]) => `${k}×${v}`))]);
+  r.step(ln(C_TC, 'T[(c + j)'), 'Column c of T lists what one c turns into: a → b, …, y → z, z → a + b.', [G('T (part)', [[0, 0, 1], [0, 0, 1], [1, 0, 0]], [[2, 0, 'active'], [0, 2, 'warn'], [1, 2, 'warn']], { rowLabels: ['a', 'b', 'z'], colLabels: ['y', '…', 'z'] })]);
+  r.step(ln(C_TC, 'power(T, t)'), 'Step 1: "bcdzz" (5). Step 2: z → ab twice: "cdeabab" → length <b>7</b>.', [R('after 1', ['b', 'c', 'd', 'z', 'z']), R('after 2', ['c', 'd', 'e', 'a', 'b', 'a', 'b'], { done: range(0, 6) })]);
+  r.step(0, 'For t = 10⁹ the same answer comes from T^t · counts with about 30 matrix squarings.', [R('answer (t = 2)', [7], { done: [0] })]);
+  ANIM['Total Characters in String After Transformations II'] = W('Matrix power', C_TC, r.steps);
+}
+
+const C_FA = `
+public void append(int val) {
+    vals.add((val - add + MOD) % MOD * inverse(mul) % MOD);
+}
+public void addAll(int inc) {
+    add = (add + inc) % MOD;
+}
+public void multAll(int m) {
+    mul = mul * m % MOD;
+    add = add * m % MOD;
+}
+public int getIndex(int idx) {
+    return (int) ((vals.get(idx) * mul + add) % MOD);
+}`;
+{
+  const r = recorder(); let mul = 1, add = 0; const raw = [], real = [];
+  const snap = () => [R('stored', raw.map(v => Number.isInteger(v) ? v : v.toFixed(2))), R('real', raw.map(v => v * mul + add))];
+  const ops = [['append', 2], ['addAll', 3], ['append', 7], ['multAll', 2], ['getIndex', 0], ['addAll', 3], ['append', 10], ['multAll', 2], ['getIndex', 0], ['getIndex', 1], ['getIndex', 2]];
+  for (const [op, v] of ops) {
+    if (op === 'append') { raw.push((v - add) / mul); r.step(ln(C_FA, 'vals.add'), `append(${v}): store (${v} − ${add}) / ${mul} = ${raw[raw.length - 1]} so the current map turns it back into ${v}.`, snap(), { mul, add }); }
+    if (op === 'addAll') { add += v; r.step(ln(C_FA, 'add = (add + inc)'), `addAll(${v}): only add changes.`, snap(), { mul, add }); }
+    if (op === 'multAll') { mul *= v; add *= v; r.step(ln(C_FA, 'mul = mul * m'), `multAll(${v}): mul and add both scale.`, snap(), { mul, add }); }
+    if (op === 'getIndex') r.step(ln(C_FA, 'vals.get(idx) * mul'), `getIndex(${v}) = ${raw[v]} · ${mul} + ${add} = <b>${raw[v] * mul + add}</b>.`, [R('real', raw.map(x => x * mul + add), { done: [v] })], { mul, add });
+  }
+  ANIM['Fancy Sequence'] = W('Global map + inverse', C_FA, r.steps);
+}
+
+const C_ND = `
+for (int len = 1; len < L; len++) count += (int) Math.pow(d, len);
+for (int i = 0; i < L; i++) {
+    boolean same = false;
+    for (String dig : digits) {
+        char c = dig.charAt(0);
+        if (c < s.charAt(i)) count += (int) Math.pow(d, L - 1 - i);
+        else if (c == s.charAt(i)) same = true;
+    }
+    if (!same) return count;
+}
+return count + 1;`;
+{
+  const D = [1, 3, 5, 7], s = '100', r = recorder(); let count = 4 + 16;
+  r.step(ln(C_ND, 'for (int len = 1'), 'digits {1,3,5,7}, n = 100. 1-digit: 4, 2-digit: 16 → 20 so far.', [A('n', s.split('').map(Number))], { count });
+  r.step(ln(C_ND, 'c < s.charAt(i)'), 'Position 0: n has 1. No digit is smaller than 1; 1 is equal → continue.', [A('n', s.split('').map(Number), { active: [0] }), R('digits', D, { warn: [0] })], { count });
+  r.step(ln(C_ND, 'if (!same)'), 'Position 1: n has 0. No digit is ≤ 0 → stop. 3-digit numbers beginning "1" are all above 100.', [A('n', s.split('').map(Number), { bad: [1] })], { count });
+  r.step(0, `Answer <b>${count}</b>.`, [R('answer', [count], { done: [0] })]);
+  ANIM['Numbers At Most N Given Digit Set'] = W('Digit walk', C_ND, r.steps);
+}
+
+const C_GI = `
+for (int h = start; h < end; h++) {
+    String left = String.valueOf(h);
+    String right = new StringBuilder(left.substring(0, n / 2)).reverse().toString();
+    String pal = left + right;
+    if (Long.parseLong(pal) % k != 0) continue;
+    char[] key = pal.toCharArray();
+    Arrays.sort(key);
+    if (!seen.add(new String(key))) continue;
+    long ways = (n - cnt[0]) * fact[n - 1];
+    for (int c : cnt) ways /= fact[c];
+    total += ways;
+}`;
+{
+  const r = recorder(), n = 3, k = 5, seen = new Set(); let total = 0;
+  r.step(0, 'n = 3, k = 5. 3-digit palindromes come from halves 10..99.', [R('multisets', [])]);
+  for (let h = 10; h < 100; h++) { const s = String(h), pal = s + s[0]; if (+pal % k) continue; const key = pal.split('').sort().join(''); if (seen.has(key)) continue; seen.add(key); const cnt = Array(10).fill(0); for (const ch of key) cnt[+ch]++; let ways = (n - cnt[0]) * fact(n - 1); cnt.forEach(c => ways /= fact(c)); total += ways; r.step(ln(C_GI, 'total += ways'), `${pal} divisible by 5, digits {${key.split('').join(',')}} → ${ways} arrangements without leading zero.`, [R('multisets', [...seen], { active: [seen.size - 1] })], { total }); }
+  r.step(0, `Total <b>${total}</b>.`, [R('answer', [total], { done: [0] })]);
+  ANIM['Find the Count of Good Integers'] = W('Palindromes + multisets', C_GI, r.steps);
+}
+
+const C_SP = `
+for (int c = 0; c < 26; c++) {
+    if (cnt[c] == 0) continue;
+    cnt[c]--;
+    long ways = arrangements(cnt, half - pos - 1, k);
+    if (ways >= k) {
+        left.append((char) ('a' + c));
+        break;
+    }
+    k -= ways;
+    cnt[c]++;
+}`;
+{
+  const r = recorder(); const cnt = { a: 1, b: 1, c: 1 }; let k = 4; const left = [];
+  const arr = c => { const t = Object.values(c).reduce((x, y) => x + y, 0); return Object.values(c).reduce((acc, v) => acc / fact(v), fact(t)); };
+  r.step(0, 's = "abccba", k = 4. The left half uses the letters {a,b,c}. Half permutations in order: abc, acb, bac, bca, cab, cba.', [R('half letters', ['a', 'b', 'c'])], { k });
+  for (let pos = 0; pos < 3; pos++) for (const c of ['a', 'b', 'c']) { if (!cnt[c]) continue; cnt[c]--; const w = arr(cnt); if (w >= k) { left.push(c); r.step(ln(C_SP, 'left.append'), `Start "${left.join('')}": ${w} ways ≥ k = ${k} → take '${c}'.`, [R('left half', left, { active: [left.length - 1] })], { k, ways: w }); break; } k -= w; cnt[c]++; r.step(ln(C_SP, 'k -= ways'), `Start "${[...left, c].join('')}" covers ${w} → skip, k = ${k}.`, [R('left half', [...left, c], { ghost: [left.length] })], { k, ways: w }); }
+  r.step(0, `Left half "${left.join('')}" → palindrome <b>${left.join('') + [...left].reverse().join('')}</b>.`, [R('answer', [...left, ...[...left].reverse()], { done: range(0, 5) })]);
+  ANIM['Smallest Palindromic Rearrangement II'] = W('Greedy with capped counts', C_SP, r.steps);
+}
+
+const C_SU = `
+for (String pal : new String[]{s + rev.substring(1), s + rev}) {
+    long p = Long.parseLong(pal);
+    if (p > 1_000_000_000L) continue;
+    long sq = p * p;
+    if (sq >= L && sq <= R && isPalindrome(sq)) count++;
+}`;
+{
+  const r = recorder(), L = 4, Rr = 1000, isP = x => String(x) === String(x).split('').reverse().join(''), found = [];
+  r.step(0, 'Range [4, 1000]. Roots are palindromes, built from halves 1, 2, 3, …', [R('found', found)]);
+  for (const p of [1, 2, 3, 11, 22, 33]) { const sq = p * p, ok = sq >= L && sq <= Rr && isP(sq); if (ok) found.push(sq); r.step(ln(C_SU, 'isPalindrome(sq)'), `p = ${p}: p² = ${sq} ${ok ? '→ super-palindrome' : sq < L ? '< L' : sq > Rr ? '> R' : 'not a palindrome'}.`, [R('p, p²', [p, sq], ok ? { done: [1] } : { ghost: [1] }), R('found', found)]); }
+  r.step(0, `Answer <b>${found.length}</b>: ${found.join(', ')}.`, [R('found', found, { done: range(0, found.length - 1) })]);
+  ANIM['Super Palindromes'] = W('Build roots from halves', C_SU, r.steps);
+}
+
+const C_KM = `
+long p = h;
+for (long x = len % 2 == 1 ? h / 10 : h; x > 0; x /= 10) p = p * 10 + x % 10;
+if (isPalindromeInBase(p, k)) {
+    sum += p;
+    found++;
+}`;
+{
+  const r = recorder(), k = 2, isPk = x => { const s = x.toString(k); return s === s.split('').reverse().join(''); }; let sum = 0; const found = [];
+  for (const p of [1, 2, 3, 4, 5, 6, 7, 8, 9]) { const ok = isPk(p); if (ok && found.length < 5) { found.push(p); sum += p; } r.step(ln(C_KM, ok ? 'sum += p' : 'isPalindromeInBase'), `${p} = ${p.toString(2)}₂ ${ok ? '→ keep' : '→ skip'}.`, [R('found', found, ok ? { active: [found.length - 1] } : {})], { sum }); if (found.length === 5) break; }
+  r.step(0, `k = 2, n = 5: ${found.join(' + ')} = <b>${sum}</b>.`, [R('found', found, { done: range(0, 4) })]);
+  ANIM['Sum of k-Mirror Numbers'] = W('Ordered generation', C_KM, r.steps);
+}
+
+const META = [{"name": "Count Good Numbers", "hook": "Even indexes take <b>5 even digits</b>, odd indexes <b>4 primes</b>: answer <b>5^⌈n/2⌉ · 4^⌊n/2⌋</b> with fast power.", "mantra": "power(5, (n+1)/2) · power(4, n/2) % MOD", "statement": "A digit string is good if digits at even indexes are even and digits at odd indexes are prime (2, 3, 5, 7). Return the number of good strings of length n (up to 10¹⁵) mod 1e9+7.", "recall": [["How many even indexes in length n?", "(n + 1) / 2."], ["Why reduce the base first?", "It keeps every product below 2⁶³."]], "links": [["Count the Number of Arrays with K Matching Adjacent Elements", 3]]}, {"name": "Count All Valid Pickup and Delivery Options", "hook": "Insert order i into a valid sequence of 2(i − 1) events: <b>(2i − 1)·i</b> ways to place P before D.", "mantra": "ways *= (2i − 1) · i", "statement": "Given n orders, each with a pickup and a delivery, count sequences of all 2n events where every delivery comes after its pickup, mod 1e9+7.", "recall": [["Closed form?", "(2n)! / 2ⁿ: all orders, halved once per pair."], ["n = 2?", "1 · 6 = 6."]], "links": [["Count Good Numbers", 0]]}, {"name": "Direction Assignments with Exactly K Visible People", "hook": "Each other person is visible or not from their own direction alone, so <b>pick which k are visible</b>: C(n − 1, k), times <b>2</b> for the person at pos.", "mantra": "2 · C(n − 1, k) % MOD", "statement": "n people stand in a row and each faces left or right. Whether another person counts as visible to the person at pos depends only on that person's direction; pos's own direction does not matter. Count assignments with exactly k visible people, mod 1e9+7.", "recall": [["Why times 2?", "The person at pos can face either way without changing the count."], ["Why MOD − 2?", "Fermat: a^(p−1) ≡ 1, so a^(p−2) is the inverse of a mod a prime p."]], "links": [["Count the Number of Arrays with K Matching Adjacent Elements", 3]]}, {"name": "Count the Number of Arrays with K Matching Adjacent Elements", "hook": "<b>m</b> choices for the first value, <b>C(n − 1, k)</b> ways to pick the equal joints, <b>(m − 1)</b> for every other joint.", "mantra": "m · C(n−1, k) · (m−1)^(n−1−k)", "statement": "Count arrays of length n with values in [1, m] that have exactly k indices i with arr[i − 1] == arr[i], mod 1e9+7.", "recall": [["Why is the first element special?", "It has no left neighbour, so it is free: m ways."], ["Inverse factorials backwards?", "inv[i − 1] = inv[i] · i, starting from one Fermat inverse."]], "links": [["Direction Assignments with Exactly K Visible People", 2], ["Count Good Numbers", 0]]}, {"name": "Count the Number of Ideal Arrays", "hook": "Fix the last value v = Π pᵉ. Each prime's exponent rises from 0 to e over n slots independently: <b>Π C(n − 1 + e, e)</b>.", "mantra": "FOR v: Π over primes C(n−1+e, e) · sum", "statement": "An array of length n is ideal if every element is in [1, maxValue] and arr[i] is divisible by arr[i − 1]. Count ideal arrays mod 1e9+7.", "recall": [["Why at most 14 columns?", "2¹⁴ &gt; 10⁴, so no exponent exceeds 13."], ["What does C(n − 1 + e, e) count?", "Non-decreasing exponent sequences of length n ending at e and starting ≥ 0."]], "links": [["Distribute Candies Among Children II", 8]]}, {"name": "Number of Ways to Reorder Array to Get Same BST", "hook": "The root goes first. Left and right subtrees only need their <b>own relative order</b>, so interleave them: <b>C(n − 1, |left|)</b>.", "mantra": "ways(list) = C(n−1, |L|) · ways(L) · ways(R) · RETURN ways − 1", "statement": "nums is a permutation of 1..n inserted into an empty BST. Count the other orderings that produce the identical BST, mod 1e9+7.", "recall": [["Why subtract one?", "The question asks for other orderings."], ["Why Pascal and not factorials?", "n ≤ 1000, a table is simple and needs no inverses."]], "links": [["Count the Number of Ideal Arrays", 4]]}, {"name": "Count the Number of Computer Unlocking Permutations", "hook": "If computer 0 is <b>strictly the smallest</b>, it can unlock every other directly, so any order works: <b>(n − 1)!</b>. Otherwise 0.", "mantra": "any c[i] ≤ c[0] → 0 · ELSE (n − 1)!", "statement": "Computer 0 starts unlocked. Computer i can be unlocked by an already unlocked j &lt; i with complexity[j] &lt; complexity[i]. Count the permutations of 0..n−1 (starting with 0) that unlock all computers in that order, mod 1e9+7.", "recall": [["Why ≤ and not &lt;?", "Unlocking needs a strictly smaller complexity."], ["Why any order afterwards?", "Computer 0 is always available and smaller than everyone."]], "links": [["Count Good Numbers", 0]]}, {"name": "Number of Ways to Assign Edge Weights I", "hook": "Only the path to the <b>deepest node</b> matters. d edges of weight 1 or 2 have an odd sum in <b>2^(d − 1)</b> ways.", "mantra": "d = max depth from node 1 · RETURN 2^(d − 1)", "statement": "A tree rooted at node 1. Pick a node x at maximum depth and assign weight 1 or 2 to each edge on the path 1 → x. Count assignments with an odd total, mod 1e9+7.", "recall": [["Why half?", "Toggling one fixed edge swaps odd and even sums, a perfect pairing."], ["Why BFS?", "It gives the depth of every node from the root in one pass."]], "links": []}, {"name": "Distribute Candies Among Children II", "hook": "All splits <b>C(n + 2, 2)</b>, minus those where some child exceeds the limit: subtract <b>limit + 1</b> from that child first.", "mantra": "Σ (−1)^j · C(3, j) · C(n − j(limit+1) + 2, 2)", "statement": "Count the ways to give n candies to 3 children so that nobody gets more than limit.", "recall": [["Why limit + 1?", "A child over the limit has at least limit + 1; give that first, the rest is free."], ["Why stop when rest &lt; 0?", "No valid splits exist then."]], "links": [["Count the Number of Ideal Arrays", 4]]}, {"name": "Poor Pigs", "hook": "With T = test/die rounds each pig ends in one of <b>T + 1 states</b> (dies in round 1..T or survives). p pigs separate <b>(T + 1)^p</b> buckets.", "mantra": "states = test/die + 1 · smallest p with states^p ≥ buckets", "statement": "One of buckets is poisoned. A pig dies minutesToDie after drinking. Within minutesToTest, return the minimum pigs needed to find the poisoned bucket.", "recall": [["Why T + 1 and not 2?", "A pig can also tell when it died, not just whether."], ["One bucket?", "0 pigs: no test needed."]], "links": [["Count Good Numbers", 0]]}, {"name": "Matrix Exponentiation", "hook": "A linear recurrence is <b>one matrix applied n times</b>. Raise the matrix by squaring: <b>O(log n)</b> products.", "mantra": "M = (1 1 / 1 0) · M^n has F(n) in the top-right corner", "statement": "Compute the n-th Fibonacci number mod 1e9+7 for n up to 10¹⁸.", "recall": [["Identity matrix role?", "It is the \"1\" that the product starts from."], ["Order-3 recurrence?", "Use a 3 × 3 companion matrix."]], "links": [["Total Characters in String After Transformations II", 11]]}, {"name": "Total Characters in String After Transformations II", "hook": "Only <b>counts per letter</b> matter. One step is a fixed <b>26 × 26 matrix</b>; t steps are its t-th power.", "mantra": "T[(c+j)%26][c]++ · P = T^t · Σ P · counts", "statement": "In one transformation every letter c is replaced by the next nums[c] letters of the alphabet (wrapping). Return the length after t transformations (t up to 10⁹), mod 1e9+7.", "recall": [["Why not simulate?", "t can be 10⁹."], ["Skip zero entries?", "Yes, it speeds the product when the matrix is sparse."]], "links": [["Matrix Exponentiation", 10]]}, {"name": "Fancy Sequence", "hook": "Keep <b>one global map x → mul·x + add</b>. Store each appended value <b>already undone</b> by the current map, so later ops apply to all for free.", "mantra": "append: (v − add) · mul⁻¹ · addAll: add += inc · multAll: mul, add *= m · get: v·mul + add", "statement": "Implement Fancy: append(val), addAll(inc) to every element, multAll(m) on every element, getIndex(idx) mod 1e9+7 (or -1).", "recall": [["Why store the inverse image?", "Applying the current map to it gives back val, and future maps apply naturally."], ["Why is mul invertible?", "MOD is prime and every m is between 1 and 100."]], "links": []}, {"name": "Numbers At Most N Given Digit Set", "hook": "Shorter numbers are free: <b>d^len</b> each. For the same length walk n's digits: smaller digit → <b>d^(rest)</b>, equal → continue, none → stop.", "mantra": "Σ d^len (len < L) · per position: smaller → + d^(L−1−i) · no equal → stop · end → +1", "statement": "Given a sorted set of digits (from 1..9) and n, count positive integers ≤ n that can be written using only those digits (with repetition).", "recall": [["Why +1 at the end?", "n itself is made only of allowed digits."], ["Why no zero handling?", "The digit set never contains 0."]], "links": []}, {"name": "Find the Count of Good Integers", "hook": "Generate the n-digit <b>palindromes divisible by k</b> from their left half, keep each <b>digit multiset once</b>, then count its arrangements without a leading zero.", "mantra": "FOR half: pal % k == 0 · new multiset → (n − c0)·(n−1)! / Π c!", "statement": "An integer is k-palindromic if it is a palindrome divisible by k. A number is good if its digits can be rearranged into a k-palindromic integer (no leading zeros). Count good n-digit integers (n ≤ 10).", "recall": [["Why (n − c0) · (n − 1)!?", "Place any non-zero digit first (with its copies counted later by the division), then the rest freely."], ["Why dedupe?", "Several palindromes can share a multiset; each good number should count once."]], "links": [["Smallest Palindromic Rearrangement II", 15], ["Super Palindromes", 16]]}, {"name": "Smallest Palindromic Rearrangement II", "hook": "A palindrome is fixed by its <b>left half</b>. Pick its letters left to right: if the block starting with letter c has <b>fewer than k</b> arrangements, skip it and subtract.", "mantra": "FOR pos: FOR c: ways = arrangements(rest) · ways ≥ k → take c · ELSE k −= ways", "statement": "s is a palindrome. Return the k-th lexicographically smallest palindromic permutation of s, or \"\" if there are fewer than k.", "recall": [["Why cap the count?", "Values beyond k change no decision and would overflow."], ["Is ways · placed / j exact?", "Yes: the running product is a binomial coefficient at every step."]], "links": [["Find the Count of Good Integers", 14]]}, {"name": "Super Palindromes", "hook": "A super-palindrome is <b>p² with p a palindrome</b>. p ≤ 10⁹, so build p from halves <b>below 10⁵</b> and test p².", "mantra": "FOR half < 10⁵: p odd and even · p² in [L, R] && palindrome → count", "statement": "A super-palindrome is a palindrome that is the square of a palindrome. Count them in [left, right] (up to 10¹⁸).", "recall": [["Why both s + rev and s + rev.substring(1)?", "They are the even- and odd-length palindromes with that half."], ["Overflow?", "p ≤ 10⁹ keeps p² ≤ 10¹⁸ &lt; 2⁶³."]], "links": [["Sum of k-Mirror Numbers", 17], ["Find the Count of Good Integers", 14]]}, {"name": "Sum of k-Mirror Numbers", "hook": "Generate base-10 palindromes <b>in increasing order</b> (by length, then by half) and keep those that are also palindromes in <b>base k</b>.", "mantra": "FOR len, FOR half: mirror → p · palindrome in base k → sum, found++", "statement": "A k-mirror number reads the same forwards and backwards in base 10 and in base k. Return the sum of the n smallest k-mirror numbers (n ≤ 30).", "recall": [["Why generate base 10 and test base k?", "Base-10 palindromes are easy to list in order."], ["How to mirror an odd length?", "Skip the last digit of the half before reflecting."]], "links": [["Super Palindromes", 16]]}];
+mount({
+  title: "Counting and Modular Combinatorics Animations",
+  sub: "Count the <b>structure</b>, not the objects: choose positions, multiply independent choices, and reduce mod 1e9+7 after every product.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>
