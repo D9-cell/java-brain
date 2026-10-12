@@ -38,6 +38,7 @@ def build(data_path):
 <title>{t['name']} Animations</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="{up}assets/theme.js"></script>
 <link rel="stylesheet" href="{up}assets/theme.css">
 <link rel="stylesheet" href="{up}assets/brain-anim.css">
 </head>
