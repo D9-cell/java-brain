@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prefix Sum and HashMap Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="../../assets/theme.js?v=ce4f40b5"></script>
+<link rel="stylesheet" href="../../assets/theme.css?v=2cbf3e72">
+<link rel="stylesheet" href="../../assets/brain-anim.css?v=e07110a9">
+</head>
+<body>
+<div id="app"></div>
+<script src="../../assets/problem-links.js?v=4171705d"></script>
+<script src="../../assets/solved.js?v=c282a395"></script>
+<script src="../../assets/progress.js?v=bc9e66cc"></script>
+<script src="../../assets/brain-anim.js?v=b6ab0e15"></script>
+<script src="../../assets/tree-kit.js?v=33d554bc"></script>
+<script>
+const { lane, tree, recorder, mount, ln } = BrainAnim;
+const { C, A, Q, S, R, make, levelStory, nodeStory } = TK;
+const grid = BrainAnim.grid;
+const ANIM = {};
+const W = (name, code, steps) => [{ name, code, steps }];
+const range = (a, b) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
+const MP = (name, m) => R(name, Object.entries(m).map(([k, v]) => `${k}:${v}`));
+
+const C_SK = `
+for (int x : nums) {
+    prefix += x;
+    count += seen.getOrDefault(prefix - k, 0);
+    seen.merge(prefix, 1, Integer::sum);
+}`;
+{
+  const a = [1, 2, 3, -2, 2], k = 3, r = recorder(), seen = { 0: 1 }; let pre = 0, count = 0;
+  r.step(0, 'k = 3. seen starts with the empty prefix {0: 1}.', [A('nums', a), MP('seen', seen)], { prefix: 0, count });
+  a.forEach((x, i) => { pre += x; const add = seen[pre - k] || 0; count += add; seen[pre] = (seen[pre] || 0) + 1; r.step(ln(C_SK, 'count +='), `prefix ${pre}: earlier prefixes equal to ${pre - k}: ${add}. count ${count}.`, [A('nums', a, { active: [i] }), MP('seen', seen)], { prefix: pre, count }); });
+  ANIM['Subarray Sum Equals K (O(n))'] = W('Prefix + HashMap', C_SK, r.steps);
+}
+
+const C_DK = `
+prefix = ((prefix + x) % k + k) % k;
+total += count[prefix];
+count[prefix]++;`;
+{
+  const a = [4, 5, 0, -2, -3, 1], k = 5, r = recorder(), cnt = [1, 0, 0, 0, 0]; let pre = 0, total = 0;
+  a.forEach((x, i) => { pre = ((pre + x) % k + k) % k; total += cnt[pre]; cnt[pre]++; r.step(ln(C_DK, 'total +='), `+${x}: remainder ${pre}, matches ${cnt[pre] - 1} earlier prefix${cnt[pre] - 1 === 1 ? '' : 'es'}. total ${total}.`, [A('nums', a, { active: [i] }), A('count by remainder', cnt.slice(), { active: [pre] })], { remainder: pre, total }); });
+  ANIM['Subarray Sums Divisible by K'] = W('Remainder counts', C_DK, r.steps);
+}
+
+const C_LD = `
+prefix = ((prefix + arr[i]) % k + k) % k;
+if (first.containsKey(prefix)) best = Math.max(best, i - first.get(prefix));
+else first.put(prefix, i);`;
+{
+  const a = [2, 7, 6, 1, 4, 5], k = 3, r = recorder(), first = { 0: -1 }; let pre = 0, best = 0;
+  a.forEach((x, i) => { pre = ((pre + x) % k + k) % k; const seen = pre in first; if (seen) best = Math.max(best, i - first[pre]); else first[pre] = i; r.step(ln(C_LD, seen ? 'best = Math.max' : 'first.put'), `i = ${i}: remainder ${pre} ${seen ? `first seen at ${first[pre]} → length ${i - first[pre]}` : 'is new, remember index ' + i}. best ${best}.`, [A('arr', a, seen ? { done: range(first[pre] + 1, i) } : { active: [i] }), MP('first', first)], { best }); });
+  ANIM['Longest subarray with sum divisible by K'] = W('First index per remainder', C_LD, r.steps);
+}
+
+const C_ML = `
+prefix += nums[i];
+Integer j = first.get(prefix - k);
+if (j != null) best = Math.max(best, i - j);
+first.putIfAbsent(prefix, i);`;
+{
+  const a = [1, -1, 5, -2, 3], k = 3, r = recorder(), first = { 0: -1 }; let pre = 0, best = 0;
+  a.forEach((x, i) => { pre += x; const j = first[pre - k]; if (j !== undefined) best = Math.max(best, i - j); if (!(pre in first)) first[pre] = i; r.step(ln(C_ML, j !== undefined ? 'best = Math.max' : 'putIfAbsent'), `prefix ${pre}: ${j !== undefined ? `prefix ${pre - k} first at ${j} → length ${i - j}` : `no prefix ${pre - k} yet`}. best ${best}.`, [A('nums', a, j !== undefined ? { done: range(j + 1, i) } : { active: [i] }), MP('first', first)], { best }); });
+  ANIM['Maximum Size Subarray Sum Equals k'] = W('First index per prefix', C_ML, r.steps);
+}
+
+const C_CA = `
+balance += nums[i] == 1 ? 1 : -1;
+if (first.containsKey(balance)) best = Math.max(best, i - first.get(balance));
+else first.put(balance, i);`;
+{
+  const a = [0, 1, 1, 0, 1, 1, 0, 0], r = recorder(), first = { 0: -1 }; let b = 0, best = 0;
+  a.forEach((x, i) => { b += x ? 1 : -1; const seen = b in first; if (seen) best = Math.max(best, i - first[b]); else first[b] = i; r.step(ln(C_CA, seen ? 'best = Math.max' : 'first.put'), `balance ${b}${seen ? `, first at ${first[b]} → equal 0s and 1s over length ${i - first[b]}` : ' (new)'}. best ${best}.`, [A('nums', a, seen ? { done: range(first[b] + 1, i) } : { active: [i] })], { balance: b, best }); });
+  ANIM['Contiguous Array'] = W('Balance + first index', C_CA, r.steps);
+}
+
+const C_CS = `
+prefix = (prefix + nums[i]) % k;
+Integer j = first.get(prefix);
+if (j == null) first.put(prefix, i);
+else if (i - j >= 2) return true;`;
+{
+  const a = [23, 2, 4, 6, 7], k = 6, r = recorder(), first = { 0: -1 }; let pre = 0;
+  for (let i = 0; i < a.length; i++) { pre = (pre + a[i]) % k; const j = first[pre]; if (j === undefined) { first[pre] = i; r.step(ln(C_CS, 'first.put'), `i = ${i}: remainder ${pre} is new.`, [A('nums', a, { active: [i] }), MP('first', first)]); } else if (i - j >= 2) { r.step(ln(C_CS, 'return true'), `i = ${i}: remainder ${pre} first at ${j}, gap ${i - j} ≥ 2 → [${a.slice(j + 1, i + 1)}] sums to a multiple of 6 → <b>true</b>.`, [A('nums', a, { done: range(j + 1, i) })]); break; } }
+  ANIM['Continuous Subarray Sum'] = W('First index per remainder', C_CS, r.steps);
+}
+
+const C_NS = `
+odd += x % 2;
+if (odd >= k) count += seen[odd - k];
+seen[odd]++;`;
+{
+  const a = [1, 1, 2, 1, 1], k = 3, r = recorder(), seen = [1, 0, 0, 0, 0, 0]; let odd = 0, count = 0;
+  a.forEach((x, i) => { odd += x % 2; if (odd >= k) count += seen[odd - k]; seen[odd]++; r.step(ln(C_NS, 'count +='), `${x} → ${odd} odd so far${odd >= k ? `; prefixes with ${odd - k} odd: ${seen[odd - k]}` : ''}. count ${count}.`, [A('nums', a.map(v => v % 2), { active: [i] }), A('seen', seen.slice())], { odd, count }); });
+  ANIM['Count Number of Nice Subarrays'] = W('Prefix count array', C_NS, r.steps);
+}
+
+const C_IS = `
+if (x % modulo == k) cnt = (cnt + 1) % modulo;
+total += seen.getOrDefault(((cnt - k) % modulo + modulo) % modulo, 0);
+seen.merge(cnt, 1, Integer::sum);`;
+{
+  const a = [3, 2, 4], mod = 2, k = 1, r = recorder(), seen = { 0: 1 }; let cnt = 0, total = 0;
+  r.step(0, 'modulo 2, k = 1: flag elements with x % 2 == 1 → [1, 0, 0].', [A('flags', a.map(x => x % mod === k ? 1 : 0))]);
+  a.forEach((x, i) => { if (x % mod === k) cnt = (cnt + 1) % mod; const key = ((cnt - k) % mod + mod) % mod, add = seen[key] || 0; total += add; seen[cnt] = (seen[cnt] || 0) + 1; r.step(ln(C_IS, 'total +='), `cnt mod 2 = ${cnt}; need earlier ${key}: ${add}. total ${total}.`, [A('nums', a, { active: [i] }), MP('seen', seen)], { cnt, total }); });
+  ANIM['Count of Interesting Subarrays'] = W('Prefix remainders', C_IS, r.steps);
+}
+
+const C_DP = `
+prefix = (prefix + nums[i]) % p;
+Integer j = last.get(((prefix - need) % p + p) % p);
+if (j != null) best = Math.min(best, i - j);
+last.put(prefix, i);`;
+{
+  const a = [3, 1, 4, 2], p = 6, need = 4, r = recorder(), last = { 0: -1 }; let pre = 0, best = 4;
+  r.step(0, 'Total 10 ≡ 4 (mod 6): remove the shortest subarray with sum ≡ 4.', [A('nums', a)], { need });
+  a.forEach((x, i) => { pre = (pre + x) % p; const key = ((pre - need) % p + p) % p, j = last[key]; if (j !== undefined) best = Math.min(best, i - j); last[pre] = i; r.step(ln(C_DP, j !== undefined ? 'best = Math.min' : 'last.put'), `prefix ${pre}: ${j !== undefined ? `remainder ${key} last at ${j} → remove length ${i - j}` : `no remainder ${key} yet`}.`, [A('nums', a, j !== undefined ? { bad: range(j + 1, i) } : { active: [i] }), MP('last', last)], { best }); });
+  r.step(0, `Answer <b>${best}</b>: remove [4].`, [R('answer', [best], { done: [0] })]);
+  ANIM['Make Sum Divisible by P'] = W('Last index per remainder', C_DP, r.steps);
+}
+
+const C_LK = `
+prefix += nums[i];
+int cls = (i + 1) % k;
+best = Math.max(best, prefix - minPrefix[cls]);
+minPrefix[cls] = Math.min(minPrefix[cls], prefix);`;
+{
+  const a = [-5, 1, 2, -3, 4], k = 2, r = recorder(), minP = [0, Infinity]; let pre = 0, best = -Infinity;
+  a.forEach((x, i) => { pre += x; const cls = (i + 1) % k; best = Math.max(best, pre - minP[cls]); minP[cls] = Math.min(minP[cls], pre); r.step(ln(C_LK, 'best = Math.max'), `prefix ${pre} at length ${i + 1} (class ${cls}): best ${best === -Infinity ? '−∞' : best}.`, [A('nums', a, { active: [i] }), A('min prefix per class', minP.map(v => v === Infinity ? '∞' : v))], { best: best === -Infinity ? '−∞' : best }); });
+  r.step(0, `Answer <b>${best}</b>: [1, 2, −3, 4].`, [R('answer', [best], { done: [0] })]);
+  ANIM['Maximum Subarray Sum With Length Divisible by K'] = W('Min prefix per class', C_LK, r.steps);
+}
+
+const C_AB = `
+prefix += x;
+max = Math.max(max, prefix);
+min = Math.min(min, prefix);`;
+{
+  const a = [2, -5, 1, -4, 3, -2], r = recorder(); let pre = 0, mx = 0, mn = 0; const ps = [0];
+  a.forEach((x, i) => { pre += x; ps.push(pre); mx = Math.max(mx, pre); mn = Math.min(mn, pre); r.step(ln(C_AB, 'min = Math.min'), `prefix ${pre}: max ${mx}, min ${mn}.`, [A('prefixes', ps.slice(), { active: [ps.length - 1] })], { max: mx, min: mn }); });
+  r.step(0, `Answer ${mx} − (${mn}) = <b>${mx - mn}</b>: subarray [−5, 1, −4].`, [R('answer', [mx - mn], { done: [0] })]);
+  ANIM['Maximum Absolute Sum of Any Subarray'] = W('Prefix extremes', C_AB, r.steps);
+}
+
+const C_MJ = `
+if (x == target) {
+    below += freq[prefix + offset];
+    prefix++;
+} else {
+    prefix--;
+    below -= freq[prefix + offset];
+}
+total += below;
+freq[prefix + offset]++;`;
+{
+  const a = [1, 2, 2, 3], tg = 2, r = recorder(), freq = { 0: 1 }; let pre = 0, below = 0, total = 0;
+  r.step(0, 'target 2 → +1, others −1. Count earlier prefixes strictly below the current one.', [A('signs', a.map(x => x === tg ? '+1' : '−1'))], { prefix: 0, below: 0, total: 0 });
+  a.forEach((x, i) => { if (x === tg) { below += freq[pre] || 0; pre++; } else { pre--; below -= freq[pre] || 0; } total += below; freq[pre] = (freq[pre] || 0) + 1; r.step(ln(C_MJ, x === tg ? 'below += freq' : 'below -= freq'), `${x === tg ? '+1' : '−1'} → prefix ${pre}, ${below} earlier prefix${below === 1 ? '' : 'es'} below it → ${below} majority subarrays end here. total ${total}.`, [A('nums', a, { active: [i] }), MP('freq', freq)], { prefix: pre, below, total }); });
+  ANIM['Count Subarrays With Majority Element I & II'] = W('Balance + running count', C_MJ, r.steps);
+}
+
+const META = [{"name": "Subarray Sum Equals K (O(n))", "hook": "Walk once with a running prefix. Subarrays ending here with sum k = <b>number of earlier prefixes equal to prefix − k</b>.", "mantra": "seen{0:1} · prefix += x · count += seen[prefix − k] · seen[prefix]++", "statement": "Return the number of contiguous subarrays whose sum equals k (values can be negative).", "recall": [["Why seed 0 → 1?", "The empty prefix lets subarrays start at index 0."], ["Why not a sliding window?", "Negative numbers break its monotonicity."]], "links": [["Maximum Size Subarray Sum Equals k", 3], ["Subarray Sums Divisible by K", 1]]}, {"name": "Subarray Sums Divisible by K", "hook": "Two prefixes with the <b>same remainder mod k</b> bound a divisible subarray. Count remainders in an int[k].", "mantra": "r = ((pre + x) % k + k) % k · total += count[r] · count[r]++", "statement": "Return the number of non-empty subarrays whose sum is divisible by k.", "recall": [["Why normalise the remainder?", "−1 % 5 is −1 in Java, but it should match 4."], ["Why count[0] = 1 at the start?", "The empty prefix has remainder 0."]], "links": [["Subarray Sum Equals K (O(n))", 0], ["Longest subarray with sum divisible by K", 2]]}, {"name": "Longest subarray with sum divisible by K", "hook": "Store the <b>first index</b> of each remainder. When it repeats, the span between is divisible and as long as possible.", "mantra": "first{0:−1} · r seen → best = max(i − first[r]) · ELSE first[r] = i", "statement": "Return the length of the longest subarray whose sum is divisible by k.", "recall": [["Why the first index?", "It makes the span as long as possible."], ["Why first[0] = −1?", "A divisible prefix starting at 0 has length i + 1."]], "links": [["Subarray Sums Divisible by K", 1], ["Contiguous Array", 4]]}, {"name": "Maximum Size Subarray Sum Equals k", "hook": "Keep the <b>earliest index</b> of each prefix. If prefix − k was seen at j, the subarray (j, i] sums to k.", "mantra": "first{0:−1} · j = first[prefix − k] → best = max(i − j) · putIfAbsent(prefix, i)", "statement": "Return the maximum length of a subarray that sums to k, or 0.", "recall": [["Why putIfAbsent?", "An earlier index gives a longer subarray."], ["Why long prefixes?", "Sums can pass the int range."]], "links": [["Subarray Sum Equals K (O(n))", 0], ["Contiguous Array", 4]]}, {"name": "Contiguous Array", "hook": "Count <b>0 as −1</b>. Equal zeros and ones means the balance <b>repeats</b>; keep its first index.", "mantra": "balance ±1 · seen → best = max(i − first[b]) · ELSE first[b] = i", "statement": "Return the maximum length of a contiguous subarray with equal numbers of 0s and 1s.", "recall": [["Why map 0 to −1?", "Then equal counts means sum 0."], ["Array instead of map?", "Balances lie in [−n, n], so an int[2n + 1] works."]], "links": [["Maximum Size Subarray Sum Equals k", 3], ["Count Subarrays With Majority Element I & II", 11]]}, {"name": "Continuous Subarray Sum", "hook": "Same remainder twice means a multiple of k between them. Keep the <b>first index</b> and require a gap of <b>at least 2</b>.", "mantra": "first{0:−1} · r seen at j, i − j ≥ 2 → true", "statement": "Return true if some subarray of length at least 2 sums to a multiple of k (0 counts as a multiple).", "recall": [["Why keep the first index only?", "It maximises the length, which must be ≥ 2."], ["[0, 0] with any k?", "True: sum 0 is a multiple of k."]], "links": [["Subarray Sums Divisible by K", 1]]}, {"name": "Count Number of Nice Subarrays", "hook": "Replace each number by <b>1 if odd, else 0</b>. Now it is Subarray Sum Equals k on 0/1 values: count prefixes with odd − k.", "mantra": "odd += x % 2 · count += seen[odd − k] · seen[odd]++", "statement": "A subarray is nice if it contains exactly k odd numbers. Count nice subarrays.", "recall": [["Sliding window version?", "atMost(k) − atMost(k − 1)."], ["Why an array?", "Keys are 0..n."]], "links": [["Subarray Sum Equals K (O(n))", 0], ["Count of Interesting Subarrays", 7]]}, {"name": "Count of Interesting Subarrays", "hook": "cnt = how many elements satisfy <b>nums[i] % modulo == k</b>. Interesting means <b>(cnt_j − cnt_i) % modulo == k</b>: look up (cnt − k) mod modulo.", "mantra": "cnt = (cnt + flag) % modulo · total += seen[(cnt − k) mod m] · seen[cnt]++", "statement": "A subarray is interesting if the number of indexes with nums[i] % modulo == k, taken mod modulo, equals k. Count interesting subarrays.", "recall": [["Why keep cnt mod modulo?", "Only the remainder matters."], ["Why long total?", "Up to n²/2 subarrays."]], "links": [["Count Number of Nice Subarrays", 6], ["Subarray Sums Divisible by K", 1]]}, {"name": "Make Sum Divisible by P", "hook": "Remove the <b>shortest</b> subarray whose sum ≡ total (mod p). Look up prefix − need and keep the <b>latest index</b> of each remainder.", "mantra": "need = total % p · j = last[(pre − need) mod p] → best = min(i − j) · last[pre] = i", "statement": "Remove the smallest subarray (not the whole array) so the remaining sum is divisible by p. Return its length or -1.", "recall": [["Why the last index?", "It makes the removed subarray as short as possible."], ["Why return −1 at length n?", "The whole array cannot be removed."]], "links": [["Subarray Sums Divisible by K", 1]]}, {"name": "Maximum Subarray Sum With Length Divisible by K", "hook": "A length divisible by k means both prefix <b>indexes are equal mod k</b>. Keep the <b>minimum prefix</b> per class and subtract.", "mantra": "cls = (i + 1) % k · best = max(pre − minPre[cls]) · minPre[cls] = min(…)", "statement": "Return the maximum sum of a subarray whose length is divisible by k.", "recall": [["Why index classes, not value remainders?", "The condition is on the length, i.e. index difference."], ["Why initialise to a large value?", "Classes without a prefix yet must not be used."]], "links": [["Maximum Absolute Sum of Any Subarray", 10]]}, {"name": "Maximum Absolute Sum of Any Subarray", "hook": "Every subarray sum is pre[j] − pre[i]. The largest absolute value is <b>max prefix − min prefix</b> (including the empty prefix 0).", "mantra": "max = max(pre), min = min(pre) · RETURN max − min", "statement": "Return the maximum absolute value of the sum of any (possibly empty) subarray.", "recall": [["Why does order not matter?", "|pre[j] − pre[i]| is symmetric."], ["Kadane version?", "Run max-subarray and min-subarray, take the bigger absolute value."]], "links": [["Maximum Subarray Sum With Length Divisible by K", 9]]}, {"name": "Count Subarrays With Majority Element I & II", "hook": "+1 for target, −1 otherwise. Target is a majority iff <b>prefix[j] &gt; prefix[i]</b>. Since the balance moves by ±1, keep <b>how many earlier prefixes are below</b> and update it in O(1).", "mantra": "+1: below += freq[old] · −1: below −= freq[new] · total += below · freq[cur]++", "statement": "Count subarrays in which target appears more than half the time. (Part II has n up to 10⁵.)", "recall": [["Why strictly greater?", "Majority means more than half, so the balance must increase."], ["General approach?", "A Fenwick tree over prefix values, O(n log n)."]], "links": [["Contiguous Array", 4]]}];
+mount({
+  title: "Prefix Sum and HashMap Animations",
+  sub: "A subarray (i, j] has sum <b>pre[j] − pre[i]</b>. So \"how many subarrays ending at j have property P\" becomes \"<b>how many earlier prefixes match</b>\", answered by a hash map of prefixes seen so far.",
+  problems: META.map(m => {
+    if (!ANIM[m.name]) throw new Error('missing animation: ' + m.name);
+    return { name: m.name, hook: m.hook, mantra: m.mantra, statement: m.statement, anims: ANIM[m.name], recall: m.recall, links: m.links };
+  })
+});
+</script>
+</body>
+</html>
